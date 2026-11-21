@@ -1,3 +1,5 @@
+import { msg, type Msg } from "@/lib/i18n/types";
+
 /**
  * Token, cost, and rough energy accounting used by the Frugal Inspector and benchmark.
  *
@@ -45,7 +47,6 @@ export const NAIVE_PRICE = {
   output: 10,
   label: "GPT-4o high-detail",
   model: NAIVE_MODEL,
-  formula: "OpenAI tile formula, $2.50/$10 per 1M",
 } as const;
 
 /**
@@ -81,7 +82,7 @@ export interface NaiveEstimate {
   promptTokens: number;
   completionTokens: number;
   costUsd: number;
-  description: string;
+  description: Msg;
   model?: string;
   basis?: "estimated" | "measured";
 }
@@ -100,7 +101,7 @@ export function naiveSnap(width: number, height: number): NaiveEstimate {
     promptTokens,
     completionTokens,
     costUsd: (promptTokens * NAIVE_PRICE.input + completionTokens * NAIVE_PRICE.output) / 1e6,
-    description: `GPT-4o high-detail (${w}×${h}: ${imgTok} img + ${NAIVE_SNAP_PROMPT_TEXT_TOKENS} prompt tok; OpenAI tile formula, $2.50/$10 per 1M)`,
+    description: msg("naive.snap", { w, h, img: imgTok, prompt: NAIVE_SNAP_PROMPT_TEXT_TOKENS }),
     model: NAIVE_MODEL,
     basis: "estimated",
   };
@@ -120,7 +121,7 @@ export function naiveReasoning(stateJsonChars: number, outputTokens = 350): Naiv
     promptTokens,
     completionTokens,
     costUsd: (promptTokens * NAIVE_PRICE.input + completionTokens * NAIVE_PRICE.output) / 1e6,
-    description: `LLM-does-the-maths (GPT-4o, $2.50/$10 per 1M): compact twin (~${stateTokens} tok) + rules (${NAIVE_REASONING_PROMPT_TOKENS} tok) + ${completionTokens} out`,
+    description: msg("naive.reasoning", { state: stateTokens, rules: NAIVE_REASONING_PROMPT_TOKENS, out: completionTokens }),
     model: NAIVE_MODEL,
     basis: "estimated",
   };
@@ -140,7 +141,6 @@ export const ENERGY_ASSUMPTIONS = {
   frontierWhPerTok: 0.0006,
   smallWhPerTok: 0.0002,
   localCallWh: 0.002,
-  note: "Rough estimate: ~0.0006 Wh/tok frontier (Epoch AI, 2025), ~0.0002 Wh/tok small model (Google, 2025), ~0.002 Wh local CPU pass (15 W × 0.5 s). Varies 3–5× by hardware and batching.",
 } as const;
 
 export function estimateEnergyWh(tokens: number, kind: "frontier" | "small" | "local"): number {

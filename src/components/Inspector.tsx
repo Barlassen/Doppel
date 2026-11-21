@@ -3,72 +3,64 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { LedgerEntry, LedgerRoute, NaiveComparison } from "@/lib/frugal/ledger";
 import { exclusionReason, resolveOutcome, resolveRoute, resolveUsageKnown, totals } from "@/lib/frugal/ledger";
-import { ENERGY_ASSUMPTIONS, NAIVE_PRICE } from "@/lib/frugal/tokens";
+import { NAIVE_PRICE } from "@/lib/frugal/tokens";
 import { callTwin } from "@/lib/llm";
 import type { Extraction } from "@/lib/snap/types";
-import { chf, usd } from "@/lib/format";
-import { groupCh } from "@/lib/format";
+import { msg, type Fmt, type Text } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
-const TIER_STYLE: Record<string, { label: string; cls: string }> = {
-  "0": { label: "Tier 0 · QR", cls: "bg-good/15 text-good" },
-  "1": { label: "Tier 1 · OCR → text", cls: "bg-warn/15 text-warn" },
-  "2": { label: "Tier 2 · 512px VLM", cls: "bg-s1/15 text-s1" },
-  "local-parser": { label: "Local parser", cls: "bg-good/15 text-good" },
-  llm: { label: "Small LLM", cls: "bg-warn/15 text-warn" },
-};
+const TIER_STYLE = {
+  0: "bg-good/15 text-good",
+  1: "bg-warn/15 text-warn",
+  2: "bg-s1/15 text-s1",
+  "local-parser": "bg-good/15 text-good",
+  llm: "bg-warn/15 text-warn",
+} satisfies Record<LedgerEntry["tier"], string>;
 
-const ROUTE_STYLE: Record<LedgerRoute, { label: string; cls: string }> = {
-  qr: { label: "QR · local", cls: "bg-good/15 text-good" },
-  cache: { label: "Cache · local", cls: "bg-good/15 text-good" },
-  "local-regex": { label: "Local regex", cls: "bg-good/15 text-good" },
-  "local-parser": { label: "Local parser", cls: "bg-good/15 text-good" },
-  "text-llm": { label: "Text LLM", cls: "bg-warn/15 text-warn" },
-  "vision-llm": { label: "Vision LLM", cls: "bg-s1/15 text-s1" },
-  "offline-heuristic": { label: "Offline regex", cls: "bg-surface-2 text-ink-2 border border-line" },
-  "offline-template": { label: "Offline template", cls: "bg-surface-2 text-ink-2 border border-line" },
+const ROUTE_STYLE: Record<LedgerRoute, string> = {
+  qr: "bg-good/15 text-good",
+  cache: "bg-good/15 text-good",
+  "local-regex": "bg-good/15 text-good",
+  "local-parser": "bg-good/15 text-good",
+  "text-llm": "bg-warn/15 text-warn",
+  "vision-llm": "bg-s1/15 text-s1",
+  "offline-heuristic": "bg-surface-2 text-ink-2 border border-line",
+  "offline-template": "bg-surface-2 text-ink-2 border border-line",
 };
 
 export function TierChip({ tier, route }: { tier: LedgerEntry["tier"]; route?: LedgerRoute }) {
-  const s = route ? ROUTE_STYLE[route] : TIER_STYLE[String(tier)] ?? TIER_STYLE["llm"];
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${s.cls}`}>{s.label}</span>;
+  const { t } = useI18n();
+  const style = route ? ROUTE_STYLE[route] : TIER_STYLE[tier];
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${style}`}>
+    {t(route ? `route.${route}` : `tier.${tier}`)}
+  </span>;
 }
 
 export function FrugalBadge({ entries, onClick }: { entries: LedgerEntry[]; onClick: () => void }) {
-  const t = totals(entries);
+  const { t, fmt } = useI18n();
+  const stats = totals(entries);
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium transition hover:border-frugal"
-      title="Open the Frugal Pipeline Inspector"
+      className="flex flex-wrap items-center gap-x-1.5 rounded-full border border-line bg-surface px-2 py-1.5 text-xs font-medium transition hover:border-frugal sm:gap-x-2 sm:px-3"
+      title={t("badge.title")}
     >
       <span className="text-frugal" aria-hidden="true">⚡</span>
-      <span className="num">{groupCh(t.ours)} tokens</span>
-      {t.tokenSavedPct !== null && (
-        <span className="num font-semibold text-frugal">−{(t.tokenSavedPct * 100).toFixed(1)}%</span>
+      <span className="num">{t("common.tokens", { count: stats.ours })}</span>
+      {stats.tokenSavedPct !== null && (
+        <span className="num font-semibold text-frugal">{savedPercent(fmt, stats.tokenSavedPct)}</span>
       )}
-      {entries.length > 0 && t.measuredCount === 0 && (
+      {entries.length > 0 && stats.measuredCount === 0 && (
         <span className="text-[11px] font-medium text-warn">
-          {t.offlineCount > 0 ? "offline" : "unmeasured"}
+          {t(stats.offlineCount > 0 ? "badge.offline" : "badge.unmeasured")}
         </span>
       )}
     </button>
   );
 }
 
-function formatBytes(bytes: number | undefined): string {
-  if (bytes == null) return "—";
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
-
-function parseAmount(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const n = Number(v.replace(/[^\d.]/g, ""));
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return undefined;
+function savedPercent(fmt: Fmt, savings: number) {
+  return savings === 0 ? fmt.pct(0, 1) : fmt.pct(-savings, 1).replace("-", "−");
 }
 
 /**
@@ -112,10 +104,11 @@ export interface InspectorProps {
 }
 
 export function Inspector({ entries, open, onClose, comparisons: externalComparisons, onComparison }: InspectorProps) {
+  const { t, rich, fmt } = useI18n();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [localComparisons, setLocalComparisons] = useState<Record<string, NaiveComparison>>({});
   const [comparingId, setComparingId] = useState<string | null>(null);
-  const [compareError, setCompareError] = useState<Record<string, string>>({});
+  const [compareError, setCompareError] = useState<Record<string, Text>>({});
 
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -123,7 +116,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
   const prevFocusRef = useRef<HTMLElement | null>(null);
 
   const comparisons = externalComparisons ?? localComparisons;
-  const t = totals(entries, comparisons);
+  const stats = totals(entries, comparisons);
 
   // Accessible dialog lifecycle: move focus in, trap Tab, close on Esc, restore focus on close.
   useEffect(() => {
@@ -174,7 +167,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
 
   const measuredEntries = entries.filter((e) => exclusionReason(e) === null);
   const excludedEntries = entries.filter((e) => exclusionReason(e) !== null);
-  const maxTokens = Math.max(t.naive, t.ours, 1);
+  const maxTokens = Math.max(stats.naive, stats.ours, 1);
 
   async function runNaiveCompare(e: LedgerEntry) {
     if (!e.naiveImage || comparingId) return;
@@ -193,8 +186,8 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
       setCompareError((prev) => ({
         ...prev,
         [e.id]: res.offline
-          ? "No OPENROUTER_API_KEY configured — live GPT-4o check needs an API key. Showing the tile-formula estimate instead."
-          : res.error ?? "Naive comparison failed.",
+          ? msg("inspector.noKey")
+          : res.error ?? msg("inspector.compareFailed"),
       }));
       setComparingId(null);
       return;
@@ -224,17 +217,14 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
     setComparingId(null);
   }
 
-  const baselineTag =
-    t.measuredCount === 0
-      ? `estimated · ${NAIVE_PRICE.label}`
-      : t.liveNaiveCount === t.measuredCount
-        ? "measured · GPT-4o live"
-        : t.liveNaiveCount > 0
-          ? `${t.liveNaiveCount} measured · ${t.measuredCount - t.liveNaiveCount} estimated`
-          : `estimated · ${NAIVE_PRICE.label}`;
+  const baselineTag = stats.measuredCount > 0 && stats.liveNaiveCount === stats.measuredCount
+    ? t("inspector.tagMeasuredLive")
+    : stats.liveNaiveCount > 0
+      ? t("inspector.tagMixed", { measured: stats.liveNaiveCount, estimated: stats.measuredCount - stats.liveNaiveCount })
+      : t("inspector.tagEstimated", { model: NAIVE_PRICE.label });
 
-  const per1kOurs = t.snapCount > 0 ? (t.snapOursCost / t.snapCount) * 1000 : null;
-  const per1kNaive = t.snapCount > 0 ? (t.snapNaiveCost / t.snapCount) * 1000 : null;
+  const per1kOurs = stats.snapCount > 0 ? (stats.snapOursCost / stats.snapCount) * 1000 : null;
+  const per1kNaive = stats.snapCount > 0 ? (stats.snapNaiveCost / stats.snapCount) * 1000 : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
@@ -251,82 +241,82 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
           {/* Header */}
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="label">Frugal pipeline inspector</div>
+              <div className="label">{t("inspector.kicker")}</div>
               <h2 id={titleId} className="font-serif text-2xl leading-tight sm:text-3xl">
-                Every token, accounted for.
+                {t("inspector.title")}
               </h2>
             </div>
             <button
               ref={closeBtnRef}
               onClick={onClose}
-              aria-label="Close Frugal Pipeline Inspector"
+              aria-label={t("inspector.closeAria")}
               className="rounded-full border border-line px-3 py-1 text-sm text-ink-2 transition hover:border-ink-3 hover:text-ink"
             >
-              Close
+              {t("common.close")}
             </button>
           </div>
 
           {/* Measured totals */}
           <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">Doppel · measured</div>
+              <div className="label">{t("inspector.oursMeasured")}</div>
               <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {groupCh(t.ours)} tokens
+                {t("common.tokens", { count: stats.ours })}
               </div>
               <div className="num text-xs text-ink-2 sm:text-sm">
-                {usd(t.oursCost)} · {t.measuredCount} {t.measuredCount === 1 ? "call" : "calls"}
+                {t("common.separator", { first: fmt.usd(stats.oursCost), second: msg("inspector.calls", { count: stats.measuredCount }) })}
               </div>
             </div>
             <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">Naive baseline · {baselineTag}</div>
+              <div className="label">{t("inspector.naiveBaseline", { tag: baselineTag })}</div>
               <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {groupCh(t.naive)} tokens
+                {t("common.tokens", { count: stats.naive })}
               </div>
               <div className="num text-xs text-ink-2 sm:text-sm">
-                {usd(t.naiveCost)} · {NAIVE_PRICE.formula}
+                {t("common.separator", { first: fmt.usd(stats.naiveCost), second: msg("inspector.formula") })}
               </div>
             </div>
             <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">Measured savings</div>
+              <div className="label">{t("inspector.savings")}</div>
               <div className="num mt-1 text-xl font-semibold text-frugal sm:text-2xl">
-                {t.tokenSavedPct !== null ? `−${(t.tokenSavedPct * 100).toFixed(1)}% tok` : "—"}
+                {stats.tokenSavedPct !== null ? t("inspector.savedTokens", { p: savedPercent(fmt, stats.tokenSavedPct) }) : "—"}
               </div>
               <div className="num text-xs text-ink-2 sm:text-sm">
-                {t.costSavedPct !== null
-                  ? `Cost −${(t.costSavedPct * 100).toFixed(1)}% · maths runs in TypeScript`
-                  : t.excludedCount > 0
-                    ? "Offline / failed calls excluded below"
-                    : "Run a snap or what-if to measure"}
+                {stats.costSavedPct !== null
+                  ? t("inspector.savedCost", { p: savedPercent(fmt, stats.costSavedPct) })
+                  : stats.excludedCount > 0
+                    ? t("inspector.savingsExcluded")
+                    : t("inspector.savingsEmpty")}
               </div>
             </div>
           </div>
 
-          {t.measuredCount > 0 && (
+          {stats.measuredCount > 0 && (
             <div className="mb-5 space-y-2">
-              <Bar label="Naive" value={t.naive} max={maxTokens} color="var(--ink-3)" />
-              <Bar label="Doppel" value={t.ours} max={maxTokens} color="var(--frugal)" />
+              <Bar label={t("inspector.barNaive")} value={stats.naive} max={maxTokens} color="var(--ink-3)" />
+              <Bar label="Doppel" value={stats.ours} max={maxTokens} color="var(--frugal)" />
             </div>
           )}
 
           {/* Cascade overview */}
           <div className="mb-5 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3 sm:text-sm">
-            <Explain chip="0" route="qr" title="Tier 0 · Swiss QR-bill" text="jsQR decodes the SIX payment payload in the browser. Zero bytes leave the device." />
-            <Explain chip="1" route="text-llm" title="Tier 1 · Local OCR → text" text="Grayscale + contrast + Tesseract. Clean docs resolve via local regex (0 tok); ambiguous text goes to a small LLM." />
-            <Explain chip="2" route="vision-llm" title="Tier 2 · 512px gray JPEG" text="Only when OCR confidence < 65%: a ~20 KB grayscale image goes to a small VLM." />
+            <Explain chip="0" route="qr" title={t("inspector.tier0Title")} text={t("inspector.tier0Text")} />
+            <Explain chip="1" route="text-llm" title={t("inspector.tier1Title")} text={t("inspector.tier1Text")} />
+            <Explain chip="2" route="vision-llm" title={t("inspector.tier2Title")} text={t("inspector.tier2Text")} />
           </div>
 
           {/* Measured calls */}
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <div className="label">Measured calls ({measuredEntries.length})</div>
+            <div className="label">{t("inspector.measuredCalls", { count: measuredEntries.length })}</div>
             <span className="text-[11px] text-ink-3">
-              Baseline uses actual image dimensions (no upscaling); command/narration baseline caps state at 2.4k chars.
+              {t("inspector.baselineNote")}
             </span>
           </div>
           {measuredEntries.length === 0 && (
             <p className="mb-4 text-sm text-ink-3">
               {entries.length === 0
-                ? "Snap a document or ask a what-if — each call appears here with its route, bytes sent, and payload."
-                : "No measured calls yet. Offline, failed, or usage-unknown calls are listed separately below and excluded from savings."}
+                ? t("inspector.emptyAll")
+                : t("inspector.emptyMeasured")}
             </p>
           )}
           {measuredEntries.length > 0 && (
@@ -350,9 +340,9 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
           {excludedEntries.length > 0 && (
             <div className="mb-5">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <div className="label text-warn">Excluded from savings ({excludedEntries.length})</div>
+                <div className="label text-warn">{t("inspector.excluded", { count: excludedEntries.length })}</div>
                 <span className="text-[11px] text-ink-3">
-                  Offline fallbacks, failed extractions, and missing-usage responses are never counted as 100% saved.
+                  {t("inspector.excludedNote")}
                 </span>
               </div>
               <ul className="space-y-2">
@@ -375,37 +365,39 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
 
           {/* Unit economics footer */}
           <div className="rounded-xl border border-line bg-surface-2/60 p-3.5 text-xs">
-            <div className="label mb-2">Unit economics & rough energy estimate</div>
+            <div className="label mb-2">{t("inspector.unitTitle")}</div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <div className="font-medium text-ink">Cost per 1,000 snaps</div>
+                <div className="font-medium text-ink">{t("inspector.per1k")}</div>
                 {per1kOurs !== null && per1kNaive !== null ? (
                   <div className="num mt-0.5 text-ink-2">
-                    Doppel <b className="text-frugal">{usd(per1kOurs)}</b> vs naive GPT-4o{" "}
-                    <b className="text-ink">{usd(per1kNaive)}</b>{" "}
-                    <span className="text-ink-3">
-                      (extrapolated from {t.snapCount} measured {t.snapCount === 1 ? "snap" : "snaps"} this session)
-                    </span>
+                    {rich("inspector.per1kLine", {
+                      ours: <b className="text-frugal">{fmt.usd(per1kOurs)}</b>,
+                      naive: <b className="text-ink">{fmt.usd(per1kNaive)}</b>,
+                    })}{" "}
+                    <span className="text-ink-3">{t("inspector.per1kBasis", { count: stats.snapCount })}</span>
                   </div>
                 ) : (
                   <div className="mt-0.5 text-ink-2">
-                    Snap a document to compute live session unit cost (benchmark suite in <code className="font-mono">docs/BENCHMARK.md</code>).
+                    {rich("inspector.per1kEmpty", { file: <code className="font-mono">docs/BENCHMARK.md</code> })}
                   </div>
                 )}
               </div>
               <div>
-                <div className="font-medium text-ink">Estimated energy this session (rough estimate)</div>
-                {t.measuredCount > 0 ? (
+                <div className="font-medium text-ink">{t("inspector.energy")}</div>
+                {stats.measuredCount > 0 ? (
                   <div className="num mt-0.5 text-ink-2">
-                    Doppel <b className="text-frugal">{t.oursWh.toFixed(3)} Wh</b> vs naive GPT-4o{" "}
-                    <b className="text-ink">{t.naiveWh.toFixed(3)} Wh</b>
+                    {rich("inspector.energyLine", {
+                      ours: <b className="text-frugal">{t("common.wh", { value: fmt.num(stats.oursWh, 3) })}</b>,
+                      naive: <b className="text-ink">{t("common.wh", { value: fmt.num(stats.naiveWh, 3) })}</b>,
+                    })}
                   </div>
                 ) : (
                   <div className="mt-0.5 text-ink-2">—</div>
                 )}
               </div>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">{ENERGY_ASSUMPTIONS.note}</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">{t("inspector.energyNote")}</p>
           </div>
         </div>
       </div>
@@ -429,9 +421,10 @@ function EntryRow({
   onToggle: () => void;
   comparison?: NaiveComparison;
   comparing: boolean;
-  compareError?: string;
+  compareError?: Text;
   onCompare: () => void;
 }) {
+  const { t, tm, fmt, rich } = useI18n();
   const panelId = `ledger-panel-${e.id}`;
   const route = resolveRoute(e);
   const outcome = resolveOutcome(e);
@@ -452,20 +445,20 @@ function EntryRow({
         className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 py-2.5 text-left"
       >
         <TierChip tier={e.tier} route={route} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{e.title}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{tm(e.title)}</span>
         <OutcomeTag outcome={outcome} excluded={excluded} />
         {comparison && (
           <span className="rounded-full bg-s1/15 px-2 py-0.5 text-[10px] font-semibold text-s1">
-            GPT-4o measured
+            {t("inspector.gpt4oMeasured")}
           </span>
         )}
-        <span className="num text-xs text-ink-2">{Math.round(e.ms)} ms</span>
+        <span className="num text-xs text-ink-2">{t("common.ms", { value: Math.round(e.ms) })}</span>
         <span className="num text-xs font-semibold">
-          {!usageKnown && e.usage.mode === "llm" ? "usage unknown" : `${groupCh(oursTok)} tok`}
+          {!usageKnown && e.usage.mode === "llm" ? t("inspector.usageUnknown") : t("inspector.tok", { count: oursTok })}
         </span>
         {!excluded && (
-          <span className="num text-xs text-ink-3 line-through" title={comparison ? "Measured GPT-4o" : "Estimated GPT-4o"}>
-            {groupCh(naiveTok)}
+          <span className="num text-xs text-ink-3 line-through" title={t(comparison ? "inspector.measuredTitle" : "inspector.estimatedTitle")}>
+            {fmt.int(naiveTok)}
           </span>
         )}
       </button>
@@ -476,9 +469,9 @@ function EntryRow({
             <ol className="space-y-1">
               {e.steps.map((s, i) => (
                 <li key={i} className="flex flex-wrap gap-x-3 gap-y-0.5">
-                  <span className="num w-14 shrink-0 text-right text-ink-3">{s.ms.toFixed(0)} ms</span>
-                  <span className="font-medium">{s.name}</span>
-                  {s.detail && <span className="text-ink-2 break-words">{s.detail}</span>}
+                  <span className="num w-14 shrink-0 text-right text-ink-3">{t("common.ms", { value: Math.round(s.ms) })}</span>
+                  <span className="font-medium">{tm(s.name)}</span>
+                  {s.detail && <span className="text-ink-2 break-words">{tm(s.detail)}</span>}
                 </li>
               ))}
             </ol>
@@ -488,41 +481,46 @@ function EntryRow({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="rounded-lg bg-surface-2/70 p-2.5">
               <div className="text-[11px] font-semibold text-ink-3">
-                Doppel ({e.usage.mode === "offline" ? "offline fallback" : usageKnown ? "measured" : "usage unknown"})
+                {t("inspector.oursHeader", { state: msg(e.usage.mode === "offline" ? "inspector.stateOffline" : usageKnown ? "inspector.stateMeasured" : "inspector.usageUnknown") })}
               </div>
               <div className="mt-1 break-words text-ink">
                 {e.usage.model} ·{" "}
                 {!usageKnown && e.usage.mode === "llm" ? (
-                  <span className="text-warn">usage unknown</span>
+                  <span className="text-warn">{t("inspector.usageUnknown")}</span>
                 ) : (
                   <span className="num">
-                    in {e.usage.promptTokens} / out {e.usage.completionTokens} · {usd(e.usage.costUsd)}
+                    {t("inspector.inOut", { in: e.usage.promptTokens, out: e.usage.completionTokens })} · {fmt.usd(e.usage.costUsd)}
                   </span>
                 )}
               </div>
               <div className="mt-0.5 text-ink-2">
-                Route: <code className="font-mono">{route}</code> · Left device:{" "}
-                <span className="num font-medium">{formatBytes(e.bytesSent)}</span>
-                {e.imageSize && ` · Input ${e.imageSize.width}×${e.imageSize.height}`}
+                {rich("inspector.route", { route: <code className="font-mono">{route}</code> })} ·{" "}
+                {rich("inspector.leftDevice", {
+                  size: <span className="num font-medium">{e.bytesSent == null ? "—" : e.bytesSent < 1024
+                    ? t("common.bytes", { value: e.bytesSent }) : t("common.kb", { value: fmt.num(e.bytesSent / 1024, 1) })}</span>,
+                })}
+                {e.imageSize && t("inspector.input", { size: `${e.imageSize.width}×${e.imageSize.height}` })}
               </div>
               {e.fieldsMissing && e.fieldsMissing.length > 0 && (
-                <div className="mt-0.5 text-warn">Missing fields: {e.fieldsMissing.join(", ")}</div>
+                <div className="mt-0.5 text-warn">{t("inspector.missingFields", {
+                  fields: e.fieldsMissing.map((field) => field === "kind" ? t("review.docType") : field === "amount" ? t("inspector.rowAmount") : field).join(", "),
+                })}</div>
               )}
             </div>
 
             <div className="rounded-lg bg-surface-2/70 p-2.5">
               <div className="text-[11px] font-semibold text-ink-3">
-                Naive baseline ({comparison ? "measured live" : "estimated"})
+                {t("inspector.naiveHeader", { state: msg(comparison ? "inspector.stateLive" : "inspector.stateEstimated") })}
               </div>
               <div className="mt-1 break-words text-ink">
                 {comparison ? (
                   <span className="num">
-                    {comparison.model} · in {comparison.promptTokens} / out {comparison.completionTokens} ·{" "}
-                    {usd(comparison.costUsd)} · {Math.round(comparison.ms)} ms
+                    {comparison.model} · {t("inspector.inOut", { in: comparison.promptTokens, out: comparison.completionTokens })} ·{" "}
+                    {fmt.usd(comparison.costUsd)} · {t("common.ms", { value: Math.round(comparison.ms) })}
                   </span>
                 ) : (
                   <span>
-                    {e.naive.description} · <span className="num font-medium">{usd(naiveCost)}</span>
+                    {tm(e.naive.description)} · <span className="num font-medium">{fmt.usd(naiveCost)}</span>
                   </span>
                 )}
               </div>
@@ -534,9 +532,9 @@ function EntryRow({
             <div className="rounded-lg border border-line p-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <span className="font-medium text-ink">Live baseline check</span>
+                  <span className="font-medium text-ink">{t("inspector.liveCheck")}</span>
                   <span className="ml-1.5 text-ink-2">
-                    Send the original image straight to GPT-4o and compare real tokens, cost, and accuracy.
+                    {t("inspector.liveCheckText")}
                   </span>
                 </div>
                 <button
@@ -545,72 +543,72 @@ function EntryRow({
                   onClick={onCompare}
                   className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-ink transition hover:border-s1 hover:text-s1 disabled:opacity-50"
                 >
-                  {comparing ? "Running GPT-4o…" : comparison ? "Re-run naive GPT-4o" : "Run the naive way (GPT-4o)"}
+                  {t(comparing ? "inspector.running" : comparison ? "inspector.rerun" : "inspector.run")}
                 </button>
               </div>
 
-              {compareError && <p className="mt-2 text-xs text-warn">{compareError}</p>}
+              {compareError && <p className="mt-2 text-xs text-warn">{tm(compareError)}</p>}
 
               {comparison && (
                 <div className="mt-2.5 overflow-x-auto">
                   <table className="w-full min-w-[260px] text-left text-xs">
                     <thead>
                       <tr className="border-b border-line text-[11px] text-ink-3">
-                        <th className="py-1 pr-2 font-medium">Metric</th>
+                        <th className="py-1 pr-2 font-medium">{t("inspector.colMetric")}</th>
                         <th className="py-1 pr-2 font-medium">Doppel</th>
-                        <th className="py-1 pr-2 font-medium">Naive GPT-4o</th>
-                        <th className="py-1 font-medium">Comparison</th>
+                        <th className="py-1 pr-2 font-medium">{t("inspector.colNaive")}</th>
+                        <th className="py-1 font-medium">{t("inspector.colComparison")}</th>
                       </tr>
                     </thead>
                     <tbody className="num divide-y divide-line/60">
                       <tr>
-                        <td className="py-1 pr-2 font-sans text-ink-2">Tokens</td>
+                        <td className="py-1 pr-2 font-sans text-ink-2">{t("inspector.rowTokens")}</td>
                         <td className="py-1 pr-2 font-medium">
-                          {!usageKnown && e.usage.mode === "llm" ? "unknown" : groupCh(oursTok)}
+                          {!usageKnown && e.usage.mode === "llm" ? t("inspector.unknown") : fmt.int(oursTok)}
                         </td>
-                        <td className="py-1 pr-2">{groupCh(naiveTok)}</td>
+                        <td className="py-1 pr-2">{fmt.int(naiveTok)}</td>
                         <td className="py-1 font-semibold text-frugal">
                           {naiveTok > 0 && usageKnown
-                            ? `−${((1 - oursTok / naiveTok) * 100).toFixed(1)}%`
+                            ? savedPercent(fmt, 1 - oursTok / naiveTok)
                             : "—"}
                         </td>
                       </tr>
                       <tr>
-                        <td className="py-1 pr-2 font-sans text-ink-2">Cost</td>
-                        <td className="py-1 pr-2 font-medium">{usd(e.usage.costUsd)}</td>
-                        <td className="py-1 pr-2">{usd(comparison.costUsd)}</td>
+                        <td className="py-1 pr-2 font-sans text-ink-2">{t("inspector.rowCost")}</td>
+                        <td className="py-1 pr-2 font-medium">{fmt.usd(e.usage.costUsd)}</td>
+                        <td className="py-1 pr-2">{fmt.usd(comparison.costUsd)}</td>
                         <td className="py-1 font-semibold text-frugal">
                           {comparison.costUsd > 0 && usageKnown
-                            ? `−${((1 - e.usage.costUsd / comparison.costUsd) * 100).toFixed(1)}%`
+                            ? savedPercent(fmt, 1 - e.usage.costUsd / comparison.costUsd)
                             : "—"}
                         </td>
                       </tr>
                       <tr>
-                        <td className="py-1 pr-2 font-sans text-ink-2">Latency</td>
-                        <td className="py-1 pr-2">{Math.round(e.ms)} ms</td>
-                        <td className="py-1 pr-2">{Math.round(comparison.ms)} ms</td>
+                        <td className="py-1 pr-2 font-sans text-ink-2">{t("inspector.rowLatency")}</td>
+                        <td className="py-1 pr-2">{t("common.ms", { value: Math.round(e.ms) })}</td>
+                        <td className="py-1 pr-2">{t("common.ms", { value: Math.round(comparison.ms) })}</td>
                         <td className="py-1 text-ink-2">
                           {e.ms <= comparison.ms
-                            ? `${(comparison.ms / Math.max(1, e.ms)).toFixed(1)}× faster`
-                            : `${Math.round(e.ms - comparison.ms)} ms slower`}
+                            ? t("inspector.faster", { x: fmt.num(comparison.ms / Math.max(1, e.ms), 1) })
+                            : t("inspector.slower", { ms: Math.round(e.ms - comparison.ms) })}
                         </td>
                       </tr>
                       <tr>
-                        <td className="py-1 pr-2 font-sans text-ink-2">Amount</td>
+                        <td className="py-1 pr-2 font-sans text-ink-2">{t("inspector.rowAmount")}</td>
                         <td className="py-1 pr-2">
-                          {e.extractedAmount != null ? chf(e.extractedAmount) : "—"}
+                          {e.extractedAmount != null ? fmt.chf(e.extractedAmount) : "—"}
                         </td>
                         <td className="py-1 pr-2">
-                          {comparison.extractedAmount != null ? chf(comparison.extractedAmount) : "—"}
+                          {comparison.extractedAmount != null ? fmt.chf(comparison.extractedAmount) : "—"}
                         </td>
                         <td className="py-1 font-sans">
                           {comparison.amountMatches === true && (
-                            <span className="font-semibold text-good">Same amount</span>
+                            <span className="font-semibold text-good">{t("inspector.sameAmount")}</span>
                           )}
                           {comparison.amountMatches === false && (
-                            <span className="font-semibold text-bad">Differs</span>
+                            <span className="font-semibold text-bad">{t("inspector.differs")}</span>
                           )}
-                          {comparison.amountMatches === null && <span className="text-ink-3">n/a</span>}
+                          {comparison.amountMatches === null && <span className="text-ink-3">{t("inspector.na")}</span>}
                         </td>
                       </tr>
                     </tbody>
@@ -622,15 +620,15 @@ function EntryRow({
 
           {e.preview && (
             <div>
-              <div className="mb-1 text-ink-3">Compressed image sent to Tier 2 VLM:</div>
+              <div className="mb-1 text-ink-3">{t("inspector.previewTitle")}</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={e.preview} alt="Compressed grayscale image sent to vision model" className="h-32 rounded border border-line" />
+              <img src={e.preview} alt={t("inspector.previewAlt")} className="h-32 rounded border border-line" />
             </div>
           )}
 
           <div>
             <div className="text-ink-3">
-              {e.usage.mode === "llm" ? "Payload that left the browser:" : "Local execution record (nothing sent to cloud):"}
+              {t(e.usage.mode === "llm" ? "inspector.payloadCloud" : "inspector.payloadLocal")}
             </div>
             <pre className="mt-1 max-h-60 overflow-auto rounded-lg bg-surface-2 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all sm:break-normal">
               {JSON.stringify(e.payload, null, 2)}
@@ -649,29 +647,31 @@ function OutcomeTag({
   outcome: "ok" | "partial" | "failed";
   excluded?: "offline" | "failed" | "usage-unknown" | null;
 }) {
+  const { t } = useI18n();
   if (excluded === "offline") {
-    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">offline</span>;
+    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">{t("inspector.outcomeOffline")}</span>;
   }
   if (excluded === "usage-unknown") {
-    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">usage unknown</span>;
+    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">{t("inspector.usageUnknown")}</span>;
   }
   if (outcome === "failed") {
-    return <span className="rounded-full bg-bad/15 px-2 py-0.5 text-[10px] font-semibold text-bad">failed</span>;
+    return <span className="rounded-full bg-bad/15 px-2 py-0.5 text-[10px] font-semibold text-bad">{t("inspector.outcomeFailed")}</span>;
   }
   if (outcome === "partial") {
-    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">partial</span>;
+    return <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[10px] font-semibold text-warn">{t("inspector.outcomePartial")}</span>;
   }
-  return <span className="text-[11px] text-good">ok</span>;
+  return <span className="text-[11px] text-good">{t("inspector.outcomeOk")}</span>;
 }
 
 function Bar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const { fmt } = useI18n();
   return (
     <div className="flex items-center gap-2 text-xs sm:gap-3">
       <span className="w-12 shrink-0 text-ink-2 sm:w-14">{label}</span>
       <div className="h-3 flex-1 rounded-full bg-surface-2">
         <div className="h-3 rounded-full" style={{ width: `${Math.max(0.8, (value / max) * 100)}%`, background: color }} />
       </div>
-      <span className="num w-16 shrink-0 text-right font-medium sm:w-20">{groupCh(value)}</span>
+      <span className="num w-16 shrink-0 text-right font-medium sm:w-20">{fmt.int(value)}</span>
     </div>
   );
 }

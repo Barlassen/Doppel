@@ -1,3 +1,5 @@
+import { translateText } from "@/lib/i18n";
+import { msg, type Msg } from "@/lib/i18n/types";
 import type { DocKind, Extraction } from "./types";
 
 /**
@@ -162,6 +164,10 @@ function parseDate(text: string): string | undefined {
   return `${year}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
 }
 
+function generatedLabel(labelMsg: Msg) {
+  return { label: translateText("en", labelMsg), labelMsg };
+}
+
 function extractListing(t: string, lower: string): Extraction {
   const lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
   let amount: number | undefined;
@@ -197,7 +203,7 @@ function extractListing(t: string, lower: string): Extraction {
     amount,
     rooms: rooms ? Number(rooms[1].replace(",", ".")) : undefined,
     location: loc ? loc[2] : undefined,
-    label: loc ? `Home in ${loc[2]}` : "Home from listing",
+    ...generatedLabel(loc ? msg("event.homeIn", { place: loc[2] }) : msg("summary.listingFallback")),
   };
 }
 
@@ -239,7 +245,7 @@ function extractPayslip(t: string): Extraction {
     amount,
     merchant: merchant?.slice(0, 48),
     date: parseDate(t),
-    label: "Payslip",
+    ...generatedLabel(msg("kind.payslip")),
   };
 }
 
@@ -290,7 +296,7 @@ function extractReceipt(t: string, lower: string): Extraction {
     merchant: firstLine?.slice(0, 48),
     date: parseDate(t),
     category,
-    label: "Receipt",
+    ...generatedLabel(msg("kind.receipt")),
   };
 }
 
@@ -320,7 +326,7 @@ function extractBill(t: string, lower: string): Extraction {
     amount,
     iban,
     category: insurance ? "insurance" : "bills",
-    label: insurance ? "Insurance bill" : "Bill",
+    ...generatedLabel(msg(insurance ? "summary.insuranceBill" : "summary.bill")),
   };
 }
 
@@ -361,7 +367,7 @@ function extractNote(t: string): Extraction {
     kind: "note",
     amount,
     year,
-    label: firstLine?.slice(0, 40) || "Note",
+    ...(firstLine ? { label: firstLine.slice(0, 40) } : generatedLabel(msg("summary.note"))),
   };
 }
 

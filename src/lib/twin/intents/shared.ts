@@ -1,7 +1,7 @@
 /**
  * Shared contract for the local (0-token) what-if parsers. One module per language
  * (`en.ts`, `de.ts`, `fr.ts`, `tr.ts`) implements `IntentParser`; `index.ts` tries the active
- * locale first, then the others. Parsers return raw ops — `validateOps` in `../actions` is the
+ * locale first, then the others. Parsers return raw ops — the bounds in `../actions` are the
  * single gate that drops anything out of bounds.
  */
 import type { LifeEvent } from "@/lib/finance/types";

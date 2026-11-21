@@ -19,6 +19,7 @@ import type { Locale, MessageKey, ParamValue, Params, Text } from "./types";
 
 export interface I18n {
   locale: Locale;
+  mounted: boolean;
   setLocale: (locale: Locale) => void;
   /** Type-checked key → string. `{name}` / `{name:format}` interpolation, plurals via `params.count`. */
   t: (key: MessageKey, params?: Params) => string;
@@ -29,9 +30,10 @@ export interface I18n {
   fmt: Fmt;
 }
 
-function makeI18n(locale: Locale, setLocale: (l: Locale) => void): I18n {
+function makeI18n(locale: Locale, setLocale: (l: Locale) => void, mounted = false): I18n {
   return {
     locale,
+    mounted,
     setLocale,
     t: (key, params) => translate(locale, key, params),
     tm: (text) => translateText(locale, text),
@@ -66,11 +68,13 @@ function storedLocale(): Locale | null {
  * switches to the stored choice (`localStorage["doppel:locale"]`) or the best `navigator.languages` match.
  */
 export function I18nProvider({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
   const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
     const preferred = storedLocale() ?? detectLocale(navigator.languages?.length ? navigator.languages : [navigator.language]);
-    if (preferred !== DEFAULT_LOCALE) setLocaleState(preferred);
+    setLocaleState(preferred);
+    setMounted(true);
   }, []);
 
   useEffect(() => {
@@ -86,7 +90,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo(() => makeI18n(locale, setLocale), [locale, setLocale]);
+  const value = useMemo(() => makeI18n(locale, setLocale, mounted), [locale, setLocale, mounted]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 

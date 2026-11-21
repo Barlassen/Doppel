@@ -1,3 +1,4 @@
+import { msg, type Text } from "@/lib/i18n/types";
 import type { NaiveEstimate } from "./tokens";
 import { estimateEnergyWh, naiveReasoning, naiveSnap } from "./tokens";
 import type { DocKind, PipelineStep, SnapResult, Tier, Usage } from "@/lib/snap/types";
@@ -36,7 +37,7 @@ export interface LedgerEntry {
   id: string;
   at: number;
   kind: "snap" | "command" | "narrate";
-  title: string;
+  title: Text;
   tier: Tier | "local-parser" | "llm";
   ms: number;
   usage: Usage;
@@ -157,7 +158,7 @@ export function estimateBytesSent(payload: unknown, mode: Usage["mode"], preview
 }
 
 /** Build a ledger entry from a snap cascade result using the actual image dimensions. */
-export function entryFromSnap(name: string, r: SnapResult): LedgerEntry {
+export function entryFromSnap(name: Text, r: SnapResult): LedgerEntry {
   const rx = r as SnapResultX;
   const route: SnapRoute =
     rx.route ??
@@ -198,7 +199,7 @@ export function entryFromSnap(name: string, r: SnapResult): LedgerEntry {
     id: nextId("snap"),
     at: Date.now(),
     kind: "snap",
-    title: `Snap · ${name}`,
+    title: msg("ledger.snap", { name }),
     tier: r.tier,
     ms,
     usage: r.usage,
@@ -244,7 +245,7 @@ export function entryFromCommand(a: {
     id: nextId("cmd"),
     at: Date.now(),
     kind: "command",
-    title: `What-if · “${a.text}”`,
+    title: msg("ledger.command", { text: a.text }),
     tier: a.tier,
     ms: a.ms,
     usage: a.usage,
@@ -278,7 +279,7 @@ export function entryFromNarrate(a: {
     id: nextId("nar"),
     at: Date.now(),
     kind: "narrate",
-    title: "Private banker summary",
+    title: msg("ledger.narrate"),
     tier: "llm",
     ms: a.ms,
     usage: a.usage,

@@ -8,6 +8,9 @@ import { baseScenario, costOfWaiting, effectiveProfile, habitCosts, simInputFor 
 import type { Profile, Scenario, SimResult } from "@/lib/finance/types";
 import { applyScenarioOps, extractionToUpdate, localParseCommand, validateOps } from "@/lib/twin/actions";
 
+import { translateText, type Text } from "@/lib/i18n";
+const english = (value: Text) => translateText("en", value);
+
 const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
 const k = (x: number) => `CHF ${Math.round(x).toLocaleString("en")}`;
 
@@ -41,7 +44,7 @@ function applyRecipe(s: Scenario, r: Recipe): Scenario {
 function report(p: Profile, s: Scenario, title: string) {
   const { b, ideal, real } = headline(p, s);
   console.log(`\n=== ${title} ===`);
-  console.log(`  goal: ${p.goal.label} · retire at ${effectiveProfile(p, s).retirementAge}`);
+  console.log(`  goal: ${english(p.goal.label)} · retire at ${effectiveProfile(p, s).retirementAge}`);
   console.log(`  disciplined ${pc(ideal.successProb)} · real (headline) ${pc(real.successProb)} · crunch ${pc(real.crunchProb)} · median@goal ${k(real.medianAtGoal)} · ${real.ms.toFixed(0)} ms`);
   const input = simInputFor(p, s, b.params);
   const hc = habitCosts(input);
@@ -58,12 +61,12 @@ function report(p: Profile, s: Scenario, title: string) {
       `  home ${real.house.label} ${k(real.house.price)}: card ${c.pass ? "PASS" : "FAIL"} ${pc(c.costToIncome)} of income · equity ${k(c.equityUsed)} · max price at purchase ${k(c.maxPrice)} · sim bought in ${pc(real.house.boughtProb)} of futures`,
     );
   const w = costOfWaiting(input);
-  if (w) console.log(`  cost of waiting: ${w.map((x) => `${x.label} ${pc(x.prob)}`).join(" · ")}`);
+  if (w) console.log(`  cost of waiting: ${w.map((x) => `${english(x.label)} ${pc(x.prob)}`).join(" · ")}`);
   const sol = solveGoal(input, { spendTip: b.spendTip });
   console.log(`  solver baseProb ${pc(sol.baseProb)} (== headline: ${sol.baseProb === real.successProb}) · ${sol.ms.toFixed(0)} ms`);
   for (const rec of sol.recipes) {
     const after = headline(p, applyRecipe(s, rec)).real.successProb;
-    console.log(`    • ${rec.title} → ${rec.reaches ? "" : "improves to "}${pc(rec.newProb)} · applied headline ${pc(after)} ${after === rec.newProb ? "✓ consistent" : "✗ MISMATCH"}`);
+    console.log(`    • ${english(rec.title)} → ${rec.reaches ? "" : "improves to "}${pc(rec.newProb)} · applied headline ${pc(after)} ${after === rec.newProb ? "✓ consistent" : "✗ MISMATCH"}`);
   }
   if (sol.recipes.length === 0) console.log(`    (no recipes${sol.baseProb >= 0.8 ? " — on track" : ""})`);
   return { real, b };
@@ -80,7 +83,7 @@ for (const p of PROFILES) report(p, baseScenario(p), `${p.name} — base`);
   const u = extractionToUpdate({ kind: "listing", amount: 940_000, rooms: 4.5, location: "Zürich" }, s0.events);
   if (u.kind !== "event") throw new Error("listing should be an event");
   const s1 = applyScenarioOps(s0, validateOps(u.ops, s0.events), "snap");
-  console.log(`\n${u.summary}`);
+  console.log(`\n${english(u.summary)}`);
   const { real } = report(lukas, s1, "Lukas — after snapping the 940k Zürich listing");
   console.log(`  odds ${pc(before)} → ${pc(real.successProb)}`);
 }
@@ -96,7 +99,7 @@ for (const p of PROFILES) report(p, baseScenario(p), `${p.name} — base`);
   if (u.kind !== "income") throw new Error("payslip should be income");
   const s1: Scenario = { ...s0, income: { grossIncomeYear: u.grossIncomeYear, netIncomeMonth: u.netIncomeMonth, label: "payslip" } };
   const after = headline(lukas, s1).real.successProb;
-  console.log(`\n=== Payslip snap, Nettolohn CHF 10,300 (Lukas) ===\n  ${u.summary}`);
+  console.log(`\n=== Payslip snap, Nettolohn CHF 10,300 (Lukas) ===\n  ${english(u.summary)}`);
   console.log(`  profile before: gross ${k(lukas.grossIncomeYear)}/yr, take-home ${k(lukas.netIncomeMonth)}/mo → after: gross ${k(u.grossIncomeYear)}/yr, take-home ${k(u.netIncomeMonth)}/mo`);
   console.log(`  odds ${pc(before)} → ${pc(after)}`);
 }
@@ -112,7 +115,7 @@ for (const p of PROFILES) {
     { transactions: p.transactions, recurring: s0.recurring, marginalTaxRate: p.marginalTaxRate },
   );
   const s1 = u.kind === "recurring" ? { ...s0, recurring: [...s0.recurring, u.expense] } : s0;
-  console.log(`\n=== QR-bill premium snap (${p.name}) ===\n  ${u.summary}\n  odds ${pc(before)} → ${pc(headline(p, s1).real.successProb)}`);
+  console.log(`\n=== QR-bill premium snap (${p.name}) ===\n  ${english(u.summary)}\n  odds ${pc(before)} → ${pc(headline(p, s1).real.successProb)}`);
 }
 
 // --- Elena: what if she retires later? ---
@@ -143,7 +146,7 @@ for (const t of [
   "buy a flat in Bern for 1.2m",
   "buy a castle for 50m",
 ]) {
-  console.log(`  “${t}” → ${JSON.stringify(localParseCommand(t, lukas.events))}`);
+  console.log(`  “${t}” → ${JSON.stringify(localParseCommand(t, lukas.events), (key, value) => key === "labelMsg" ? undefined : value)}`);
 }
 console.log(
   `  validateOps rejects junk: ${JSON.stringify(

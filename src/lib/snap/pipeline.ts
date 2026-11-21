@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import jsQR from "jsqr";
+import { isMsg, msg, type Msg, type Text } from "@/lib/i18n";
 import { callTwin, type LlmResponse } from "@/lib/llm";
 import { compressForVision, cropToInk, enhanceForOcr, imageFingerprint, jpegBytes, loadImage, toCanvas } from "./image";
 import type { OcrResult } from "./ocr";
@@ -23,7 +24,7 @@ interface CacheEntry {
 
 interface SnapOptions {
   forceLlm?: boolean;
-  onProgress?: (message: string) => void;
+  onProgress?: (message: Msg) => void;
 }
 
 type Details = Partial<Pick<SnapResult, "payload" | "usage" | "usageKnown" | "ocrConfidence" | "preview">>;
@@ -53,10 +54,10 @@ function findQrBill(img: HTMLImageElement, steps: PipelineStep[]) {
   const halfY = Math.floor(h / 2);
   const halfX = Math.floor(w / 2);
   const scans = [
-    { name: "Full image", max: 1000 },
-    { name: "Bottom half", max: 1700, crop: { x: 0, y: halfY, width: w, height: h - halfY } },
-    { name: "Bottom right", max: 1700, crop: { x: halfX, y: halfY, width: w - halfX, height: h - halfY } },
-    { name: "Full resolution", max: 2000 },
+    { name: msg("step.areaFull"), max: 1000 },
+    { name: msg("step.areaBottom"), max: 1700, crop: { x: 0, y: halfY, width: w, height: h - halfY } },
+    { name: msg("step.areaBottomRight"), max: 1700, crop: { x: halfX, y: halfY, width: w - halfX, height: h - halfY } },
+    { name: msg("step.areaFullRes"), max: 2000 },
   ] as const;
   for (const scan of scans) {
     const start = performance.now();
@@ -66,9 +67,12 @@ function findQrBill(img: HTMLImageElement, steps: PipelineStep[]) {
       inversionAttempts: scan.max === 2000 ? "attemptBoth" : "dontInvert",
     });
     const bill = qr ? parseQrBill(qr.data) : null;
-    const result = bill ? "Swiss QR-bill" : qr ? "Different QR format" : "No QR code";
-    steps.push({ name: `QR scan · ${scan.name}`, ms: performance.now() - start,
-      bytes: pixels.data.byteLength, detail: `${canvas.width}×${canvas.height} · ${result}` });
+    steps.push({
+      name: msg("step.qrScan", { area: scan.name }),
+      ms: performance.now() - start,
+      bytes: pixels.data.byteLength,
+      detail: msg(bill ? "step.qrFound" : qr ? "step.qrOther" : "step.qrNone", { size: `${canvas.width}×${canvas.height}`}),
+    });
     if (bill) return bill;
   }
   return null;
@@ -111,31 +115,36 @@ function bestLocal(ocr: OcrResult): Extraction {
   return extractionRank(compact) > extractionRank(raw) ? compact : raw;
 }
 
-function ocrStep(ocr: OcrResult, name: string, ms: number): PipelineStep {
+function ocrStep(ocr: OcrResult, name: Msg, ms: number): PipelineStep {
   return {
     name, ms, bytes: utf8(ocr.compact),
-    detail: `${Math.round(ocr.confidence)}% confidence · ${ocr.keptLines}/${ocr.totalLines} lines · ${ocr.compact.length} chars`,
+    detail: msg("step.ocrDetail", { conf: ocr.confidence / 100, kept: ocr.keptLines, total: ocr.totalLines, chars: ocr.compact.length }),
   };
+}
+
+function ocrErrorDetail(error: unknown): Text {
+  if (!(error instanceof Error)) return msg("step.workerUnavailable");
+  return isMsg(error.cause) ? error.cause : error.message;
 }
 
 export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(), onProgress }: SnapOptions = {}): Promise<SnapResult> {
   const steps: PipelineStep[] = [];
   let start = performance.now();
-  onProgress?.("Decoding image…");
+  onProgress?.(msg("progress.decoding"));
   const img = await loadImage(src);
   const imageSize = { width: img.naturalWidth, height: img.naturalHeight };
-  steps.push({ name: "Decode image", ms: performance.now() - start, detail: `${imageSize.width}×${imageSize.height}`,
+  steps.push({ name: msg("step.decode"), ms: performance.now() - start, detail: `${imageSize.width}×${imageSize.height}`,
     ...(typeof src === "string" ? {} : { bytes: src.size }) });
 
   start = performance.now();
   const naiveImage = toCanvas(img, 2048).toDataURL("image/jpeg", 0.85);
-  steps.push({ name: "Prepare comparison image locally", ms: performance.now() - start, bytes: jpegBytes(naiveImage) });
+  steps.push({ name: msg("step.prepareNaive"), ms: performance.now() - start, bytes: jpegBytes(naiveImage) });
 
   start = performance.now();
   const fingerprint = imageFingerprint(img);
   const cache = readCache();
   const cached = forceLlm ? undefined : cache.find(({ hash, signature }) => hash === fingerprint.hash && signature === fingerprint.signature);
-  steps.push({ name: "Image cache", ms: performance.now() - start, detail: forceLlm ? "Bypassed for comparison" : cached ? "Repeat image · 0 tokens" : "New image" });
+  steps.push({ name: msg("step.cache"), ms: performance.now() - start, detail: msg(forceLlm ? "step.bypassed" : cached ? "step.cacheHit" : "step.cacheMiss") });
 
   function finish(tier: SnapResult["tier"], route: SnapResult["route"], extraction: Extraction, details: Details = {}): SnapResult {
     const status = extractionStatus(extraction);
@@ -152,7 +161,7 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   }
   if (cached) return finish(cached.tier, "cache", cached.extraction);
 
-  onProgress?.("Checking for a Swiss QR-bill…");
+  onProgress?.(msg("progress.qr"));
   const bill = findQrBill(img, steps);
   if (bill) {
     return finish(0, "qr", qrBillToExtraction(bill), {
@@ -164,11 +173,11 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   start = performance.now();
   const base = toCanvas(img, 1600);
   const cropped = cropToInk(base);
-  steps.push({ name: "Crop to ink", ms: performance.now() - start, bytes: cropped.width * cropped.height * 4,
+  steps.push({ name: msg("step.cropInk"), ms: performance.now() - start, bytes: cropped.width * cropped.height * 4,
     detail: `${base.width}×${base.height} → ${cropped.width}×${cropped.height}` });
   start = performance.now();
   const enhanced = enhanceForOcr(cropped);
-  steps.push({ name: "Grayscale and stretch contrast", ms: performance.now() - start });
+  steps.push({ name: msg("step.enhance"), ms: performance.now() - start });
 
   let ocr: OcrResult | undefined;
   let runOcr: typeof import("./ocr").runOcr | undefined;
@@ -176,10 +185,10 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   try {
     ({ runOcr } = await import("./ocr"));
     ocr = await runOcr(enhanced, onProgress);
-    steps.push(ocrStep(ocr, "Local OCR", performance.now() - start));
+    steps.push(ocrStep(ocr, msg("step.ocr"), performance.now() - start));
   } catch (error) {
-    steps.push({ name: "Local OCR failed", ms: performance.now() - start,
-      detail: error instanceof Error ? error.message : "Worker unavailable" });
+    steps.push({ name: msg("step.ocrFailed"), ms: performance.now() - start,
+      detail: ocrErrorDetail(error) });
   }
 
   if (ocr && ocr.confidence >= OCR_CONFIDENCE_THRESHOLD) {
@@ -190,32 +199,32 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
     const extraField = local.merchant || local.rooms || local.location || local.date;
     if (!forceLlm && confidence >= 80 && local.kind !== "other" && isAmount(local.amount) && extraField
       && (local.kind !== "receipt" || !looksLikePayslip(ocr.rawText))) {
-      steps.push({ name: "Local regex", ms: performance.now() - start, bytes: utf8(text), detail: "Accepted amount and supporting field · 0 tokens" });
+      steps.push({ name: msg("step.regex"), ms: performance.now() - start, bytes: utf8(text), detail: msg("step.regexAccepted") });
       return finish(1, "local-regex", local, { usage: { ...LOCAL_USAGE, model: "Regex (local)" }, ocrConfidence: confidence });
     }
-    steps.push({ name: "Local regex check", ms: performance.now() - start,
-      detail: forceLlm ? "Bypassed for comparison" : "Confidence or extracted fields below the local acceptance threshold" });
+    steps.push({ name: msg("step.regexCheck"), ms: performance.now() - start,
+      detail: msg(forceLlm ? "step.bypassed" : "step.regexRejected") });
 
     if (!text) return finish(1, "offline-heuristic", { kind: "other" }, { ocrConfidence: confidence });
-    onProgress?.("Extracting from compact text…");
+    onProgress?.(msg("progress.extracting"));
     start = performance.now();
     const response = await callTwin<Extraction>({ task: "extract_text", text });
-    const details = gatewayDetails(response, steps, "Small text LLM", start, utf8(text), { wouldSend: { task: "extract_text", text } });
+    const details = gatewayDetails(response, steps, msg("step.textLlm"), start, utf8(text), { wouldSend: { task: "extract_text", text } });
     if (response.ok && response.data) return finish(1, "text-llm", response.data, { ...details, ocrConfidence: confidence });
     start = performance.now();
     const extraction = bestLocal(ocr);
-    steps.push({ name: "Local heuristic fallback", ms: performance.now() - start });
+    steps.push({ name: msg("step.fallback"), ms: performance.now() - start });
     return finish(1, "offline-heuristic", extraction, { ...details, ocrConfidence: confidence });
   }
 
   start = performance.now();
   const vision = compressForVision(cropped);
-  steps.push({ name: "Compress for vision", ms: performance.now() - start, bytes: vision.bytes,
-    detail: `${vision.width}×${vision.height} grayscale JPEG` });
-  onProgress?.("Trying a small vision model…");
+  steps.push({ name: msg("step.compress"), ms: performance.now() - start, bytes: vision.bytes,
+    detail: msg("step.grayJpeg", { size: `${vision.width}×${vision.height}` }) });
+  onProgress?.(msg("progress.vision"));
   start = performance.now();
   const response = await callTwin<Extraction>({ task: "extract_image", image: vision.dataUrl });
-  const details = gatewayDetails(response, steps, "Small vision LLM", start, vision.bytes,
+  const details = gatewayDetails(response, steps, msg("step.visionLlm"), start, vision.bytes,
     { wouldSend: { task: "extract_image", image: `JPEG · ${vision.bytes} bytes` } });
   details.preview = vision.dataUrl;
   details.ocrConfidence = ocr?.confidence;
@@ -223,26 +232,26 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
 
   start = performance.now();
   let extraction: Extraction = ocr ? bestLocal(ocr) : { kind: "other" };
-  steps.push({ name: "Local heuristic fallback", ms: performance.now() - start });
+  steps.push({ name: msg("step.fallback"), ms: performance.now() - start });
   if (ocr && runOcr && extractionStatus(extraction).outcome !== "ok") {
     start = performance.now();
     try {
       const raw = await runOcr(cropped, onProgress, true);
       const candidate = bestLocal(raw);
-      steps.push(ocrStep(raw, "OCR retry on unenhanced crop", performance.now() - start));
+      steps.push(ocrStep(raw, msg("step.ocrRetry"), performance.now() - start));
       const rank = extractionRank(candidate) - extractionRank(extraction);
       if (rank > 0 || (rank === 0 && raw.confidence > ocr.confidence)) extraction = candidate;
     } catch (error) {
-      steps.push({ name: "OCR retry failed", ms: performance.now() - start,
-        detail: error instanceof Error ? error.message : "Worker unavailable" });
+      steps.push({ name: msg("step.ocrRetryFailed"), ms: performance.now() - start,
+        detail: ocrErrorDetail(error) });
     }
   }
   return finish(2, "offline-heuristic", extraction, details);
 }
 
-function gatewayDetails(response: LlmResponse<Extraction>, steps: PipelineStep[], name: string, start: number, bytes: number, wouldSend: unknown): Details {
+function gatewayDetails(response: LlmResponse<Extraction>, steps: PipelineStep[], name: Msg, start: number, bytes: number, wouldSend: unknown): Details {
   const usageKnown = response.usageKnown ?? Boolean(response.usage || response.offline);
-  steps.push({ name, ms: performance.now() - start, bytes, detail: response.offline ? "No API key · no provider call" : response.error ?? response.usage?.model });
+  steps.push({ name, ms: performance.now() - start, bytes, detail: response.offline ? msg("step.noKey") : response.error ?? response.usage?.model });
   return {
     usage: response.usage ? { ...response.usage, mode: "llm" as const } :
       { ...LOCAL_USAGE, model: usageKnown ? "Regex (local)" : "Provider usage unavailable", mode: response.offline ? "offline" : usageKnown ? "local" : "llm" },

@@ -21,9 +21,3 @@ export const chfShort = (n: number) => {
 export const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
 
 export const usd = (x: number) => (x === 0 ? "$0" : x < 0.001 ? `$${x.toFixed(6)}` : `$${x.toFixed(4)}`);
-
-export const monthToLabel = (month: number, age: number) => {
-  const d = new Date();
-  d.setMonth(d.getMonth() + month);
-  return `${d.toLocaleString("en", { month: "short" })} ${d.getFullYear()} · age ${age + Math.floor(month / 12)}`;
-};

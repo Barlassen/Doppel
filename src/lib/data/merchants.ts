@@ -22,8 +22,9 @@ const DEMO_MERCHANTS: Record<string, MessageKey> = {
 
 /** A demo merchant as a message; any other merchant (e.g. read from a receipt) stays as data. */
 export function merchantText(name: string): Text {
-  const key = DEMO_MERCHANTS[name];
-  return key ? { key } : name;
+  return Object.prototype.hasOwnProperty.call(DEMO_MERCHANTS, name)
+    ? { key: DEMO_MERCHANTS[name] }
+    : name;
 }
 
 export const categoryMsg = (c: Transaction["category"]): Msg => ({ key: `category.${c}` });

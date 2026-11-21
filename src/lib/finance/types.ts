@@ -169,6 +169,7 @@ export interface YearBand {
 export interface HouseStats {
   eventId: string;
   label: string;
+  labelMsg?: Msg;
   price: number;
   month: number;
   /** Share of futures in which the bank test passed at the purchase date and the home was bought. */

@@ -38,4 +38,6 @@ export type Params = Readonly<Record<string, ParamValue>>;
 /** Final text (data such as a file name or user input) or a message descriptor. */
 export type Text = string | Msg;
 
+export const isLocale = (value: unknown): value is Locale => LOCALES.some((locale) => locale === value);
+
 export const msg = (key: MessageKey, params?: Params): Msg => (params ? { key, params } : { key });

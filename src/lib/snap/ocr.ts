@@ -1,17 +1,18 @@
 "use client";
 
+import { msg, type Msg } from "@/lib/i18n/types";
 import type { LoggerMessage, RecognizeOptions, Worker } from "tesseract.js";
 
 const INIT_MS = 12_000;
 const RECOGNIZE_MS = 8_000;
 let workerPromise: Promise<Worker> | null = null;
 let queue = Promise.resolve();
-let report: ((message: string) => void) | undefined;
+let report: ((message: Msg) => void) | undefined;
 
-async function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+async function withDeadline<T>(work: Promise<T>, ms: number, detail: Msg): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(message)), ms)));
+    const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(detail.key, { cause: detail })), ms)));
     return await Promise.race([work, timeout]);
   } finally {
     clearTimeout(timer);
@@ -23,7 +24,7 @@ function getOcrWorker(): Promise<Worker> {
 
   let abandoned = false;
   let loading = 0;
-  report?.("Loading OCR 0%…");
+  report?.(msg("progress.ocrLoading", { p: 0 }));
   const ranges: Record<string, [number, number]> = {
     "loading tesseract core": [0, 25],
     "initializing tesseract": [25, 35],
@@ -33,20 +34,20 @@ function getOcrWorker(): Promise<Worker> {
   const logger = ({ status, progress }: LoggerMessage) => {
     if (abandoned) return;
     if (status === "recognizing text") {
-      report?.(`Reading text ${Math.round(progress * 100)}%…`);
+      report?.(msg("progress.ocrReading", { p: progress }));
       return;
     }
     const range = ranges[status];
     if (range) {
       loading = Math.max(loading, Math.round(range[0] + progress * (range[1] - range[0])));
-      report?.(`Loading OCR ${loading}%…`);
+      report?.(msg("progress.ocrLoading", { p: loading / 100 }));
     }
   };
 
   let initError: (reason: Error) => void;
   const initFailed = new Promise<never>((_, reject) => { initError = reject; });
   const starting = import("tesseract.js").then(async ({ createWorker, OEM }) => {
-    if (abandoned) throw new Error("OCR initialization canceled");
+    if (abandoned) throw new Error("step.ocrInitCanceled", { cause: msg("step.ocrInitCanceled") });
     const worker = await createWorker(["eng", "deu", "fra"], OEM.LSTM_ONLY, {
       workerPath: "/tesseract/runtime/worker.min.js",
       corePath: "/tesseract/runtime",
@@ -54,12 +55,12 @@ function getOcrWorker(): Promise<Worker> {
       workerBlobURL: false,
       cachePath: "doppel-tessdata-fast-4.1.0",
       logger,
-      errorHandler: () => initError(new Error("OCR assets or initialization failed")),
+      errorHandler: () => initError(new Error("step.ocrInitFailed", { cause: msg("step.ocrInitFailed") })),
     });
     if (abandoned) await worker.terminate();
     return worker;
   });
-  workerPromise = withDeadline(Promise.race([starting, initFailed]), INIT_MS, "OCR initialization timed out").catch((error) => {
+  workerPromise = withDeadline(Promise.race([starting, initFailed]), INIT_MS, msg("step.ocrInitTimeout")).catch((error) => {
     abandoned = true;
     workerPromise = null;
     throw error;
@@ -79,19 +80,19 @@ export interface OcrResult {
 const NOISE = /^[\W_]{0,3}$/;
 const AMOUNT_CUE = /\b(?:chf[\s:]*\d|\d+\s*k\b)|\b(?:nettolohn|net pay|salaire net|total|summe|kaufpreis)\b[^\n]*\d/i;
 
-export function runOcr(canvas: HTMLCanvasElement, progress?: (message: string) => void, sparse = false): Promise<OcrResult> {
+export function runOcr(canvas: HTMLCanvasElement, progress?: (message: Msg) => void, sparse = false): Promise<OcrResult> {
   const work = queue.then(async () => {
     report = progress;
     try {
       const worker = await getOcrWorker();
-      report?.("Reading text 0%…");
+      report?.(msg("progress.ocrReading", { p: 0 }));
       try {
         // The worker accepts Tesseract variables here, which its TS declaration omits.
         const options: Partial<RecognizeOptions> & { tessedit_pageseg_mode?: string } = sparse ? { tessedit_pageseg_mode: "11" } : {};
         const { data } = await withDeadline(
           worker.recognize(canvas, options, { text: true, blocks: true }),
           RECOGNIZE_MS,
-          "OCR recognition timed out",
+          msg("step.ocrRecognitionTimeout"),
         );
         return compactOcr(data);
       } catch (error) {

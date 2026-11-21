@@ -9,14 +9,14 @@
  *   key_one / key_other → plural family, chosen with Intl.PluralRules on `params.count`
  * Param values may be nested messages ({ key, params }) or lists (joined with " · ").
  */
-import { groupCh } from "@/lib/format";
+import { groupCh, usd } from "@/lib/format";
 import { de } from "./de";
 import { en } from "./en";
 import { fr } from "./fr";
 import { tr } from "./tr";
-import { LOCALES, type Locale, type MessageKey, type Messages, type Msg, type ParamValue, type Params, type Text } from "./types";
+import { isLocale, type Locale, type MessageKey, type Messages, type Msg, type ParamValue, type Params, type Text } from "./types";
 
-export { LOCALES, msg } from "./types";
+export { isLocale, LOCALES, msg } from "./types";
 export type { Locale, MessageKey, Messages, Msg, ParamValue, Params, Text } from "./types";
 
 export const DEFAULT_LOCALE: Locale = "en";
@@ -31,8 +31,6 @@ export const LOCALE_TAGS: Record<Locale, string> = { en: "en", de: "de-CH", fr: 
 /** Web Speech API recognition language per UI locale. */
 export const SPEECH_LANGS: Record<Locale, string> = { en: "en-US", de: "de-CH", fr: "fr-CH", tr: "tr-TR" };
 
-export const isLocale = (v: unknown): v is Locale => typeof v === "string" && (LOCALES as readonly string[]).includes(v);
-
 /** Best supported match for a list of BCP 47 tags (e.g. `navigator.languages`), else English. */
 export function detectLocale(languages: readonly string[] | undefined | null): Locale {
   for (const tag of languages ?? []) {
@@ -46,24 +44,14 @@ export const isMsg = (v: unknown): v is Msg =>
   typeof v === "object" && v !== null && !Array.isArray(v) && typeof (v as { key?: unknown }).key === "string" && !("$$typeof" in v);
 
 // ---------------------------------------------------------------------------
-// Number formatting. Deterministic on purpose (no Intl for numbers): Node and browsers ship different ICU
-// data, and the English server render must equal the first client render.
-// ---------------------------------------------------------------------------
-
+// Swiss CHF grouping is explicit because it differs across ICU versions.
 const DECIMAL: Record<Locale, string> = { en: ".", de: ".", fr: ",", tr: "," };
-
-/** Percent patterns: Swiss German/English "40%", French "40 %" (narrow no-break space), Turkish "%40". */
-const PERCENT: Record<Locale, (v: string) => string> = {
-  en: (v) => `${v}%`,
-  de: (v) => `${v}%`,
-  fr: (v) => `${v} %`,
-  tr: (v) => (v.startsWith("-") ? `-%${v.slice(1)}` : `%${v}`),
-};
 
 export interface Fmt {
   locale: Locale;
   /** CHF with Swiss grouping in every locale: "CHF 1’234". */
   chf: (n: number) => string;
+  usd: (n: number) => string;
   /** "+CHF 400" / "−CHF 400". */
   chfSigned: (n: number) => string;
   /** Compact axis label: "780k", "1.40M" (decimal mark per locale). */
@@ -91,9 +79,25 @@ export function createFmt(locale: Locale): Fmt {
   const num = (n: number, digits?: number) => dec(digits === undefined ? String(Math.round(n * 100) / 100) : n.toFixed(digits));
   const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
   let month: Intl.DateTimeFormat | undefined;
+  const percents = new Map<number, Intl.NumberFormat>();
+  const pct = (value: number, digits = 0) => {
+    let percent = percents.get(digits);
+    if (!percent) {
+      percent = new Intl.NumberFormat(locale === "fr" ? "fr" : LOCALE_TAGS[locale], {
+        style: "percent",
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+        useGrouping: false,
+      });
+      percents.set(digits, percent);
+    }
+    const text = percent.format(value);
+    return locale === "fr" ? text.replace(/\s*%/, "\u202f%") : text;
+  };
   const f: Fmt = {
     locale,
     chf,
+    usd: (n) => dec(usd(n)),
     chfSigned: (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${chf(Math.abs(n))}`,
     chfShort: (n) => {
       const a = Math.abs(n);
@@ -102,15 +106,14 @@ export function createFmt(locale: Locale): Fmt {
       return `${Math.round(n)}`;
     },
     mio: (n) => num(Math.round((n / 1e6) * 100) / 100),
-    pct: (x, digits = 0) => PERCENT[locale](dec((x * 100).toFixed(digits))),
+    pct,
     num,
     int: (n) => groupCh(Math.round(n)),
     signed: (n) => (n > 0 ? `+${num(n)}` : n < 0 ? `−${num(Math.abs(n))}` : num(0)),
     monthYear: (months, now = new Date()) => {
-      const d = new Date(now);
-      d.setMonth(d.getMonth() + months);
-      month ??= new Intl.DateTimeFormat(LOCALE_TAGS[locale], { month: "short" });
-      return `${month.format(d)} ${d.getFullYear()}`;
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + months, 1));
+      month ??= new Intl.DateTimeFormat(LOCALE_TAGS[locale], { month: "short", timeZone: "UTC" });
+      return `${month.format(d)} ${d.getUTCFullYear()}`;
     },
   };
   fmtCache.set(locale, f);
@@ -147,13 +150,18 @@ export function formatNumber(f: Fmt, n: number, format?: string): string {
 export const PLACEHOLDER = /\{(\w+)(?::(\w+))?\}/g;
 export const FORMATS = ["chf", "chfSigned", "chfShort", "mio", "pct", "pct1", "int", "num1", "signed"] as const;
 
-function lookup(dict: Messages, path: string): string | undefined {
+function lookup(dict: Messages, path: string): unknown {
   let node: unknown = dict;
   for (const part of path.split(".")) {
     if (typeof node !== "object" || node === null) return undefined;
     node = (node as Record<string, unknown>)[part];
   }
-  return typeof node === "string" ? node : undefined;
+  return node;
+}
+
+function message(dict: Messages, path: string): string | undefined {
+  const value = lookup(dict, path);
+  return typeof value === "string" ? value : undefined;
 }
 
 const pluralRules = new Map<Locale, Intl.PluralRules>();
@@ -163,12 +171,15 @@ export function template(locale: Locale, key: MessageKey, params?: Params): stri
   const dict = DICTIONARIES[locale];
   const count = params?.count;
   if (typeof count === "number") {
-    let rules = pluralRules.get(locale);
-    if (!rules) pluralRules.set(locale, (rules = new Intl.PluralRules(LOCALE_TAGS[locale])));
-    const form = lookup(dict, `${key}_${rules.select(count)}`) ?? lookup(dict, `${key}_other`);
+    const group = key.slice(0, key.lastIndexOf("."));
+    // Placeholder dictionaries reuse English groups. Match the plural rules to the copy's language.
+    const grammar = lookup(dict, group) === lookup(en, group) ? DEFAULT_LOCALE : locale;
+    let rules = pluralRules.get(grammar);
+    if (!rules) pluralRules.set(grammar, (rules = new Intl.PluralRules(LOCALE_TAGS[grammar])));
+    const form = message(dict, `${key}_${rules.select(count)}`) ?? message(dict, `${key}_other`);
     if (form !== undefined) return form;
   }
-  return lookup(dict, key) ?? lookup(dict, `${key}_other`) ?? lookup(en, key) ?? lookup(en, `${key}_other`) ?? key;
+  return message(dict, key) ?? message(dict, `${key}_other`) ?? message(en, key) ?? message(en, `${key}_other`) ?? key;
 }
 
 /** Renders a single param value to text. */

@@ -427,6 +427,7 @@ export function simulate(input: SimInput): SimResult {
     houseStats = {
       eventId: house.id,
       label: house.label,
+      labelMsg: house.labelMsg,
       price: house.amount,
       month: house.month,
       boughtProb: bought / paths,

@@ -31,7 +31,8 @@ function monthFrom(t: string, now: Date): number | undefined {
 }
 
 function parse({ text, house, now }: IntentContext): Op[] {
-  const t = stripNumberSuffixes(normalizeText(text, "tr"));
+  const t = stripNumberSuffixes(normalizeText(text, "tr"))
+    .replace(/(\d\s*)(bin|milyon)(?:a|e|u|i|dan|den|la|le)(?!\p{L})/gu, "$1$2");
   const when = monthFrom(t, now);
   const ops: Op[] = [];
 
@@ -42,7 +43,7 @@ function parse({ text, house, now }: IntentContext): Op[] {
   if (retire) ops.push({ op: "set", key: "retirementAge", value: Number(retire[1]) });
 
   // ayda 500 yatırım yap / her ay 300 yatır / aylık 500 düzenli yatırım
-  if (/yat[ıi]r|biriktir|düzenli\s+talimat/u.test(t)) {
+  if (/yat[ıi]r|biriktir|düzenli\s+talimat/u.test(t) || re(`^ayda\\s+${AMOUNT}[.!?]?$`).test(t)) {
     const m = t.match(re(`(?:${PER_MONTH})\\s+${AMOUNT}`)) ?? t.match(re(`${AMOUNT}\\s*(?:\\p{L}+\\s+)?(?:${PER_MONTH})`));
     if (m) ops.push({ op: "set", key: "monthlyInvest", value: amountValue(m[1], m[2]) });
     else if (/(atıl|boşta|bosta|kenarda|nakit)/u.test(t)) ops.push({ op: "set", key: "optimize", value: true });

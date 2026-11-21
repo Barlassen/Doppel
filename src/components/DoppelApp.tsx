@@ -23,12 +23,15 @@ import {
   extractionToUpdate,
   localParseCommand,
   validateOps,
+  validateLocalOps,
   type Op,
 } from "@/lib/twin/actions";
 import { callTwin } from "@/lib/llm";
 import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
-import { chf, monthToLabel, pct } from "@/lib/format";
+import { pct } from "@/lib/format";
+import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ConeChart } from "./ConeChart";
 import { CommandBar } from "./CommandBar";
 import { SnapPanel, type SnapItem } from "./SnapPanel";
@@ -66,18 +69,19 @@ interface Extras {
   waiting: WaitingCost[] | null;
 }
 interface Impact {
-  label: string;
+  label: Text;
   before: number;
   after: number;
 }
 interface PendingImpact {
-  label: string;
+  label: Text;
   beforeKey: string;
   afterKey: string;
   snapId?: string;
 }
 
 export default function DoppelApp() {
+  const { locale, setLocale, t, tm, rich, fmt, mounted } = useI18n();
   const [profileId, setProfileId] = useState(PROFILES[0].id);
   const base = PROFILES.find((p) => p.id === profileId)!;
 
@@ -87,10 +91,13 @@ export default function DoppelApp() {
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [inspector, setInspector] = useState(false);
   const [cmdBusy, setCmdBusy] = useState(false);
-  const [cmdMsg, setCmdMsg] = useState<string>();
-  const [narrative, setNarrative] = useState<{ text: string; loading: boolean } | null>(null);
+  const [cmdMsg, setCmdMsg] = useState<Msg>();
+  const [narrative, setNarrative] = useState<{
+    loading: boolean;
+    fallback: Msg[];
+    cloud?: { locale: Locale; text: string };
+  } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   // Profile-scoped request revision: async results that resolve after a profile switch are ignored.
   const [profileRev, setProfileRev] = useState(0);
@@ -113,8 +120,6 @@ export default function DoppelApp() {
   const mainRef = useRef(main);
   const probCache = useRef(new Map<string, number>([[main.key, main.real.successProb]]));
   const pendingImpacts = useRef<PendingImpact[]>([]);
-
-  useEffect(() => setMounted(true), []);
 
   function commitScenario(next: Scenario) {
     scenarioRef.current = next;
@@ -151,7 +156,7 @@ export default function DoppelApp() {
    * Every change to the twin goes through here. Plan A is auto-pinned to the state right before the change
    * (unless the user pinned one), and the odds delta is shown once the new futures are simulated.
    */
-  function mutate(fn: (s: Scenario) => Scenario, opts: { label: string; autoPin?: boolean; snapId?: string }) {
+  function mutate(fn: (s: Scenario) => Scenario, opts: { label: Text; autoPin?: boolean; snapId?: string }) {
     const prev = scenarioRef.current;
     const next = fn(prev);
     const pid = profileIdRef.current;
@@ -162,7 +167,7 @@ export default function DoppelApp() {
       if (p !== undefined) resolveImpact({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId }, p, p);
       return;
     }
-    if (opts.autoPin !== false && !pinRef.current?.manual) commitPin({ scenario: prev, label: `before “${opts.label}”`, manual: false });
+    if (opts.autoPin !== false && !pinRef.current?.manual) commitPin({ scenario: prev, label: msg("plan.before", { label: opts.label }), manual: false });
     pendingImpacts.current.push({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId });
     commitScenario(next);
     setNarrative(null);
@@ -171,8 +176,8 @@ export default function DoppelApp() {
   function resolveImpact(pi: PendingImpact, before: number, after: number) {
     setImpact({ label: pi.label, before, after });
     if (pi.snapId) {
-      const note = before === after ? ` · odds unchanged (${pct(after)})` : ` · odds ${pct(before)} → ${pct(after)}`;
-      setSnaps((items) => items.map((it) => (it.id === pi.snapId ? { ...it, summary: it.summary + note } : it)));
+    const odds = before === after ? msg("snap.oddsUnchanged", { p: after }) : msg("snap.oddsChanged", { before, after });
+    setSnaps((items) => items.map((it) => (it.id === pi.snapId ? { ...it, odds } : it)));
     }
   }
 
@@ -292,7 +297,7 @@ export default function DoppelApp() {
 
   // ---------------- multimodal snap ----------------
   const renderRev = profileRev;
-  function onSnap(name: string, r: SnapResult) {
+  function onSnap(name: Text, r: SnapResult) {
     setLedger((l) => [...l, entryFromSnap(name, r)]);
     if (renderRev !== profileRevRef.current) return; // snap started for another profile
     const cur = scenarioRef.current;
@@ -304,10 +309,10 @@ export default function DoppelApp() {
     });
     const id = uid();
     setSnaps((s) => [...s, { id, name, result: r, summary: update.summary }]);
-    const label = `Snap · ${name}`;
+    const label = msg("change.snap", { name });
     switch (update.kind) {
       case "event":
-        mutate((s) => applyScenarioOps(s, validateOps(update.ops, s.events), "snap"), { label, snapId: id });
+        mutate((s) => applyScenarioOps(s, validateLocalOps(update.ops, s.events), "snap"), { label, snapId: id });
         break;
       case "transaction":
         mutate((s) => ({ ...s, extraTx: [...s.extraTx, update.tx] }), { label, snapId: id, autoPin: false });
@@ -319,7 +324,7 @@ export default function DoppelApp() {
         mutate(
           (s) => ({
             ...s,
-            income: { grossIncomeYear: update.grossIncomeYear, netIncomeMonth: update.netIncomeMonth, label: `Payslip ${chf(update.payslipNet)} net` },
+            income: { grossIncomeYear: update.grossIncomeYear, netIncomeMonth: update.netIncomeMonth, label: msg("pill.payslip", { net: update.payslipNet }) },
           }),
           { label, snapId: id },
         );
@@ -335,9 +340,9 @@ export default function DoppelApp() {
     setCmdBusy(true);
     setCmdMsg(undefined);
     const t0 = performance.now();
-    const local = localParseCommand(text, scenarioRef.current.events);
+    const local = localParseCommand(text, scenarioRef.current.events, new Date(), locale);
     let ops: Op[] | null = local;
-    let msg: string | undefined;
+    let status: Msg;
 
     if (local) {
       setLedger((l) => [
@@ -351,7 +356,7 @@ export default function DoppelApp() {
           stateChars,
         }),
       ]);
-      msg = "Parsed locally · 0 tokens";
+      status = msg("cmd.parsedLocally");
     } else {
       const now = new Date().toISOString().slice(0, 7);
       const r = await callTwin<{ ops: unknown }>({ task: "command", text, now, events: compactEvents(scenarioRef.current.events) });
@@ -369,10 +374,10 @@ export default function DoppelApp() {
         ]);
         // Validate against the CURRENT events (the twin may have changed while the model was thinking).
         ops = validateOps(r.data.ops, scenarioRef.current.events);
-        msg = ops.length ? `Parsed by ${r.usage?.model ?? "LLM"}` : "The model's answer contained no valid change.";
+        status = ops.length ? msg("cmd.parsedBy", { model: r.usage?.model ?? "LLM" }) : msg("cmd.noValidChange");
       } else {
         ops = null;
-        msg = r.offline ? "I couldn't parse that offline. Add an OPENROUTER_API_KEY to handle free-form questions." : `LLM error: ${r.error}`;
+        status = r.offline ? msg("cmd.offline") : msg("cmd.llmError", { error: r.error ?? "" });
       }
     }
 
@@ -382,47 +387,57 @@ export default function DoppelApp() {
     }
     if (ops && ops.length) {
       const valid = ops;
-      mutate((s) => applyScenarioOps(s, validateOps(valid, s.events), "command"), { label: text });
-      msg = `${msg} · ${describeOps(valid)}`;
+      mutate((s) => applyScenarioOps(s, valid, "command"), { label: text });
+      status = msg("cmd.result", { status, ops: describeOps(valid) });
     }
-    setCmdMsg(msg);
+    setCmdMsg(status);
     setCmdBusy(false);
   }
 
   // ---------------- private banker narration ----------------
   async function narrate() {
     const rev = profileRevRef.current;
-    setNarrative({ text: "", loading: true });
+    setNarrative({ fallback: [], loading: true });
     const top = recipes[0];
     const ret = real.retirement;
+    const fallback = templateNarrative({
+      goal: effProfile.goal.label,
+      odds: real.successProb,
+      ideal: ideal.successProb,
+      home: affordability,
+      habit: behavior.insights[0]?.title,
+      habitCost: Math.max(0, behaviorCost),
+      retirement: ret,
+      best: top,
+    });
     const facts = {
       client: `${effProfile.name}, ${effProfile.age}, ${effProfile.city}`,
-      goal: `${effProfile.goal.label} (${GOAL_DEFINITION})`,
+      goal: `${translateText("en", effProfile.goal.label)} (${GOAL_DEFINITION})`,
       odds_with_habits: pct(real.successProb),
       odds_disciplined: pct(ideal.successProb),
       habit_cost_chf: Math.round(Math.max(0, behaviorCost)),
-      top_habit: behavior.insights[0]?.title,
+      top_habit: translateText("en", behavior.insights[0]?.title) || undefined,
       cash_crunch_risk: pct(real.crunchProb),
       home: affordability && house
         ? { price: house.price, passes: affordability.pass, cost_to_income: pct(affordability.costToIncome, 1), max_price_at_purchase: affordability.maxPrice, bought_in: pct(house.boughtProb) }
         : null,
       retirement: ret ? { age: ret.age, savings_last_to_90: pct(ret.lastsTo90Prob), pension_income_month: Math.round(ret.monthlyIncomeAtRetirement) } : null,
-      best_move: top ? `${top.title} → ${pct(top.newProb)}` : null,
+      best_move: top ? `${translate("en", "narr.bestMove", { title: top.title, odds: top.newProb })}` : null,
     };
     const t0 = performance.now();
-    const r = await callTwin<string>({ task: "narrate", facts });
-    let text: string;
+    const request = { task: "narrate", lang: locale, facts };
+    const r = await callTwin<string>(request);
+    let cloud: { locale: Locale; text: string } | undefined;
     let usage: Usage;
     if (r.ok && typeof r.data === "string") {
-      text = r.data;
+      cloud = { locale, text: r.data };
       usage = { ...r.usage!, mode: "llm" };
     } else {
-      text = templateNarrative(facts);
       usage = { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "template (offline)", mode: "offline" };
     }
-    setLedger((l) => [...l, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: facts }, ms: performance.now() - t0, stateChars })]);
+    setLedger((l) => [...l, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: request }, ms: performance.now() - t0, stateChars })]);
     if (rev !== profileRevRef.current) return;
-    setNarrative({ text, loading: false });
+    setNarrative({ fallback, cloud, loading: false });
   }
 
   function applyRecipe(r: Recipe) {
@@ -439,7 +454,7 @@ export default function DoppelApp() {
     );
   }
 
-  const set = (ops: Op[], label: string) => mutate((s) => applyScenarioOps(s, validateOps(ops, s.events)), { label });
+  const set = (ops: Op[], label: Text) => mutate((s) => applyScenarioOps(s, validateOps(ops, s.events)), { label });
 
   const probColor = real.successProb >= 0.8 ? "text-good" : real.successProb >= 0.5 ? "text-warn" : "text-bad";
   const hasOverrides =
@@ -449,36 +464,41 @@ export default function DoppelApp() {
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-2 sm:grid-cols-[auto_1fr_auto_auto] sm:gap-3 sm:py-3">
           <div className="flex items-center gap-2">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
+            <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
             <span className="font-serif text-2xl leading-none">Doppel</span>
           </div>
-          <div className="ml-2 hidden rounded-full border border-line p-0.5 sm:flex">
+          <div className="flex items-center justify-self-end rounded-full border border-line p-0.5" role="group" aria-label={t("lang.switcher")}>
+            {LOCALES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                lang={LOCALE_TAGS[option]}
+                aria-label={LOCALE_NAMES[option]}
+                aria-pressed={locale === option}
+                onClick={() => setLocale(option)}
+                className={`rounded-full px-2 py-1 text-[11px] font-medium ${locale === option ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
+              >
+                {option.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1 sm:gap-0 sm:rounded-full sm:border sm:border-line sm:p-0.5" role="group" aria-label={t("header.profiles")}>
             {PROFILES.map((p) => (
               <button
                 key={p.id}
                 onClick={() => switchProfile(p.id)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${p.id === profileId ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
+                aria-pressed={p.id === profileId}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${p.id === profileId ? "bg-ink text-bg" : "border border-line text-ink-2 hover:text-ink sm:border-transparent"}`}
               >
                 {p.name}
               </button>
             ))}
           </div>
-          <div className="ml-auto">
+          <div className="justify-self-end">
             <FrugalBadge entries={ledger} onClick={() => setInspector(true)} />
           </div>
-        </div>
-        <div className="flex gap-1 px-4 pb-2 sm:hidden">
-          {PROFILES.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => switchProfile(p.id)}
-              className={`rounded-full px-3 py-1 text-xs font-medium ${p.id === profileId ? "bg-ink text-bg" : "border border-line text-ink-2"}`}
-            >
-              {p.name}
-            </button>
-          ))}
         </div>
       </header>
 
@@ -486,43 +506,41 @@ export default function DoppelApp() {
         {/* Hero */}
         <div className="mb-6">
           <div className="label">
-            {effProfile.name}, {effProfile.age} · {effProfile.city} · {effProfile.tagline}
+            {t("hero.who", { name: effProfile.name, age: effProfile.age, city: effProfile.city, tagline: effProfile.tagline })}
           </div>
           <h1 className="mt-1 font-serif text-4xl leading-tight sm:text-5xl">
-            {effProfile.goal.label}:{" "}
-            <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{pct(real.successProb)}</span>
+            {t("hero.goal", { goal: effProfile.goal.label })}{" "}
+            <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{fmt.pct(real.successProb)}</span>
           </h1>
           <p className="mt-1 text-sm text-ink-2">
-            Disciplined you would be at <b className="num text-ink">{pct(ideal.successProb)}</b>. Net worth today{" "}
-            <b className="num text-ink">{chf(netWorthToday)}</b> <span className="text-ink-3">(incl. pillar 2 &amp; 3a; the goal also counts home equity)</span>.
-            Cash-crunch risk <b className="num text-ink">{pct(real.crunchProb)}</b>.{" "}
-            {mounted && (
-              <>
-                {real.paths.toLocaleString("en")} futures to age 90 simulated in <span className="num">{Math.round(real.ms)}</span> ms, in your
-                browser.
-              </>
-            )}
+            {rich("hero.disciplined", { odds: <b className="num text-ink">{fmt.pct(ideal.successProb)}</b> })}{" "}
+            {rich("hero.netWorth", { amount: <b className="num text-ink">{fmt.chf(netWorthToday)}</b> })}{" "}
+            <span className="text-ink-3">{t("hero.netWorthNote")}</span>{" "}
+            {rich("hero.crunch", { risk: <b className="num text-ink">{fmt.pct(real.crunchProb)}</b> })}
+            {mounted && <>{" "}{rich("hero.simulated", {
+              paths: new Intl.NumberFormat(locale).format(real.paths),
+              ms: <span className="num">{Math.round(real.ms)}</span>,
+            })}</>}
           </p>
           {impact && (
             <p className="mt-1 text-sm">
-              <span className="text-ink-3">↳ {impact.label}: </span>
+              <span className="text-ink-3">{t("impact.line", { label: impact.label })}</span>
               <b className="num">
-                {pct(impact.before)} → {pct(impact.after)}
+                {t("common.arrow", { before: fmt.pct(impact.before), after: fmt.pct(impact.after) })}
               </b>{" "}
               <span className={`num text-xs ${impact.after > impact.before ? "text-good" : impact.after < impact.before ? "text-bad" : "text-ink-3"}`}>
-                ({impact.after >= impact.before ? "+" : "−"}
-                {Math.abs(Math.round((impact.after - impact.before) * 100))} pp)
+                {t("common.deltaPp", { value: (impact.after >= impact.before ? "+" : "−") + fmt.int(Math.abs(Math.round((impact.after - impact.before) * 100))) })}
               </span>
             </p>
           )}
           <div className="mt-4 flex flex-col gap-3">
             <InvestControls
               risk={effProfile.riskProfile}
-              onRisk={(r: RiskProfile) => set([{ op: "set", key: "riskProfile", value: r }], `${r} portfolio`)}
+              onRisk={(r: RiskProfile) => set([{ op: "set", key: "riskProfile", value: r }], msg("change.riskProfile", { risk: msg(`risk.${r}`) }))}
               contributes3a={effProfile.contributes3a || scenario.optimize}
-              on3a={(v) => set([{ op: "set", key: "contributes3a", value: v }], v ? "Max out 3a" : "Stop 3a")}
+              on3a={(v) => set([{ op: "set", key: "contributes3a", value: v }], msg(v ? "change.max3a" : "change.stop3a"))}
               monthlyInvest={scenario.monthlyInvest}
-              onClearInvest={() => set([{ op: "set", key: "monthlyInvest", value: 0 }], "Stop standing order")}
+              onClearInvest={() => set([{ op: "set", key: "monthlyInvest", value: 0 }], msg("change.stopStandingOrder"))}
               panicHistory={effProfile.history.soldInDrawdown}
               marginalTaxRate={effProfile.marginalTaxRate}
             />
@@ -532,7 +550,7 @@ export default function DoppelApp() {
                 a={planAResult}
                 b={real}
                 goalAge={effProfile.goal.age}
-                onPin={() => commitPin({ scenario: scenarioRef.current, label: "pinned plan", manual: true })}
+                onPin={() => commitPin({ scenario: scenarioRef.current, label: msg("plan.pinned"), manual: true })}
                 onUnpin={() => commitPin(null)}
               />
             </div>
@@ -548,8 +566,8 @@ export default function DoppelApp() {
           <div className="space-y-5">
             <section className="card p-4 sm:p-5">
               <div className="mb-3 flex items-baseline justify-between gap-2">
-                <div className="label">Net worth incl. pension &amp; home equity, today&apos;s CHF</div>
-                <span className="text-[11px] text-ink-3">Monte Carlo · deterministic engine · 0 tokens</span>
+                <div className="label">{t("chart.title")}</div>
+                <span className="text-[11px] text-ink-3">{t("chart.engine")}</span>
               </div>
               <ConeChart
                 real={real}
@@ -557,7 +575,7 @@ export default function DoppelApp() {
                 goal={effProfile.goal}
                 planA={planAResult && planAResult !== real ? planAResult : null}
                 retirementAge={effProfile.retirementAge}
-                eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), label: e.label }))}
+                eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
               />
               <div className="mt-4 border-t border-line pt-4">
                 <Timeline
@@ -565,36 +583,31 @@ export default function DoppelApp() {
                   age={effProfile.age}
                   onShift={(id, m) => {
                     const e = scenario.events.find((x) => x.id === id);
-                    set([{ op: "shift", id, months: m }], `${e?.label ?? "Event"} ${m > 0 ? "+" : "−"}${Math.abs(m)} months`);
+                    set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
                   }}
                   onRemove={(id) => {
                     const e = scenario.events.find((x) => x.id === id);
-                    set([{ op: "remove", id }], `Remove ${e?.label ?? "event"}`);
+                    set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
                   }}
                 />
               </div>
               {hasOverrides && (
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
                   {scenario.expenseDelta !== 0 && (
-                    <Pill onClear={() => mutate((s) => ({ ...s, expenseDelta: 0 }), { label: "Reset spending" })}>
-                      Spending {scenario.expenseDelta > 0 ? "+" : "−"}
-                      {chf(Math.abs(scenario.expenseDelta))}/mo
-                    </Pill>
+                    <Pill label={msg("pill.spending", { amount: scenario.expenseDelta })}
+                      onClear={() => mutate((s) => ({ ...s, expenseDelta: 0 }), { label: msg("change.resetSpending") })} />
                   )}
                   {scenario.optimize && (
-                    <Pill onClear={() => mutate((s) => ({ ...s, optimize: false }), { label: "Stop investing idle cash" })}>
-                      Idle cash invested + 3a maxed
-                    </Pill>
+                    <Pill label={msg("pill.optimize")}
+                      onClear={() => mutate((s) => ({ ...s, optimize: false }), { label: msg("change.stopIdle") })} />
                   )}
                   {scenario.income && (
-                    <Pill onClear={() => mutate((s) => ({ ...s, income: null }), { label: "Remove payslip" })}>
-                      {scenario.income.label} → gross {chf(scenario.income.grossIncomeYear)}/yr, take-home {chf(scenario.income.netIncomeMonth)}/mo
-                    </Pill>
+                    <Pill label={msg("pill.income", { label: scenario.income.label, gross: scenario.income.grossIncomeYear, net: scenario.income.netIncomeMonth })}
+                      onClear={() => mutate((s) => ({ ...s, income: null }), { label: msg("change.removePayslip") })} />
                   )}
                   {scenario.recurring.map((r) => (
-                    <Pill key={r.id} onClear={() => mutate((s) => ({ ...s, recurring: s.recurring.filter((x) => x.id !== r.id) }), { label: `Remove ${r.label}` })}>
-                      {r.label} +{chf(r.monthly)}/mo
-                    </Pill>
+                    <Pill key={r.id} label={msg("pill.recurring", { label: r.label, amount: r.monthly })}
+                      onClear={() => mutate((s) => ({ ...s, recurring: s.recurring.filter((x) => x.id !== r.id) }), { label: msg("change.removeItem", { label: r.label }) })} />
                   ))}
                 </div>
               )}
@@ -602,20 +615,24 @@ export default function DoppelApp() {
 
             <section className="card p-4 sm:p-5">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="label">Your private banker</div>
+                <div className="label">{t("banker.title")}</div>
                 <button
                   onClick={narrate}
                   disabled={narrative?.loading}
                   className="rounded-full border border-line px-3 py-1 text-xs font-medium transition hover:border-ink-3 disabled:opacity-50"
                 >
-                  {narrative ? "Refresh" : "Explain my situation"}
+                  {t(narrative ? "banker.refresh" : "banker.explain")}
                 </button>
               </div>
-              {narrative?.loading && <p className="pulse-soft text-sm text-ink-3">Reading the numbers…</p>}
-              {narrative && !narrative.loading && <p className="font-serif text-xl leading-snug">“{narrative.text}”</p>}
+              {narrative?.loading && <p className="pulse-soft text-sm text-ink-3">{t("banker.loading")}</p>}
+              {narrative && !narrative.loading && (
+                <p className="font-serif text-xl leading-snug">{t("common.quote", {
+                  text: narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" "),
+                })}</p>
+              )}
               {!narrative && (
                 <p className="text-sm text-ink-3">
-                  One short call with only the final numbers (~150 tokens). The model explains; it never calculates.
+                  {t("banker.hint")}
                 </p>
               )}
             </section>
@@ -636,8 +653,8 @@ export default function DoppelApp() {
             {affordability && house && (
               <AffordabilityCard
                 result={affordability}
-                label={house.label}
-                when={monthToLabel(house.month, effProfile.age).split(" · ")[0]}
+                label={house.labelMsg ?? house.label}
+                month={house.month}
                 boughtProb={house.boughtProb}
               />
             )}
@@ -645,7 +662,7 @@ export default function DoppelApp() {
               stats={real.retirement}
               retirementAge={effProfile.retirementAge}
               disabled={!fresh}
-              onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], `Retire at ${age}`)}
+              onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], msg("change.retireAt", { age }))}
             />
             <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
           </div>
@@ -657,32 +674,33 @@ export default function DoppelApp() {
   );
 }
 
-function Pill({ children, onClear }: { children: React.ReactNode; onClear: () => void }) {
+function Pill({ label, onClear }: { label: Msg; onClear: () => void }) {
+  const { t, tm } = useI18n();
   return (
     <span className="flex items-center gap-1 rounded-full bg-surface-2 py-1 pr-1 pl-3">
-      {children}
-      <button onClick={onClear} className="rounded-full px-1.5 text-ink-3 hover:text-ink">
+      {tm(label)}
+      <button onClick={onClear} aria-label={t("pill.clear", { label })} className="rounded-full px-1.5 text-ink-3 hover:text-ink">
         ✕
       </button>
     </span>
   );
 }
 
-function templateNarrative(f: {
-  goal: string;
-  odds_with_habits: string;
-  odds_disciplined: string;
-  habit_cost_chf: number;
-  top_habit?: string;
-  home: { passes: boolean; max_price_at_purchase: number } | null;
-  retirement: { age: number; savings_last_to_90: string } | null;
-  best_move: string | null;
-}) {
-  const parts = [`Your goal (${f.goal}) currently has a ${f.odds_with_habits} chance; with steadier habits it would be ${f.odds_disciplined}.`];
-  if (f.home && !f.home.passes)
-    parts.push(`The home does not pass the bank's test yet — at the purchase date you could finance up to ${chf(f.home.max_price_at_purchase)}.`);
-  else if (f.top_habit) parts.push(`The biggest drag is “${f.top_habit}”, worth about ${chf(f.habit_cost_chf)} by your goal date.`);
-  if (f.retirement) parts.push(`Retiring at ${f.retirement.age}, your savings last to 90 in ${f.retirement.savings_last_to_90} of futures.`);
-  if (f.best_move) parts.push(`Next step: ${f.best_move}.`);
-  return parts.join(" ");
+function templateNarrative(facts: {
+  goal: Msg;
+  odds: number;
+  ideal: number;
+  home: { pass: boolean; maxPrice: number } | null;
+  habit?: Msg;
+  habitCost: number;
+  retirement?: SimResult["retirement"];
+  best?: Recipe;
+}): Msg[] {
+  const { goal, odds, ideal, home, habit, habitCost, retirement, best } = facts;
+  const parts = [msg("narr.goal", { goal, odds, ideal })];
+  if (home && !home.pass) parts.push(msg("narr.homeFails", { max: home.maxPrice }));
+  else if (habit) parts.push(msg("narr.topHabit", { habit, cost: habitCost }));
+  if (retirement) parts.push(msg("narr.retirement", { age: retirement.age, odds: retirement.lastsTo90Prob }));
+  if (best) parts.push(msg("narr.nextStep", { move: msg("narr.bestMove", { title: best.title, odds: best.newProb }) }));
+  return parts;
 }
