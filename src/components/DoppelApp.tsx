@@ -29,6 +29,7 @@ import {
 import { callTwin } from "@/lib/llm";
 import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
+import type { FloorPlanVerification } from "@/lib/snap/vision";
 import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -88,6 +89,7 @@ export default function DoppelApp() {
   const [scenario, setScenario] = useState<Scenario>(() => baseScenario(PROFILES[0]));
   const [pin, setPin] = useState<(PinnedPlan & { scenario: Scenario }) | null>(null);
   const [snaps, setSnaps] = useState<SnapItem[]>([]);
+  const [floorPlan, setFloorPlan] = useState<FloorPlanVerification | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [inspector, setInspector] = useState(false);
   const [cmdBusy, setCmdBusy] = useState(false);
@@ -148,6 +150,7 @@ export default function DoppelApp() {
     pendingImpacts.current = [];
     setImpact(null);
     setSnaps([]);
+    setFloorPlan(null);
     setNarrative(null);
     setCmdMsg(undefined);
   }
@@ -300,6 +303,8 @@ export default function DoppelApp() {
   function onSnap(name: Text, r: SnapResult) {
     setLedger((l) => [...l, entryFromSnap(name, r)]);
     if (renderRev !== profileRevRef.current) return; // snap started for another profile
+    if (r.extraction.vision?.kind === "floorplan") setFloorPlan(r.extraction.vision.floorPlan);
+    else if (r.extraction.kind === "listing") setFloorPlan(null);
     const cur = scenarioRef.current;
     const update = extractionToUpdate(r.extraction, cur.events, new Date(), {
       transactions: base.transactions,
@@ -656,6 +661,7 @@ export default function DoppelApp() {
                 label={house.labelMsg ?? house.label}
                 month={house.month}
                 boughtProb={house.boughtProb}
+                floorPlan={floorPlan}
               />
             )}
             <RetirementCard

@@ -24,6 +24,8 @@ const ROUTE_STYLE: Record<LedgerRoute, string> = {
   "local-parser": "bg-good/15 text-good",
   "text-llm": "bg-warn/15 text-warn",
   "vision-llm": "bg-s1/15 text-s1",
+  "vision-plan": "bg-s1/15 text-s1",
+  "vision-chart": "bg-s1/15 text-s1",
   "offline-heuristic": "bg-surface-2 text-ink-2 border border-line",
   "offline-template": "bg-surface-2 text-ink-2 border border-line",
 };
@@ -618,9 +620,19 @@ function EntryRow({
             </div>
           )}
 
+          {e.visionReason && (
+            <div className="rounded-lg border border-s1/30 bg-s1/5 p-2.5">
+              <div className="text-[11px] font-semibold text-s1">{t("vision.whyHeading")}</div>
+              <div className="mt-0.5 break-words text-ink">{tm(e.visionReason)}</div>
+            </div>
+          )}
+
           {e.preview && (
             <div>
-              <div className="mb-1 text-ink-3">{t("inspector.previewTitle")}</div>
+              <div className="mb-1 text-ink-3">
+                {t("inspector.previewTitle")}
+                {e.cropSize ? ` (${e.cropSize.width}×${e.cropSize.height})` : ""}
+              </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={e.preview} alt={t("inspector.previewAlt")} className="h-32 rounded border border-line" />
             </div>

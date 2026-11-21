@@ -27,7 +27,7 @@ interface SnapOptions {
   onProgress?: (message: Msg) => void;
 }
 
-type Details = Partial<Pick<SnapResult, "payload" | "usage" | "usageKnown" | "ocrConfidence" | "preview">>;
+type Details = Partial<Pick<SnapResult, "payload" | "usage" | "usageKnown" | "ocrConfidence" | "preview" | "visionReason" | "cropSize">>;
 
 function readCache(): CacheEntry[] {
   try {
@@ -189,6 +189,21 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   } catch (error) {
     steps.push({ name: msg("step.ocrFailed"), ms: performance.now() - start,
       detail: ocrErrorDetail(error) });
+  }
+
+  // --- Vision document-type hook (floor plans & charts routed by structure, not OCR failure) ---
+  const { tryVisionSnap } = await import("./vision");
+  const visionResult = await tryVisionSnap(cropped, ocr, steps, onProgress);
+  if (visionResult) {
+    return finish(2, visionResult.route, visionResult.extraction, {
+      usage: visionResult.usage,
+      usageKnown: visionResult.usageKnown,
+      payload: visionResult.payload,
+      preview: visionResult.preview,
+      ocrConfidence: ocr?.confidence,
+      visionReason: visionResult.visionReason,
+      cropSize: visionResult.cropSize,
+    });
   }
 
   if (ocr && ocr.confidence >= OCR_CONFIDENCE_THRESHOLD) {

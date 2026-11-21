@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { DOC_KINDS, MAX_AMOUNT, isAmount, type DocKind, type Extraction, type SnapResult } from "@/lib/snap/types";
 import { TierChip } from "./Inspector";
+import { VisionReviewCard } from "./VisionReview";
 
 import { msg, type Msg, type Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -13,6 +14,7 @@ const SAMPLES = [
   { id: "receipt", file: "/samples/receipt.svg" },
   { id: "payslip", file: "/samples/payslip.svg" },
   { id: "note", file: "/samples/note.svg" },
+  { id: "plan", file: "/samples/vision/plan-cad-areas.svg" },
 ] as const;
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -149,10 +151,17 @@ export function SnapPanel({ onResult, items, forceLlm }: {
 
       {error && <p role="alert" className="mt-3 text-xs text-bad">{tm(error)}</p>}
       {review && (
-        <ReviewCard review={review} onDiscard={closeReview} onConfirm={(extraction) => {
-          onResult(review.name, { ...review.result, extraction });
-          closeReview();
-        }} />
+        review.result.extraction.vision ? (
+          <VisionReviewCard name={review.name} result={review.result} onDiscard={closeReview} onConfirm={(extraction) => {
+            onResult(review.name, { ...review.result, extraction });
+            closeReview();
+          }} />
+        ) : (
+          <ReviewCard review={review} onDiscard={closeReview} onConfirm={(extraction) => {
+            onResult(review.name, { ...review.result, extraction });
+            closeReview();
+          }} />
+        )
       )}
 
       {items.length > 0 && (

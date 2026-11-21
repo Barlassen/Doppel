@@ -4,7 +4,7 @@ import { estimateEnergyWh, naiveReasoning, naiveSnap } from "./tokens";
 import type { DocKind, PipelineStep, SnapResult, Tier, Usage } from "@/lib/snap/types";
 
 export type SnapOutcome = "ok" | "partial" | "failed";
-export type SnapRoute = "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "offline-heuristic";
+export type SnapRoute = "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "vision-plan" | "vision-chart" | "offline-heuristic";
 export type LedgerRoute = SnapRoute | "local-parser" | "offline-template";
 
 /**
@@ -55,6 +55,8 @@ export interface LedgerEntry {
   extractedAmount?: number;
   extractedKind?: DocKind;
   imageSize?: { width: number; height: number };
+  visionReason?: Text;
+  cropSize?: { width: number; height: number };
 }
 
 export type ExclusionReason = "offline" | "failed" | "usage-unknown";
@@ -216,6 +218,8 @@ export function entryFromSnap(name: Text, r: SnapResult): LedgerEntry {
     extractedAmount: r.extraction.amount,
     extractedKind: r.extraction.kind,
     imageSize: r.imageSize,
+    visionReason: r.visionReason,
+    cropSize: r.cropSize,
   };
 }
 
