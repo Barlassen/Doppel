@@ -1,4 +1,6 @@
 export type DocKind = "listing" | "receipt" | "bill" | "payslip" | "note" | "other";
+export const DOC_KINDS: readonly DocKind[] = ["listing", "receipt", "bill", "payslip", "note", "other"];
+export const MAX_AMOUNT = 50_000_000;
 
 /** Structured result of any tier. Small on purpose: this is all the twin needs. */
 export interface Extraction {
@@ -22,6 +24,7 @@ export interface PipelineStep {
   name: string;
   ms: number;
   detail?: string;
+  bytes?: number;
 }
 
 export interface Usage {
@@ -36,11 +39,26 @@ export interface Usage {
 export interface SnapResult {
   tier: Tier;
   extraction: Extraction;
+  outcome: "ok" | "partial" | "failed";
+  route: "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "offline-heuristic";
   steps: PipelineStep[];
   usage: Usage;
+  usageKnown: boolean;
   /** What actually left the browser (image data truncated for display). */
   payload: unknown;
   ocrConfidence?: number;
   imageSize: { width: number; height: number };
   preview?: string;
+  naiveImage?: string;
+  fieldsMissing?: string[];
+}
+
+export function isAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_AMOUNT;
+}
+
+export function extractionStatus(extraction: Extraction): Pick<SnapResult, "outcome" | "fieldsMissing"> {
+  if (extraction.kind === "other") return { outcome: "failed", fieldsMissing: ["kind", "amount"] };
+  if (!isAmount(extraction.amount)) return { outcome: "partial", fieldsMissing: ["amount"] };
+  return { outcome: "ok" };
 }
