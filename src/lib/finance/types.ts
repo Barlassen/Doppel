@@ -49,6 +49,24 @@ export interface Transaction {
 }
 
 /**
+ * One investment order from a broker or pillar 3a statement. Trades (not hand-set flags) drive the investing side
+ * of the behavioural twin: see `deriveInvestBehavior()` in `investBehavior.ts`.
+ */
+export interface InvestmentTrade {
+  date: string; // ISO yyyy-mm-dd
+  account: "broker" | "3a";
+  /** Display name of the security, e.g. "Vanguard FTSE All-World (VWRL)". Data, never translated. */
+  instrument: string;
+  /** "stock" = a single company; "fund" (default) = a diversified fund or ETF. */
+  kind?: "fund" | "stock";
+  side: "buy" | "sell";
+  amount: number; // CHF, positive for buys and sells
+  units?: number;
+  /** CHF per unit at execution. */
+  price?: number;
+}
+
+/**
  * The goal is measured on **net worth incl. pension & home equity**, in today's CHF:
  * cash + portfolio + pillar 3a + pillar 2 (vested benefits) + (home value − mortgage).
  * After retirement, pillar 2 is shown as the remaining value of the annuity it was converted into.
@@ -81,7 +99,7 @@ export interface Profile {
   pillar2: number;
   pillar3a: number;
   contributes3a: boolean;
-  /** Share of the monthly surplus the person actually invests (rest sits as cash). */
+  /** Share of the monthly surplus the person actually invests (rest sits as cash). Derived from `trades`. */
   investShare: number;
   marginalTaxRate: number;
   riskProfile: RiskProfile;
@@ -89,7 +107,9 @@ export interface Profile {
   goal: Goal;
   events: LifeEvent[];
   transactions: Transaction[];
-  /** Observed history used by the behavioural engine. */
+  /** Broker and pillar 3a orders over the same window as `transactions`. */
+  trades: InvestmentTrade[];
+  /** Observed history used by the behavioural engine (derived from `trades` for the built-in accounts). */
   history: {
     soldInDrawdown: boolean;
     drawdownSellPct: number; // share of equities sold in last big drawdown

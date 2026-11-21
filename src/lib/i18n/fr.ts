@@ -38,12 +38,23 @@ export const fr = {
 
   header: {
     profiles: "Profil démo",
+    accounts: "Compte",
+    switchAria: "Changer de compte (actuel : {name})",
+    menu: "Comptes",
+    reset: "Rétablir les données d’origine",
+    resetHint: "Supprime les tickets scannés et les simulations de ce compte.",
+    localChanges_one: "{count} ajout local",
+    localChanges_other: "{count} ajouts locaux",
+    netWorth: "Fortune nette {amount:chf}",
   },
 
   profile: {
-    lukas: { tagline: "Ingénieur logiciel · vise un premier achat" },
-    elena: { tagline: "Famille de quatre · rêve d’une retraite à 58 ans" },
+    barlas: { tagline: "Développeur junior · investit par ordre permanent" },
+    meric: { tagline: "Spécialiste marketing · épargne pour un appartement" },
+    oktay: { tagline: "Coordinateur logistique · dépense tout ce qui rentre" },
+    user: { tagline: "Vos propres données" },
     goal: "CHF {target:mio} M de fortune nette à {age} ans",
+    goalK: "Fortune nette de CHF {target:chfShort} à {age} ans",
   },
 
   merchant: {
@@ -76,6 +87,7 @@ export const fr = {
 
   event: {
     flatIn: "Appart. à {place}",
+    tripTo: "Voyage à {place}",
     universityFor: "Université pour {name}",
     home: "Achat d’un logement",
     listingHome: "logement",
@@ -286,10 +298,34 @@ export const fr = {
     subsTitle_one: "{count} abonnement récurrent",
     subsTitle_other: "{count} abonnements récurrents",
     subsList: "{items}",
+    subsOverlap: "{items}. Dont {count} services de streaming qui se recoupent.",
     subsItem: "{merchant} · CHF {amount}",
     panicTitle: "Ventes lors des replis boursiers",
     panicDetail:
       "Lors de la dernière forte baisse, vous avez vendu {sold:pct} de vos actions. Votre jumeau estime à {prob:pct} la probabilité d’une nouvelle vente, suivie d’un rachat seulement quand le marché retrouve son sommet précédent.",
+    panicDataTitle: "{sold:pct} des actions vendues lors de la baisse de {when:ym}",
+    panicDataDetail:
+      "Le marché était {dd:pct} sous son sommet. Votre jumeau estime à {prob:pct} la probabilité d’une nouvelle vente, suivie d’un rachat seulement quand le marché retrouve son sommet précédent.",
+    dipTitle: "Achats maintenus pendant la baisse de {when:ym}",
+    dipDetail:
+      "{amount:chf} investis alors que le marché était jusqu’à {dd:pct} sous son sommet, sans rien vendre.",
+    chaseTitle: "{instrument} acheté près de son sommet",
+    chaseDetail:
+      "{amount:chf} en {when:ym} à {price:chf} l’action ; elle a ensuite coté {drop:pct} plus bas. Une action à la mode varie bien plus qu’un fonds diversifié.",
+    investRegularTitle: "Investit {share:pct} du surplus",
+    investRegularDetail:
+      "Achats chacun des {months} derniers mois, ≈ {monthly:chf} par mois en moyenne. Votre jumeau garde ce rythme.",
+    investSporadicTitle: "Investit de façon irrégulière",
+    investSporadicDetail:
+      "Achats dans seulement {active} des {months} derniers mois ; net ≈ {monthly:chf} par mois, soit {share:pct} du surplus. Le reste demeure en liquidités.",
+    noInvestTitle: "N’investit pas",
+    noInvestDetail:
+      "Aucun achat de fonds, d’actions ou de pilier 3a sur les {months} derniers mois : tout ce qui reste dort sur le compte à ≈ 0 %.",
+    idleTitle: "{amount:chf} de liquidités qui dorment",
+    idleDetail:
+      "Montant au-delà d’une réserve de {months} mois de dépenses ({buffer:chf}). Il rapporte ≈ 0 % pendant que les prix montent.",
+    deliveryTitle: "Livraison de repas {count:int} fois par mois",
+    deliveryDetail: "Commandes chez {items}.",
     tipPayday: "Commencez par réduire vos dépenses de sorties et d’achats la semaine qui suit la paie.",
     tipCategory:
       "Le principal poste de dépenses que vous pouvez réduire : {category} (≈ {amount:chf}/mois). Examinez ensuite les charges fixes, comme le loyer et les assurances.",

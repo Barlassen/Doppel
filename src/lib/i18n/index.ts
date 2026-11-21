@@ -5,7 +5,7 @@
  * Templates:
  *   {name}          → the param; numbers print as-is (integers) or with the locale's decimal mark
  *   {name:format}   → formatted with `createFmt(locale)` — formats: chf, chfShort, chfSigned, mio,
- *                     pct, pct1, int, num1, signed
+ *                     pct, pct1, int, num1, signed, ym (yyyymm → "Aug 2026")
  *   key_one / key_other → plural family, chosen with Intl.PluralRules on `params.count`
  * Param values may be nested messages ({ key, params }) or lists (joined with " · ").
  */
@@ -68,6 +68,8 @@ export interface Fmt {
   signed: (n: number) => string;
   /** Short month + year, `months` from now: "Nov 2026", "nov. 2026", "Kas 2026". */
   monthYear: (months: number, now?: Date) => string;
+  /** A calendar month given as yyyymm (202608 → "Aug 2026", "août 2026", "Ağu 2026"). */
+  ym: (yyyymm: number) => string;
 }
 
 const fmtCache = new Map<Locale, Fmt>();
@@ -115,6 +117,11 @@ export function createFmt(locale: Locale): Fmt {
       month ??= new Intl.DateTimeFormat(LOCALE_TAGS[locale], { month: "short", timeZone: "UTC" });
       return `${month.format(d)} ${d.getUTCFullYear()}`;
     },
+    ym: (yyyymm) => {
+      const d = new Date(Date.UTC(Math.floor(yyyymm / 100), (yyyymm % 100) - 1, 1));
+      month ??= new Intl.DateTimeFormat(LOCALE_TAGS[locale], { month: "short", timeZone: "UTC" });
+      return `${month.format(d)} ${d.getUTCFullYear()}`;
+    },
   };
   fmtCache.set(locale, f);
   return f;
@@ -141,6 +148,8 @@ export function formatNumber(f: Fmt, n: number, format?: string): string {
       return f.num(n, 1);
     case "signed":
       return f.signed(n);
+    case "ym":
+      return f.ym(n);
     default:
       return Number.isInteger(n) ? String(n) : f.num(n);
   }
@@ -148,7 +157,7 @@ export function formatNumber(f: Fmt, n: number, format?: string): string {
 
 /** Placeholder syntax shared by `translate`, `richParts` and `scripts/i18n-check.ts`. */
 export const PLACEHOLDER = /\{(\w+)(?::(\w+))?\}/g;
-export const FORMATS = ["chf", "chfSigned", "chfShort", "mio", "pct", "pct1", "int", "num1", "signed"] as const;
+export const FORMATS = ["chf", "chfSigned", "chfShort", "mio", "pct", "pct1", "int", "num1", "signed", "ym"] as const;
 
 function lookup(dict: Messages, path: string): unknown {
   let node: unknown = dict;

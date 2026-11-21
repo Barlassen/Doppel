@@ -34,12 +34,23 @@ export const en = {
 
   header: {
     profiles: "Demo profile",
+    accounts: "Account",
+    switchAria: "Switch account (current: {name})",
+    menu: "Accounts",
+    reset: "Reset to original data",
+    resetHint: "Removes this account’s snapped receipts and what-ifs.",
+    localChanges_one: "{count} local addition",
+    localChanges_other: "{count} local additions",
+    netWorth: "Net worth {amount:chf}",
   },
 
   profile: {
-    lukas: { tagline: "Software engineer · wants a first home" },
-    elena: { tagline: "Family of four · dreams of retiring at 58" },
+    barlas: { tagline: "Junior developer · invests by standing order" },
+    meric: { tagline: "Marketing specialist · saving for a flat" },
+    oktay: { tagline: "Logistics coordinator · spends what comes in" },
+    user: { tagline: "Your own data" },
     goal: "CHF {target:mio}M net worth by {age}",
+    goalK: "CHF {target:chfShort} net worth by {age}",
   },
 
   merchant: {
@@ -72,6 +83,7 @@ export const en = {
 
   event: {
     flatIn: "Flat in {place}",
+    tripTo: "Trip to {place}",
     universityFor: "University for {name}",
     home: "Home",
     listingHome: "home",
@@ -282,10 +294,34 @@ export const en = {
     subsTitle_one: "{count} recurring subscription",
     subsTitle_other: "{count} recurring subscriptions",
     subsList: "{items}",
+    subsOverlap: "{items}. {count} of these are streaming services that overlap.",
     subsItem: "{merchant} {amount}",
     panicTitle: "Sells in drawdowns",
     panicDetail:
       "Last big dip you sold {sold:pct} of your equities. Your twin assumes a {prob:pct} chance you do it again — and that you only buy back once the market is back at its old high.",
+    panicDataTitle: "Sold {sold:pct} of equities in the {when:ym} drawdown",
+    panicDataDetail:
+      "The market was {dd:pct} below its high. Your twin assumes a {prob:pct} chance you do it again — and that you only buy back once the market is back at its old high.",
+    dipTitle: "Kept buying through the {when:ym} dip",
+    dipDetail:
+      "{amount:chf} invested while the market was up to {dd:pct} below its high, and nothing sold.",
+    chaseTitle: "Bought {instrument} near its top",
+    chaseDetail:
+      "{amount:chf} in {when:ym} at {price:chf} a share; it later traded {drop:pct} lower. A single hyped stock swings far more than a broad fund.",
+    investRegularTitle: "Invests {share:pct} of the surplus",
+    investRegularDetail:
+      "Bought in each of the last {months} months, ≈ {monthly:chf} a month on average. Your twin keeps this rate.",
+    investSporadicTitle: "Invests irregularly",
+    investSporadicDetail:
+      "Bought in only {active} of the last {months} months; net ≈ {monthly:chf} a month, {share:pct} of the surplus. The rest stays in cash.",
+    noInvestTitle: "Doesn’t invest",
+    noInvestDetail:
+      "No fund, stock or pillar 3a purchases in the last {months} months: everything left over stays in cash at ≈ 0%.",
+    idleTitle: "{amount:chf} idle cash earning nothing",
+    idleDetail:
+      "Cash above a buffer of {months} months of spending ({buffer:chf}). It earns ≈ 0% while prices rise.",
+    deliveryTitle: "Food delivery {count:int}× a month",
+    deliveryDetail: "Ordered from {items}.",
     tipPayday: "Your payday-week dining & shopping is the easiest place to find it.",
     tipCategory:
       "Your biggest flexible line is {category} (≈ {amount:chf}/month); fixed costs like rent and insurance are the next lever.",

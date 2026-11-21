@@ -1,7 +1,7 @@
 /** Regenerate Pocket's deterministic parity fixture: npx tsx scripts/pocket-engine-golden.ts */
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { PROFILES } from "../src/lib/data/profiles";
+import { LEGACY_PROFILES } from "./fixtures/legacy-profiles";
 import { analyzeBehavior } from "../src/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe } from "../src/lib/finance/goalSolver";
 import { simulate } from "../src/lib/finance/monteCarlo";
@@ -10,7 +10,8 @@ import { baseScenario, costOfWaiting, effectiveProfile, habitCosts, simInputFor 
 import { checkAffordability } from "../src/lib/finance/swissRules";
 import type { Profile, Scenario } from "../src/lib/finance/types";
 
-const [lukas, elena] = PROFILES;
+// Frozen Lukas / Elena profiles: Pocket's parity test is pinned to them, not to the current web accounts.
+const [lukas, elena] = LEGACY_PROFILES;
 
 function applyRecipe(s: Scenario, recipe: Recipe): Scenario {
   const a = recipe.apply;
@@ -85,6 +86,7 @@ const lines = [
   "  ]",
   "}",
 ];
-const fixture = resolve("pocket/shared/src/jvmTest/resources/engine-golden.json");
+// DOPPEL_GOLDEN_OUT writes elsewhere (e.g. to diff against the committed fixture without touching pocket/).
+const fixture = resolve(process.env.DOPPEL_GOLDEN_OUT || "pocket/shared/src/jvmTest/resources/engine-golden.json");
 writeFileSync(fixture, lines.join("\n") + "\n");
 console.log(`Wrote ${fixture}`);
