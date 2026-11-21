@@ -298,7 +298,8 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
     case "receipt":
     case "bill": {
       if (!amount) return { kind: "none", summary: msg("summary.noTotal") };
-      const categories: readonly string[] = e.kind === "receipt" ? TRANSACTION_CATEGORIES
+      // "other" is the importers' review-needed category; a snapped receipt keeps its "shopping" fallback.
+      const categories: readonly string[] = e.kind === "receipt" ? TRANSACTION_CATEGORIES.filter((c) => c !== "other")
         : ["groceries", "dining", "transport", "shopping", "insurance", "bills", "travel"];
       const cat = (categories.includes(e.category ?? "")
         ? e.category

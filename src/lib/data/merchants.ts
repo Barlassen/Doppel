@@ -1,4 +1,4 @@
-import type { Transaction } from "@/lib/finance/types";
+import type { Transaction, TransactionCategory } from "@/lib/finance/types";
 import type { MessageKey, Msg, Text } from "@/lib/i18n/types";
 
 /**
@@ -47,4 +47,78 @@ export function merchantText(name: string): Text {
     : name;
 }
 
-export const categoryMsg = (c: Transaction["category"]): Msg => ({ key: `category.${c}` });
+export const categoryMsg = (c: Transaction["category"]): Msg => (c === "other" ? { key: "data.categoryOther" } : { key: `category.${c}` });
+
+/**
+ * Merchant dictionary for the statement importers' local categorisation (0 tokens): the built-in accounts' merchants
+ * and common Swiss chains. Exact names, compared case- and accent-insensitively (`merchantKey()` in
+ * `src/lib/import/text.ts`). Keyword rules for everything else live in `src/lib/import/categorize.ts`.
+ */
+export const MERCHANT_CATEGORIES: Readonly<Record<string, TransactionCategory>> = {
+  // Generic descriptions used by the built-in accounts
+  Rent: "housing",
+  "Health insurance": "insurance",
+  "Mobile & internet": "bills",
+  "Streaming video": "subscriptions",
+  "Music streaming": "subscriptions",
+  "Gym membership": "subscriptions",
+  "Cloud storage": "subscriptions",
+  "Half-fare + GA": "transport",
+  Supermarket: "groceries",
+  Restaurant: "dining",
+  Lunch: "dining",
+  "Online shop": "shopping",
+  // Built-in accounts' merchants whose name has no keyword
+  "Migros Take Away": "dining",
+  "Coop Take it": "dining",
+  "Manor Food": "groceries",
+  "Holy Cow!": "dining",
+  Rhybar: "dining",
+  "Kletterzentrum Gaswerk": "shopping",
+  "Mensa Technopark": "dining",
+  Mobilis: "transport",
+  "U-Abo TNW": "transport",
+  "ZVV NetzPass": "transport",
+  ewz: "bills",
+  IWB: "bills",
+  "Romande Energie": "bills",
+  "Xbox Game Pass": "subscriptions",
+  Audible: "subscriptions",
+  "Sky Show": "subscriptions",
+  "blue+": "subscriptions",
+  Sephora: "shopping",
+  AliExpress: "shopping",
+  // Common Swiss chains and services
+  Volg: "groceries",
+  Spar: "groceries",
+  "Coop Pronto": "groceries",
+  "Migrolino": "groceries",
+  "Alnatura": "groceries",
+  Farmy: "groceries",
+  "Brezelkönig": "dining",
+  "Caffè Spettacolo": "dining",
+  "Tibits": "dining",
+  "Hiltl": "dining",
+  "Vapiano": "dining",
+  "Yooji's": "dining",
+  "Swiss International Air Lines": "travel",
+  "Edelweiss Air": "travel",
+  Airbnb: "travel",
+  "Interdiscount": "shopping",
+  "Brack.ch": "shopping",
+  "Jumbo": "shopping",
+  "Ochsner Sport": "shopping",
+  "SportX": "shopping",
+  "Do it + Garden": "shopping",
+  "Pfister": "shopping",
+  "Micasa": "shopping",
+  "Amavita": "shopping",
+  "Sun Store": "shopping",
+  "Serafe": "bills",
+  "Wingo": "bills",
+  "Yallo": "bills",
+  "Init7": "bills",
+  "Quickline": "bills",
+  "Mobility": "transport",
+  "PubliBike": "transport",
+};

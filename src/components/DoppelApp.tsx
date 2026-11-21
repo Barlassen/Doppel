@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addReceipt,
+  deleteAccount,
   getAccount,
   hydrateAccounts,
   resetAccount,
@@ -59,6 +60,9 @@ import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
 import { Hero } from "./Hero";
 import { CardHeader, Section } from "./ui";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { AccountWizard } from "./AccountWizard";
+import { ImportPanel } from "./ImportPanel";
+import { TransactionsPanel } from "./TransactionsPanel";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 /** Cantons whose city names are French (for the `lang` attribute of the hero line). */
@@ -151,6 +155,9 @@ export default function DoppelApp() {
     cloud?: { locale: Locale; text: string };
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [importOpenToken, setImportOpenToken] = useState(0);
+  const pendingDataChange = useRef<{ accountId: string; label: Text; before: number } | null>(null);
 
   // Account-scoped request revision: async results that resolve after an account switch are ignored.
   const [profileRev, setProfileRev] = useState(0);
@@ -217,6 +224,7 @@ export default function DoppelApp() {
         impact: impactRef.current,
       });
     }
+    const sameAccountEdit = prev.id === next.id && !fresh;
     const saved = fresh ? undefined : sessions.current.get(next.id);
     const session = saved && saved.version === next.version ? saved : null;
     if (fresh) sessions.current.delete(next.id);
@@ -226,7 +234,7 @@ export default function DoppelApp() {
     setAccount(next);
     const s = session?.scenario ?? baseScenarioFor(next);
     commitScenario(s);
-    // An account switch is a full context change: compute its headline synchronously (no stale flash).
+    // An account switch or data edit is a full context change: compute its headline synchronously (no stale flash).
     const key = keyOf(next.version, s);
     const m = mainRef.current.key === key ? mainRef.current : { key, ...runPair(next.profile, s) };
     mainRef.current = m;
@@ -234,14 +242,35 @@ export default function DoppelApp() {
     setMain(m);
     commitPin(session?.pin ?? null);
     pendingImpacts.current = [];
-    setImpact(session?.impact ?? null);
-    setSnaps(session?.snaps ?? []);
-    setLedger(session?.ledger ?? []);
-    setFloorPlan(null);
-    chartPatchRef.current = null;
-    setChartPatch(null);
+    const dc = pendingDataChange.current;
+    if (dc && dc.accountId === next.id) {
+      pendingDataChange.current = null;
+      setImpact({ label: dc.label, before: dc.before, after: m.real.successProb });
+    } else {
+      setImpact(session?.impact ?? null);
+    }
+    if (!sameAccountEdit) {
+      setSnaps(session?.snaps ?? []);
+      setLedger(session?.ledger ?? []);
+      setFloorPlan(null);
+      chartPatchRef.current = null;
+      setChartPatch(null);
+    }
     setNarrative(null);
     setCmdMsg(undefined);
+  }
+
+  function onDataChange(label: Text) {
+    pendingDataChange.current = {
+      accountId: accountRef.current.id,
+      label,
+      before: mainRef.current.real.successProb,
+    };
+  }
+
+  function onDeleteAccount(id: string) {
+    deleteAccount(id);
+    sessions.current.delete(id);
   }
 
   function onResetAccount(id: string) {
@@ -647,7 +676,14 @@ export default function DoppelApp() {
           </div>
           {/* Mobile: own full-width row; from sm the two items join the header grid (`contents`). */}
           <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
-            <AccountSwitcher accounts={accountsState.accounts} activeId={account.id} onSelect={setActiveAccount} onReset={onResetAccount} />
+            <AccountSwitcher
+              accounts={accountsState.accounts}
+              activeId={account.id}
+              onSelect={setActiveAccount}
+              onReset={onResetAccount}
+              onDelete={onDeleteAccount}
+              onNewAccount={() => setWizardOpen(true)}
+            />
             <div className="shrink-0 justify-self-end">
               <FrugalBadge entries={ledger} onClick={() => setInspector(true)} />
             </div>
@@ -795,9 +831,30 @@ export default function DoppelApp() {
               <WaitingStrip items={sameProfileExtras ? sameProfileExtras.waiting : undefined} loading={extras?.key !== inputsKey} />
             </div>
           </Section>
+
+          <Section title={t("data.sectionTitle")}>
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              <ImportPanel
+                account={account}
+                onLedger={(entry) => addLedger(account.id, entry)}
+                onDataChange={onDataChange}
+                openToken={importOpenToken}
+              />
+              <TransactionsPanel account={account} onDataChange={onDataChange} />
+            </div>
+          </Section>
         </div>
       </main>
 
+      <AccountWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(id, withImport) => {
+          setWizardOpen(false);
+          setActiveAccount(id);
+          if (withImport) setImportOpenToken((n) => n + 1);
+        }}
+      />
       <Inspector entries={ledger} open={inspector} onClose={() => setInspector(false)} />
     </div>
   );

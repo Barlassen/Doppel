@@ -1,4 +1,5 @@
 import { isLocale, type Locale } from "@/lib/i18n/types";
+import { CATEGORIZE_SYS, categorizeOutputTokens, validCategorizeNames, validatedCategories } from "@/lib/import/categorizeModel";
 import { NextResponse } from "next/server";
 import { DOC_KINDS, isAmount, type DocKind } from "@/lib/snap/types";
 import { validateChartExtraction } from "@/lib/snap/vision/chart";
@@ -50,7 +51,8 @@ type Task =
   | { task: "extract_text"; text: string; receipt: boolean }
   | { task: "extract_image" | "extract_floorplan" | "extract_chart" | "naive_compare"; image: string; imageBytes: number }
   | { task: "command"; text: string; now: string; events: string }
-  | { task: "narrate"; facts: JsonObject; lang: Locale };
+  | { task: "narrate"; facts: JsonObject; lang: Locale }
+  | { task: "categorize"; merchants: string[] };
 
 const isObject = (v: unknown): v is JsonObject => typeof v === "object" && v !== null && !Array.isArray(v);
 const textInRange = (v: unknown, max: number): v is string => typeof v === "string" && v.trim().length > 0 && v.length <= max;
@@ -150,6 +152,11 @@ function parseTask(input: unknown): Task {
       if (isLocale(lang) && isObject(facts) && validFact(facts)) return { task, facts, lang };
       break;
     }
+    case "categorize": {
+      const merchants = validCategorizeNames(input.merchants);
+      if (merchants) return { task, merchants };
+      break;
+    }
     default:
       throw new InvalidBody("UNKNOWN_TASK");
   }
@@ -226,6 +233,11 @@ function providerRequest(body: Task, redactImage = false) {
       maxTokens = 160;
       system = NARRATE_SYS + " " + NARRATION_LANGUAGE[body.lang];
       content = JSON.stringify(body.facts);
+      break;
+    case "categorize":
+      maxTokens = categorizeOutputTokens(body.merchants.length);
+      system = CATEGORIZE_SYS;
+      content = delimited("merchants", body.merchants);
       break;
   }
   return {
@@ -405,6 +417,7 @@ export async function POST(req: Request) {
         const json = firstObject(content);
         if (json) {
           if (body.task === "command") data = validatedOps(json);
+          else if (body.task === "categorize") data = validatedCategories(json, body.merchants.length);
           else if (body.task === "naive_compare") data = json;
           else if (body.task === "extract_floorplan") data = validateFloorPlanExtraction(json);
           else if (body.task === "extract_chart") data = validateChartExtraction(json);

@@ -33,6 +33,8 @@ export interface LifeEvent {
 export const TRANSACTION_CATEGORIES = [
   "groceries", "dining", "transport", "subscriptions", "shopping",
   "housing", "insurance", "bills", "travel", "investing",
+  // Imported rows that no rule or model could place ("review needed"). Counts as spending, not discretionary.
+  "other",
 ] as const;
 
 export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];

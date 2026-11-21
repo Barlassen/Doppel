@@ -10,7 +10,7 @@ const unchanged = new Set([
   "tier.1", "tier.2", "route.offline-template",
   "common.deltaChf", "common.priceLabel", "common.arrow", "common.separator", "cmd.result", "insight.subsItem",
   "common.tokens_one", "common.tokens_other", "inspector.tok",
-  "timeline.amount", "narr.bestMove", "route.cache", "inspector.oursHeader",
+  "timeline.amount", "narr.bestMove", "route.cache", "inspector.oursHeader", "data.formats",
 ]);
 
 function flatten(value: unknown, errors: string[], key = "", leaves = new Map<string, string>()): Map<string, string> {

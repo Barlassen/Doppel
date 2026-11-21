@@ -1,0 +1,17 @@
+Statement,Header,Field Name,Field Value
+Statement,Data,BrokerName,Interactive Brokers
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,2026-06 - 2026-10
+Account Information,Header,Field Name,Field Value
+Account Information,Data,Base Currency,CHF
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,MTM P/L,Code
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-06-26, 10:02:11",5.195,115.5,115.5,-600.00,-1.50,600.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-07-26, 10:02:11",5.803,103.4,103.4,-600.00,-1.50,600.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-08-12, 10:02:11",6.198,96.8,96.8,-600.00,-1.50,600.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-08-26, 10:02:11",6.198,96.8,96.8,-600.00,-1.50,600.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-09-09, 10:02:11",2.997,100.1,100.1,-300.00,-1.50,300.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-09-26, 10:02:11",5.994,100.1,100.1,-600.00,-1.50,600.00,0,0,O
+Trades,Data,Order,Stocks,CHF,VWRL,"2026-10-26, 10:02:11",5.623,106.7,106.7,-600.00,-1.50,600.00,0,0,O
+Trades,SubTotal,,Stocks,CHF,,,,,,-3900.00,,,,,
+Financial Instrument Information,Header,Asset Category,Symbol,Description,Conid,Security ID,Listing Exch,Multiplier,Type,Code
+Financial Instrument Information,Data,Stocks,VWRL,Vanguard FTSE All-World,123456,,EBS,1,ETF,

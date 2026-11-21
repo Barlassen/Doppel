@@ -50,9 +50,11 @@ before.
   `useAccounts()` uses `useSyncExternalStore` with that state as the server snapshot. `DoppelApp` calls
   `hydrateAccounts()` after mount and then loads the stored account.
 * **Local data** (`LocalData`): `receipts` (snapped receipts), `txAdded` / `txEdited` / `txDeleted`,
-  `tradesAdded` / `tradesEdited` / `tradesDeleted`, `profile` (field overrides). The original data is never
-  modified. `materialize(base, local)` applies the changes, re-derives spending, rent and take-home pay unless they
-  were set explicitly, and then derives the behaviour inputs from the trades.
+  `tradesAdded` / `tradesEdited` / `tradesDeleted`, `profile` (field overrides), `imports` (confirmed statement
+  imports with their added record ids and bank references), and `categoryOverrides` (per-account merchant→category
+  corrections). The original data is never modified. `materialize(base, local)` applies the changes, re-derives
+  spending, rent and take-home pay unless they were set explicitly, and then derives the behaviour inputs from the
+  trades.
 
 ### API
 
@@ -68,8 +70,14 @@ get generated ids.
 | `listTransactions(accountId)` | `{ id, value: Transaction }[]` after local changes |
 | `addTransaction(accountId, tx)` → id | One transaction (manual entry) |
 | `addTransactions(accountId, txs)` → ids | Many transactions in one write (CSV / camt.053 import) |
-| `updateTransaction(accountId, id, patch)`, `deleteTransaction(accountId, id)` | Edit or delete any transaction, original or added |
+| `updateTransaction(accountId, id, patch)`, `deleteTransaction(accountId, id)` | Edit or delete any transaction, original or added (category edits also update `categoryOverrides`) |
 | `listTrades`, `addTrade`, `addTrades`, `updateTrade`, `deleteTrade` | Same for `InvestmentTrade`s (broker import) |
+| `addImport(accountId, input)` → `ImportRecord` | Commits an import (transactions, trades, bank references, overrides and history entry) in one write |
+| `undoImport(accountId, importId)` | Removes the transactions, trades and history entry of one import |
+| `listImports(accountId)` | Confirmed `ImportRecord[]` of the account, oldest first |
+| `importedRefs(accountId)` | `Set<string>` of bank references (`AcctSvcrRef`, etc.) for active imported transactions |
+| `categoryOverrides(accountId)` | Per-account `Record<string, TransactionCategory>` keyed by `merchantKey()` |
+| `setCategoryOverride(accountId, merchantKey, category)` | Sets or clears one merchant→category override |
 | `setProfileFields(accountId, fields)` | Overrides profile fields (`ProfileFields`); `undefined` removes an override |
 | `createAccount(input: NewAccountInput)` → id | A user account from scratch (wizard); not activated automatically |
 | `deleteAccount(id)` | Deletes a user account; built-in accounts can only be reset |
