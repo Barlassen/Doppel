@@ -55,7 +55,7 @@ export const PROFILES: Profile[] = [
     marginalTaxRate: 0.27,
     riskProfile: "balanced",
     retirementAge: 65,
-    goal: { label: "CHF 1.6M net worth by 50", target: 1_600_000, age: 50 },
+    goal: { label: "CHF 1.4M net worth by 50", target: 1_400_000, age: 50 },
     events: [
       { id: "ev-house", type: "house", label: "Flat in Winterthur", month: 24, amount: 780_000, source: "profile" },
     ],
@@ -81,7 +81,7 @@ export const PROFILES: Profile[] = [
     investShare: 0.6,
     marginalTaxRate: 0.33,
     riskProfile: "growth",
-    retirementAge: 65,
+    retirementAge: 58,
     goal: { label: "CHF 1.7M net worth by 58", target: 1_700_000, age: 58 },
     events: [
       { id: "ev-uni", type: "expense", label: "University for Léa", month: 66, amount: 60_000, source: "profile" },
