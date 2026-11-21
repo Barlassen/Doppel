@@ -553,14 +553,15 @@ try {
 
   // Account switcher by keyboard: Barlas → Oktay changes the headline and survives a reload.
   const switcher = (name) => page.getByRole("button", { name: T("header.switchAria", { name }) });
-  const barlasHeadline = await page.locator("h1 .num").textContent();
+  // The whole headline (goal + odds): earlier steps may leave both accounts at the same odds.
+  const barlasHeadline = await page.locator("h1").textContent();
   await switcher("Barlas").press("ArrowDown");
   await page.getByRole("menu", { name: T("header.menu") }).waitFor();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await switcher("Oktay").waitFor();
-  assert.notEqual(await page.locator("h1 .num").textContent(), barlasHeadline);
+  assert.notEqual(await page.locator("h1").textContent(), barlasHeadline);
   assert.equal(await page.evaluate(() => localStorage.getItem("doppel:account")), "oktay");
   await assertNoOverflow(page);
 
