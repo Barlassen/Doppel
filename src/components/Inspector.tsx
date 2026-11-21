@@ -221,7 +221,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
     ? t("inspector.tagMeasuredLive")
     : stats.liveNaiveCount > 0
       ? t("inspector.tagMixed", { measured: stats.liveNaiveCount, estimated: stats.measuredCount - stats.liveNaiveCount })
-      : t("inspector.tagEstimated", { model: NAIVE_PRICE.label });
+      : t("inspector.tagEstimated", { model: t("inspector.naiveModel") });
 
   const per1kOurs = stats.snapCount > 0 ? (stats.snapOursCost / stats.snapCount) * 1000 : null;
   const per1kNaive = stats.snapCount > 0 ? (stats.snapNaiveCost / stats.snapCount) * 1000 : null;

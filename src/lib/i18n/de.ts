@@ -544,6 +544,7 @@ export const de = {
     calls_other: "{count} Aufrufe",
     naiveBaseline: "Vergleich · {tag}",
     tagEstimated: "{model} · geschätzt",
+    naiveModel: "GPT-4o (hohe Detailstufe)",
     tagMeasuredLive: "live mit GPT-4o gemessen",
     tagMixed: "{measured} gemessen · {estimated} geschätzt",
     formula: "OpenAI-Kachelformel, $2.50/$10 pro Mio.",

@@ -551,6 +551,7 @@ export const tr = {
     calls_other: "{count} çağrı",
     naiveBaseline: "Naif yöntem · {tag}",
     tagEstimated: "tahmini · {model}",
+    naiveModel: "GPT-4o (yüksek detay)",
     tagMeasuredLive: "ölçülen · GPT-4o canlı",
     tagMixed: "{measured} ölçülen · {estimated} tahmini",
     formula: "OpenAI karo formülü, 1M token başına $2,50/$10",

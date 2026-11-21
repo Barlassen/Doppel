@@ -506,7 +506,7 @@ export default function DoppelApp() {
         {/* Hero */}
         <div className="mb-6">
           <div className="label">
-            {t("hero.who", { name: effProfile.name, age: effProfile.age, city: effProfile.city, tagline: effProfile.tagline })}
+            {rich("hero.who", { name: <span lang="de-CH">{effProfile.name}</span>, age: effProfile.age, city: <span lang="de-CH">{effProfile.city}</span>, tagline: effProfile.tagline })}
           </div>
           <h1 className="mt-1 font-serif text-4xl leading-tight sm:text-5xl">
             {t("hero.goal", { goal: effProfile.goal.label })}{" "}
@@ -518,7 +518,7 @@ export default function DoppelApp() {
             <span className="text-ink-3">{t("hero.netWorthNote")}</span>{" "}
             {rich("hero.crunch", { risk: <b className="num text-ink">{fmt.pct(real.crunchProb)}</b> })}
             {mounted && <>{" "}{rich("hero.simulated", {
-              paths: new Intl.NumberFormat(locale).format(real.paths),
+              paths: fmt.int(real.paths),
               ms: <span className="num">{Math.round(real.ms)}</span>,
             })}</>}
           </p>

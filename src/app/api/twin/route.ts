@@ -17,9 +17,9 @@ const NARRATE_SYS =
 
 const NARRATION_LANGUAGE: Record<Locale, string> = {
   en: "Answer in English.",
-  de: "Answer in Swiss Standard German. Use ss in place of the Eszett.",
-  fr: "Answer in Swiss French.",
-  tr: "Answer in natural Turkish and retain Swiss institution names.",
+  de: "Answer in Swiss Standard German, addressing the client as 'du'. Always write ss, never ß. Use Swiss terms: AHV, Pensionskasse, Säule 3a, Tragbarkeit, Eigenmittel.",
+  fr: "Answer in Swiss French (Romandie), addressing the client as 'vous'. Use Swiss terms: AVS, LPP / caisse de pension, pilier 3a, capacité financière, fonds propres, hypothèque.",
+  tr: "Answer in natural, warm Turkish using the informal 'sen'. Keep Swiss institution names (AHV, BVG, 3a, Tragbarkeit) and CHF amounts as given. Write percentages with the sign first (%40).",
 };
 
 const NAIVE_SYS =

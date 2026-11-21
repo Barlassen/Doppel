@@ -553,6 +553,7 @@ export const fr = {
     calls_other: "{count} appels",
     naiveBaseline: "Référence naïve · {tag}",
     tagEstimated: "estimé · {model}",
+    naiveModel: "GPT-4o (détail élevé)",
     tagMeasuredLive: "mesuré · GPT-4o en direct",
     tagMixed: "{measured} mesuré(s) · {estimated} estimé(s)",
     formula: "Formule de tuiles OpenAI, 2,50 $/10 $ par 1M",

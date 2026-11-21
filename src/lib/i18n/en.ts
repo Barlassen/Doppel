@@ -549,6 +549,7 @@ export const en = {
     calls_other: "{count} calls",
     naiveBaseline: "Naive baseline · {tag}",
     tagEstimated: "estimated · {model}",
+    naiveModel: "GPT-4o high-detail",
     tagMeasuredLive: "measured · GPT-4o live",
     tagMixed: "{measured} measured · {estimated} estimated",
     formula: "OpenAI tile formula, $2.50/$10 per 1M",

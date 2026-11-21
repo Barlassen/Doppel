@@ -41,14 +41,14 @@ export function Timeline({
           <li key={e.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm">
             <span>{EVENT_ICON[e.type]}</span>
             <div className="min-w-0">
-              <div className="truncate font-medium">{tm(e.labelMsg ?? e.label)}</div>
+              <div className="font-medium [overflow-wrap:anywhere]">{tm(e.labelMsg ?? e.label)}</div>
               <div className="num text-[11px] text-ink-3">
                 {mounted && t("timeline.when", { date: fmt.monthYear(e.month), age: age + Math.floor(e.month / 12) })}
                 {e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
                 {e.durationMonths && e.type === "jobloss" ? t("timeline.duration", { months: e.durationMonths }) : ""}
               </div>
             </div>
-            <div className="ml-auto flex items-center gap-1 pl-2">
+            <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
               <IconBtn onClick={() => onShift(e.id, -6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })}>{t("timeline.earlierShort")}</IconBtn>
               <IconBtn onClick={() => onShift(e.id, 6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })}>{t("timeline.laterShort")}</IconBtn>
               <IconBtn onClick={() => onRemove(e.id)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })}>✕</IconBtn>
