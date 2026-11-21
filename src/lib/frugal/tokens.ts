@@ -61,19 +61,17 @@ export const SMALL_MODEL_PRICE = {
 } as const;
 
 /**
- * Realistic non-inflated text prompt & output token counts for a typical GPT-4o extraction call:
- * - Prompt text (160 tok ≈ 640 chars): clear extraction instructions + JSON schema for 6 Swiss doc kinds
- *   (Doppel's ultra-terse system prompt is ~90 tok; a normal readable prompt without manual golfing is ~150–180 tok).
- * - Completion (120 tok ≈ 480 chars): pretty-printed JSON with 8–10 extracted fields and brief field notes.
+ * Text prompt and completion token counts for the estimated GPT-4o extraction baseline:
+ * - Prompt text (160 tok, ~640 chars): extraction instructions and JSON schema for 6 document kinds.
+ * - Completion (120 tok, ~480 chars): JSON object with the extracted fields.
  */
 export const NAIVE_SNAP_PROMPT_TEXT_TOKENS = 160;
 export const NAIVE_SNAP_OUTPUT_TOKENS = 120;
 
 /**
- * Cap the profile state fed to the "LLM-does-the-maths" baseline at 2,400 chars (~600 tokens).
- * Why: a reasonable engineer prompting GPT-4o to project a user's finances would send a structured
- * summary (balances, income, expenses, events, behavioural summary) rather than dumping 150 raw
- * transaction rows on every turn. Capping here avoids inflating the baseline with transaction-log bloat.
+ * Cap the profile state in the "LLM-does-the-maths" baseline at 2,400 chars (~600 tokens):
+ * send a summary (balances, income, expenses, events, habits) rather than all 150 raw transactions
+ * so transaction logs do not inflate the baseline.
  */
 export const NAIVE_STATE_CHAR_CAP = 2400;
 export const NAIVE_REASONING_PROMPT_TOKENS = 180;
