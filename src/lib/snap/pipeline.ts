@@ -28,14 +28,15 @@ interface SnapOptions {
   onProgress?: (message: Msg) => void;
 }
 
-type Details = Partial<Pick<SnapResult, "payload" | "usage" | "usageKnown" | "ocrConfidence" | "preview">>;
+type Details = Partial<Pick<SnapResult, "payload" | "usage" | "usageKnown" | "ocrConfidence" | "preview" | "visionReason" | "cropSize">>;
 
 function readCache(): CacheEntry[] {
   try {
     const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "[]");
     return Array.isArray(cache) ? cache.filter((entry): entry is CacheEntry =>
       entry && typeof entry.hash === "string" && typeof entry.signature === "string" && [0, 1, 2].includes(entry.tier)
-      && DOC_KINDS.includes(entry.extraction?.kind) && entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)
+      && DOC_KINDS.includes(entry.extraction?.kind)
+      && ((entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)) || entry.extraction.vision?.kind === "chart")
       && (entry.extraction.kind !== "receipt" || (validatedReceiptItems(entry.extraction.items)
         && receiptExtractionStatus(entry.extraction).outcome === "ok"))) : [];
   } catch {
@@ -199,6 +200,21 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   } catch (error) {
     steps.push({ name: msg("step.ocrFailed"), ms: performance.now() - start,
       detail: ocrErrorDetail(error) });
+  }
+
+  // --- Vision document-type hook (floor plans & charts routed by structure, not OCR failure) ---
+  const { tryVisionSnap } = await import("./vision");
+  const visionResult = await tryVisionSnap(cropped, ocr, steps, onProgress);
+  if (visionResult) {
+    return finish(2, visionResult.route, visionResult.extraction, {
+      usage: visionResult.usage,
+      usageKnown: visionResult.usageKnown,
+      payload: visionResult.payload,
+      preview: visionResult.preview,
+      ocrConfidence: ocr?.confidence,
+      visionReason: visionResult.visionReason,
+      cropSize: visionResult.cropSize,
+    });
   }
 
   start = performance.now();

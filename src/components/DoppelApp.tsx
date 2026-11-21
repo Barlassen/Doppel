@@ -38,6 +38,13 @@ import {
 import { callTwin } from "@/lib/llm";
 import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
+import {
+  applyChartToProfile,
+  applyChartVisionResult,
+  withChartInsight,
+  type ChartTwinPatch,
+  type FloorPlanVerification,
+} from "@/lib/snap/vision";
 import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -59,8 +66,9 @@ const FRENCH_CANTONS = new Set(["GE", "VD", "NE", "JU"]);
 
 // ---------------- deterministic engine helpers (0 tokens) ----------------
 
-/** Cache key of a simulation: the account's data version (id included) + the scenario. */
-const keyOf = (accountVersion: string, s: Scenario) => JSON.stringify([accountVersion, s]);
+/** Cache key of a simulation: the account's data version (id included), the scenario and any chart-scan portfolio overlay. */
+const keyOf = (accountVersion: string, s: Scenario, portfolioOverride?: number) =>
+  JSON.stringify([accountVersion, s, portfolioOverride ?? null]);
 
 const activeOf = (st: AccountsState): Account => st.accounts.find((a) => a.id === st.activeId) ?? st.accounts[0];
 
@@ -121,7 +129,10 @@ export default function DoppelApp() {
   // The account the screens show. Server render and first client render: the built-in default (Barlas);
   // the stored account is loaded after mount (see the hydration effect below).
   const [account, setAccount] = useState<Account>(() => activeOf(accountsState));
-  const base = account.profile;
+  // A confirmed chart scan overlays the portfolio value (and adds a drawdown insight) for this session.
+  const [chartPatch, setChartPatch] = useState<ChartTwinPatch | null>(null);
+  const chartPatchRef = useRef<ChartTwinPatch | null>(null);
+  const base = useMemo(() => applyChartToProfile(account.profile, chartPatch), [account.profile, chartPatch]);
   const profileId = account.id;
   const accountRef = useRef(account);
   const sessions = useRef(new Map<string, Session>());
@@ -129,6 +140,7 @@ export default function DoppelApp() {
   const [scenario, setScenario] = useState<Scenario>(() => baseScenarioFor(account));
   const [pin, setPin] = useState<(PinnedPlan & { scenario: Scenario }) | null>(null);
   const [snaps, setSnaps] = useState<SnapItem[]>([]);
+  const [floorPlan, setFloorPlan] = useState<FloorPlanVerification | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [inspector, setInspector] = useState(false);
   const [cmdBusy, setCmdBusy] = useState(false);
@@ -225,6 +237,9 @@ export default function DoppelApp() {
     setImpact(session?.impact ?? null);
     setSnaps(session?.snaps ?? []);
     setLedger(session?.ledger ?? []);
+    setFloorPlan(null);
+    chartPatchRef.current = null;
+    setChartPatch(null);
     setNarrative(null);
     setCmdMsg(undefined);
   }
@@ -257,12 +272,17 @@ export default function DoppelApp() {
    * Every change to the twin goes through here. Plan A is auto-pinned to the state right before the change
    * (unless the user pinned one), and the odds delta is shown once the new futures are simulated.
    */
-  function mutate(fn: (s: Scenario) => Scenario, opts: { label: Text; autoPin?: boolean; snapId?: string }) {
+  function mutate(
+    fn: (s: Scenario) => Scenario,
+    opts: { label: Text; autoPin?: boolean; snapId?: string; nextPortfolio?: number },
+  ) {
     const prev = scenarioRef.current;
     const next = fn(prev);
     const version = accountRef.current.version;
-    const beforeKey = keyOf(version, prev);
-    const afterKey = keyOf(version, next);
+    const prevPort = chartPatchRef.current?.portfolioChf;
+    const nextPort = opts.nextPortfolio !== undefined ? opts.nextPortfolio : prevPort;
+    const beforeKey = keyOf(version, prev, prevPort);
+    const afterKey = keyOf(version, next, nextPort);
     if (beforeKey === afterKey) {
       const p = probCache.current.get(beforeKey);
       if (p !== undefined) resolveImpact({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId }, p, p);
@@ -283,8 +303,11 @@ export default function DoppelApp() {
   }
 
   const effProfile = useMemo(() => effectiveProfile(base, scenario), [base, scenario]);
-  const behavior = useMemo(() => analyzeBehavior(effProfile, scenario.extraTx), [effProfile, scenario.extraTx]);
-  const inputsKey = useMemo(() => keyOf(account.version, scenario), [account.version, scenario]);
+  const behavior = useMemo(
+    () => withChartInsight(analyzeBehavior(effProfile, scenario.extraTx), chartPatch),
+    [effProfile, scenario.extraTx, chartPatch],
+  );
+  const inputsKey = useMemo(() => keyOf(account.version, scenario, chartPatch?.portfolioChf), [account.version, scenario, chartPatch]);
   const pinKey = useMemo(() => (pin ? keyOf(account.version, pin.scenario) : null), [account.version, pin]);
 
   // ---------------- debounced, chunked recomputation ----------------
@@ -302,10 +325,10 @@ export default function DoppelApp() {
         }, ms),
       );
     const acc = accountRef.current;
-    const prof = acc.profile;
+    const prof = applyChartToProfile(acc.profile, chartPatchRef.current);
     const s = scenarioRef.current;
     const pinned = pinRef.current;
-    const key = keyOf(acc.version, s);
+    const key = keyOf(acc.version, s, chartPatchRef.current?.portfolioChf);
     const input = () => simInputFor(prof, s, analyzeBehavior(effectiveProfile(prof, s), s.extraTx).params);
 
     // Resolve "28% → 11%" deltas once the futures before and after the change are both known.
@@ -418,15 +441,34 @@ export default function DoppelApp() {
     addLedger(renderAccountId, entryFromSnap(name, r));
     if (renderRev !== profileRevRef.current) return; // snap started for another account
     const cur = scenarioRef.current;
+    const id = uid();
+    const label = msg("change.snap", { name });
+
+    if (r.extraction.vision?.kind === "chart") {
+      const applied = applyChartVisionResult(r.extraction.vision.chart, {
+        scenario: cur,
+        portfolioChf: base.portfolio,
+      });
+      setSnaps((s) => [...s, { id, name, result: r, summary: applied.patch.summary }]);
+      mutate(() => applied.scenario, {
+        label,
+        snapId: id,
+        nextPortfolio: applied.patch.portfolioChf,
+      });
+      chartPatchRef.current = applied.patch;
+      setChartPatch(applied.patch);
+      return;
+    }
+
+    if (r.extraction.vision?.kind === "floorplan") setFloorPlan(r.extraction.vision.floorPlan);
+    else if (r.extraction.kind === "listing") setFloorPlan(null);
     const update = extractionToUpdate(r.extraction, cur.events, new Date(), {
       transactions: base.transactions,
       recurring: cur.recurring,
       marginalTaxRate: base.marginalTaxRate,
       income: { grossIncomeYear: base.grossIncomeYear, netIncomeMonth: base.netIncomeMonth },
     });
-    const id = uid();
     setSnaps((s) => [...s, { id, name, result: r, summary: update.summary }]);
-    const label = msg("change.snap", { name });
     switch (update.kind) {
       case "event":
         mutate((s) => applyScenarioOps(s, validateLocalOps(update.ops, s.events), "snap"), { label, snapId: id });
@@ -715,6 +757,7 @@ export default function DoppelApp() {
                   label={house.labelMsg ?? house.label}
                   month={house.month}
                   boughtProb={house.boughtProb}
+                  floorPlan={floorPlan}
                 />
               )}
               <RetirementCard

@@ -20,6 +20,7 @@ const require = createRequire(import.meta.url);
 const payslipPath = process.env.DOPPEL_SMOKE_PAYSLIP || "public/samples/payslip.svg";
 const payslipAvailable = await access(payslipPath).then(() => true, () => false);
 const receiptScreenshots = process.env.DOPPEL_RECEIPT_SCREENSHOTS;
+const visionScreenshots = process.env.DOPPEL_VISION_SCREENSHOTS;
 
 assert.equal(await fetch(baseURL).then(() => true, () => false), false, `Port ${port} is already in use`);
 const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "-p", port], {
@@ -113,6 +114,24 @@ async function captureReceiptReview(page, review, locale) {
     await review.evaluate((form) => form.scrollIntoView({ block: "start" }));
     await assertNoOverflow(page);
     await page.screenshot({ path: join(receiptScreenshots, "receipt-" + locale + "-" + width + "x" + height + ".png"), animations: "disabled" });
+  }
+  if (original) await page.setViewportSize(original);
+}
+
+async function captureVisionShot(page, target, name, locale) {
+  if (!visionScreenshots) return;
+  await mkdir(visionScreenshots, { recursive: true });
+  const original = page.viewportSize();
+  for (const { width, height } of [{ width: 320, height: 800 }, { width: 1280, height: 900 }]) {
+    await page.setViewportSize({ width, height });
+    if (target) {
+      await target.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    }
+    await assertNoOverflow(page);
+    await page.screenshot({
+      path: join(visionScreenshots, `${name}-${locale}-${width}x${height}.png`),
+      animations: "disabled",
+    });
   }
   if (original) await page.setViewportSize(original);
 }
@@ -349,6 +368,85 @@ try {
   await unbalanced.card.getByRole("button", { name: "Discard" }).click();
   await page.evaluate(() => localStorage.removeItem("doppel:force-llm"));
 
+  // Vision floor-plan & chart mocked gateway smoke steps
+  const mockPlanData = {
+    statedRooms: 4.5,
+    statedLivingAreaM2: 112,
+    balconyAreaM2: 14,
+    priceChf: 940_000,
+    location: "Winterthur",
+    rooms: [
+      { name: "Wohnen", type: "living", areaM2: 26.0, widthM: 5.2, lengthM: 5.0 },
+      { name: "Essbereich (offen)", type: "dining", areaM2: 10.4, widthM: 3.25, lengthM: 3.2 },
+      { name: "Eltern", type: "bedroom", areaM2: 17.6, widthM: 4.4, lengthM: 4.0 },
+      { name: "Zimmer 2", type: "bedroom", areaM2: 14.4, widthM: 4.0, lengthM: 3.6 },
+      { name: "Zimmer 3 / Büro", type: "office", areaM2: 12.6, widthM: 3.6, lengthM: 3.5 },
+      { name: "Küche", type: "kitchen", areaM2: 10.8, widthM: 3.6, lengthM: 3.0 },
+      { name: "Bad / WC", type: "bath", areaM2: 7.2, widthM: 3.0, lengthM: 2.4 },
+      { name: "DU / WC", type: "bath", areaM2: 4.2, widthM: 2.1, lengthM: 2.0 },
+      { name: "Entrée / Korridor", type: "hall", areaM2: 8.8, widthM: 4.4, lengthM: 2.0 },
+      { name: "Balkon", type: "balcony", areaM2: 14.0, widthM: 5.0, lengthM: 2.8 },
+    ],
+  };
+  await page.route("**/api/twin", (route) => route.fulfill({
+    json: {
+      ok: true,
+      data: mockPlanData,
+      usage: { promptTokens: 285, completionTokens: 112, costUsd: 0.000073, model: "google/gemini-2.5-flash-lite" },
+    },
+  }), { times: 1 });
+  const planScan = await scan(page, "Plan");
+  check(planScan, 2, "vision-plan", "listing", 940_000);
+  assert.equal(gatewayCalls.at(-1).task, "extract_floorplan");
+  await planScan.card.getByTestId("vision-plan-headline").waitFor();
+  const planHeadlineText = await planScan.card.getByTestId("vision-plan-headline").textContent();
+  assert.match(planHeadlineText, /4\.5 rooms · 112 m² · CHF 8’390\/m² · 6% above the Winterthur median/);
+  await captureVisionShot(page, planScan.card, "plan-review", "en");
+  await planScan.card.getByRole("button", { name: "Add to twin" }).click();
+  await page.getByTestId("afford-floorplan").waitFor();
+
+  const mockChartData = {
+    accountType: "portfolio",
+    provider: "LemanInvest",
+    printedTotalChf: 114_000,
+    allocation: { equitiesPct: 70, bondsPct: 18, realEstatePct: 7, cashPct: 5, otherPct: 0 },
+    series: [
+      { month: "2026-01", valueChf: 116_000 },
+      { month: "2026-03", valueChf: 125_000 },
+      { month: "2026-05", valueChf: 112_000 },
+      { month: "2026-06", valueChf: 106_000 },
+      { month: "2026-08", valueChf: 109_000 },
+      { month: "2026-09", valueChf: 110_500 },
+      { month: "2026-11", valueChf: 114_000 },
+    ],
+  };
+  await page.route("**/api/twin", (route) => route.fulfill({
+    json: {
+      ok: true,
+      data: mockChartData,
+      usage: { promptTokens: 240, completionTokens: 96, costUsd: 0.000062, model: "google/gemini-2.5-flash-lite" },
+    },
+  }), { times: 1 });
+  await page.getByRole("button", { name: "Chart", exact: true }).click();
+  const chartCard = page.getByRole("form", { name: "Review scan" });
+  await chartCard.waitFor({ timeout: 45_000 });
+  assert.equal(await chartCard.getAttribute("data-route"), "vision-chart");
+  assert.equal(await chartCard.getAttribute("data-outcome"), "ok");
+  assert.equal(gatewayCalls.at(-1).task, "extract_chart");
+  const chartHeadlineText = await chartCard.getByTestId("vision-chart-headline").textContent();
+  assert.match(chartHeadlineText, /Portfolio CHF 114’000 · 70% equities \(Growth\) · 15\.2% max drawdown/);
+  await captureVisionShot(page, chartCard, "chart-review", "en");
+  await chartCard.getByRole("button", { name: "Add to twin" }).click();
+
+  if (visionScreenshots) {
+    await page.getByTitle(DICTIONARIES.en.badge.title).click();
+    const enInspector = page.getByRole("dialog", { name: DICTIONARIES.en.inspector.title });
+    await enInspector.getByRole("button", { name: /Snap · Plan/ }).click();
+    await captureVisionShot(page, enInspector, "inspector", "en");
+    await enInspector.getByRole("button", { name: DICTIONARIES.en.inspector.closeAria }).click();
+  }
+  console.log("Mocked vision-plan and vision-chart scans, deterministic verification, and review confirmation passed");
+
   const recovery = await browser.newContext({ locale: "en-US" });
   await enableTestSpeech(recovery);
   let abortWorker = true;
@@ -413,7 +511,40 @@ try {
   const inspector = page.getByRole("dialog", { name: T("inspector.title") });
   await inspector.getByRole("button", { name: new RegExp(escapeRegExp(T("ledger.snap", { name: { key: "snap.samples.qr" } }))) }).click();
   await inspector.getByText(T("step.qrScan", { area: { key: "step.areaFull" } }), { exact: true }).waitFor();
+  if (visionScreenshots) {
+    await inspector.getByRole("button", { name: new RegExp(escapeRegExp(T("ledger.snap", { name: { key: "snap.samples.plan" } }))) }).click();
+    await captureVisionShot(page, inspector, "inspector", "tr");
+  }
   await inspector.getByRole("button", { name: T("inspector.closeAria") }).click();
+
+  if (visionScreenshots) {
+    await page.evaluate(() => localStorage.removeItem("doppel:snap-cache:v1"));
+    await page.route("**/api/twin", (route) => route.fulfill({
+      json: {
+        ok: true,
+        data: mockPlanData,
+        usage: { promptTokens: 285, completionTokens: 112, costUsd: 0.000073, model: "google/gemini-2.5-flash-lite" },
+      },
+    }), { times: 1 });
+    await page.getByRole("button", { name: T("snap.samples.plan"), exact: true }).click();
+    const trPlanCard = page.getByRole("form", { name: T("review.formAria") });
+    await trPlanCard.waitFor({ timeout: 45_000 });
+    await captureVisionShot(page, trPlanCard, "plan-review", "tr");
+    await trPlanCard.getByRole("button", { name: T("review.discard") }).click();
+
+    await page.route("**/api/twin", (route) => route.fulfill({
+      json: {
+        ok: true,
+        data: mockChartData,
+        usage: { promptTokens: 240, completionTokens: 96, costUsd: 0.000062, model: "google/gemini-2.5-flash-lite" },
+      },
+    }), { times: 1 });
+    await page.getByRole("button", { name: T("snap.samples.chart"), exact: true }).click();
+    const trChartCard = page.getByRole("form", { name: T("review.formAria") });
+    await trChartCard.waitFor({ timeout: 45_000 });
+    await captureVisionShot(page, trChartCard, "chart-review", "tr");
+    await trChartCard.getByRole("button", { name: T("review.discard") }).click();
+  }
 
   await page.getByRole("button", { name: T("banker.explain") }).click();
   await page.getByText(new RegExp(escapeRegExp(fixedFragment(DICTIONARIES.tr.narr.goal)))).waitFor();

@@ -1,4 +1,5 @@
 import type { Msg, Text } from "@/lib/i18n/types";
+import type { VisionPayload } from "./vision";
 import type { ReceiptItem } from "@/lib/finance/types";
 
 export type DocKind = "listing" | "receipt" | "bill" | "payslip" | "note" | "other";
@@ -14,6 +15,8 @@ export interface Extraction {
   date?: string;
   location?: string;
   rooms?: number;
+  /** Listing / floor plan: verified net living area in m². */
+  areaM2?: number;
   category?: string;
   currency?: string;
   items?: ReceiptItem[];
@@ -23,6 +26,8 @@ export interface Extraction {
   year?: number;
   iban?: string;
   message?: string;
+  /** Structured vision analysis and deterministic verification for floor plans and charts. */
+  vision?: VisionPayload;
 }
 
 export type Tier = 0 | 1 | 2;
@@ -47,7 +52,7 @@ export interface SnapResult {
   tier: Tier;
   extraction: Extraction;
   outcome: "ok" | "partial" | "failed";
-  route: "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "offline-heuristic";
+  route: "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "vision-plan" | "vision-chart" | "offline-heuristic";
   steps: PipelineStep[];
   usage: Usage;
   usageKnown: boolean;
@@ -58,6 +63,10 @@ export interface SnapResult {
   preview?: string;
   naiveImage?: string;
   fieldsMissing?: string[];
+  /** Why vision was needed for this document (shown in Review and Inspector). */
+  visionReason?: Text;
+  /** Pixel dimensions of the cropped image that left the device on a vision route. */
+  cropSize?: { width: number; height: number };
 }
 
 export function isAmount(value: unknown): value is number {
@@ -65,6 +74,12 @@ export function isAmount(value: unknown): value is number {
 }
 
 export function extractionStatus(extraction: Extraction): Pick<SnapResult, "outcome" | "fieldsMissing"> {
+  if (extraction.vision?.kind === "chart") {
+    const c = extraction.vision.chart;
+    return c.allocation || (c.latestValueChf !== undefined && c.latestValueChf > 0)
+      ? { outcome: "ok" }
+      : { outcome: "partial", fieldsMissing: ["amount"] };
+  }
   if (extraction.kind === "other") return { outcome: "failed", fieldsMissing: ["kind", "amount"] };
   if (!isAmount(extraction.amount)) return { outcome: "partial", fieldsMissing: ["amount"] };
   return { outcome: "ok" };

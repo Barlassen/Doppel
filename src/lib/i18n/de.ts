@@ -428,6 +428,10 @@ export const de = {
       payslipHint: "Monatliche Lohnabrechnung",
       note: "Notiz",
       noteHint: "Handschriftliches Ziel",
+      plan: "Grundriss",
+      planHint: "Schweizer Wohnungsgrundriss",
+      chart: "Grafik",
+      chartHint: "Portfolio- & Allokationsgrafik",
     },
   },
 
@@ -459,6 +463,88 @@ export const de = {
     rooms: "Zimmer",
     discard: "Verwerfen",
     add: "Übernehmen",
+  },
+
+  vision: {
+    whyHeading: "Warum Bildverständnis nötig war",
+    whyOcrSufficient: "Gedruckter Text ist linear; lokale OCR und Suchmuster reichen aus (0 Vision-Tokens).",
+    whyPlan:
+      "OCR fand {numbers} verstreute Zahlen, und die Pixelanalyse erkannte orthogonale Raumwände (Wert {walls}). Nur ein Bildmodell kann Masse und Flächen den einzelnen Räumen zuordnen.",
+    whyChart:
+      "Erkannt: {kind} ({colors} Farbsegmente, Kurvenwert {curve}) ohne Datenbeschriftung. Das Bildmodell liest Segmente und Achsenskala.",
+    chartKindDonut: "ein Allokations-Ringdiagramm",
+    chartKindLine: "ein Linienchart der Wertentwicklung",
+    chartKindBoth: "ein Allokations-Ringdiagramm und ein Wertentwicklungs-Linienchart",
+    stepDetect: "Visuelle Strukturerkennung",
+    stepCropPlan: "Grundriss zuschneiden & verkleinern (≤768px)",
+    stepVerify: "Deterministische TypeScript-Prüfung",
+    planBadge: "Geprüfter Schweizer Grundriss",
+    planHeadline: "{rooms} Zimmer · {area:int} m² · {pricePerM2:chf}/m² · {delta}",
+    planHeadlineNoBench: "{rooms} Zimmer · {area:int} m² · {pricePerM2:chf}/m²",
+    planHeadlineAreaOnly: "{rooms} Zimmer · {area:int} m² Nettowohnfläche",
+    aboveMedian: "{pct:pct} über dem Median für {region}",
+    belowMedian: "{pct:pct} unter dem Median für {region}",
+    atMedian: "auf Höhe des Medians für {region}",
+    medianFootnote:
+      "Der Regionalvergleich nutzt einen illustrativen Richtwert für Eigentumswohnungen in {region} ({median:chf}/m²).",
+    verifyAreaOk:
+      "✓ Raumflächen ergeben {computed:num1} m² (innerhalb von ±{tol:pct} der angegebenen {stated:num1} m² Wohnfläche).",
+    verifyAreaFromDims:
+      "✓ Nettowohnfläche deterministisch aus den Raummassen berechnet: {computed:num1} m².",
+    verifyRoomsOk:
+      "✓ Schweizer Zimmerzahl geprüft: {computed} Zimmer (Wohnen & Schlafzimmer zählen; offener Essbereich 0.5; Küche, Bad & Korridor zählen nicht).",
+    warnRoomDimArea:
+      "⚠ {room}: Masse ergeben {computed:num1} m², gedruckt sind jedoch {printed:num1} m².",
+    warnAreaIncludesBalcony:
+      "⚠ Die angegebenen {stated:num1} m² enthalten {balcony:num1} m² Balkon/Terrasse. Die Nettowohnfläche innen beträgt {computed:num1} m² (±10% Toleranz).",
+    warnAreaMismatch:
+      "⚠ Die Innenräume ergeben {computed:num1} m² und weichen um {diff:pct} von den angegebenen {stated:num1} m² ab (Toleranz ±{tol:pct}).",
+    warnRoomCount:
+      "⚠ Schweizer Zimmerregel: Der Grundriss ergibt {computed} Zimmer (ohne Küche, Bad & Korridor), angegeben sind {stated}.",
+    roomsTableTitle: "Aus dem Grundriss gelesene Räume ({count:int} Bereiche · {sum:num1} m² innen)",
+    roomCount_one: "{count} Zi.",
+    roomCount_other: "{count} Zi.",
+    roomFromDims: "{dims} m → {area:num1} m² (berechnet)",
+    balconyArea: "Balkon / Terrasse aussen: {area:num1} m² (nicht in der Nettowohnfläche enthalten).",
+    livingArea: "Wohnfläche (m²)",
+    stepCropChart: "Grafik zuschneiden & verkleinern (≤512px)",
+    colorJpeg: "{size} Farb-JPEG",
+    chartBadge: "Geprüfte Portfolio- & Allokationsgrafik",
+    chartHeadlineFull: "Portfolio {value:chf} · {equities:pct} Aktien ({risk}) · {dd:pct1} max. Drawdown",
+    chartHeadlineAllocValue: "Portfolio {value:chf} · {equities:pct} Aktien → Risikoprofil {risk}",
+    chartHeadlineAllocOnly: "{equities:pct} Aktien · {bonds:pct} Obligationen → Risikoprofil {risk}",
+    chartHeadlineValueDd: "Portfolio {value:chf} · {dd:pct1} Rückgang vom Höchststand",
+    chartHeadlineValueOnly: "Portfoliowert {value:chf}",
+    verifyAllocOk:
+      "✓ Allokationsanteile ergeben {sum:pct1} (innerhalb 100% ± 2 Pp.) · {equities:pct} Aktien entspricht {risk}.",
+    warnAllocSum:
+      "⚠ Allokationsanteile ergeben {sum:pct1} und liegen ausserhalb der Toleranz von 100% ± 2 Pp.",
+    verifyMonotoneOk: "✓ {count:int} Monatswerte sind zeitlich streng monoton ({from} → {to}).",
+    warnNonMonotone:
+      "⚠ Die gelesenen Kurvenpunkte waren zeitlich nicht monoton und wurden chronologisch sortiert.",
+    verifyEndpointOk:
+      "✓ Endpunkt der Kurve ({endpoint:chf}) stimmt mit dem gedruckten Gesamtwert ({printed:chf}) überein.",
+    warnEndpointMismatch:
+      "⚠ Endpunkt der Kurve ({endpoint:chf}) weicht um {diff:pct} vom gedruckten Gesamtwert ({printed:chf}) ab.",
+    warnDrawdown:
+      "⚠ Deterministischer Drawdown von −{pct:pct1} vom Höchststand erkannt ({peak:chf} im {peakMonth} → {trough:chf} im {troughMonth}).",
+    verifyNoDrawdown: "✓ Kein Rückgang ≥ 10% vom Höchststand in der gelesenen Zeitreihe.",
+    allocTitle: "Anlageaufteilung (Summe {sum:pct1})",
+    sliceEquities: "Aktien",
+    sliceBonds: "Obligationen",
+    sliceRealEstate: "Immobilien",
+    sliceCash: "Liquidität",
+    sliceOther: "Übrige",
+    seriesTitle: "Verlauf des Portfoliowerts ({count:int} Pkt. · {from} → {to})",
+    portfolioValueField: "Aktueller Portfoliowert (CHF)",
+    equitiesPctField: "Aktienanteil (%)",
+    derivedRiskLabel: "Abgeleitetes Risikoprofil: {risk}",
+    insightDrawdownTitle: "Drawdown in Portfoliografik −{pct:pct1}",
+    insightDrawdownDetail:
+      "Dein gescannter Auszug zeigt einen Rückgang von {peak:chf} ({peakMonth}) auf {trough:chf} ({troughMonth}). Wer bei Rücksetzern ≥10% investiert bleibt, realisiert keine Verluste.",
+    summaryChartBoth: "Portfolio auf {value:chf} aktualisiert · {equities:pct} Aktien → Risikoprofil {risk}",
+    summaryChartValue: "Portfoliowert aus Grafik auf {value:chf} aktualisiert",
+    summaryChartAlloc: "Allokationsgrafik ({equities:pct} Aktien) → Risikoprofil auf {risk} gesetzt",
   },
 
   receipt: {
@@ -505,6 +591,8 @@ export const de = {
     "local-parser": "Lokal erkannt",
     "text-llm": "Sprachmodell",
     "vision-llm": "Bildmodell",
+    "vision-plan": "Vision · Grundriss",
+    "vision-chart": "Vision · Grafik",
     "offline-heuristic": "Offline-Suchmuster",
     "offline-template": "Offline-Vorlage",
   },
@@ -515,6 +603,8 @@ export const de = {
     "local-regex": "Lokal",
     "text-llm": "Textmodell",
     "vision-llm": "Bildmodell",
+    "vision-plan": "Grundriss-Vision",
+    "vision-chart": "Grafik-Vision",
     "offline-heuristic": "Lokal ausgewertet",
   },
 

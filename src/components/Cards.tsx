@@ -8,6 +8,8 @@ import type { HabitCosts } from "@/lib/finance/scenario";
 import type { LifeEvent } from "@/lib/finance/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Text } from "@/lib/i18n/types";
+import type { FloorPlanVerification } from "@/lib/snap/vision";
+import { FloorPlanAffordabilitySummary } from "./VisionReview";
 import { CardHeader, Disclosure } from "./ui";
 
 const EVENT_ICON: Record<LifeEvent["type"], string> = {
@@ -78,11 +80,13 @@ export function AffordabilityCard({
   label,
   month,
   boughtProb,
+  floorPlan,
 }: {
   result: AffordabilityResult;
   label: Text;
   month: number;
   boughtProb?: number;
+  floorPlan?: FloorPlanVerification | null;
 }) {
   const { t, fmt, rich, mounted } = useI18n();
   const ratio = result.costToIncome;
@@ -99,6 +103,7 @@ export function AffordabilityCard({
       <div className="mb-4 font-medium break-words">
         {t("common.priceLabel", { label, price: result.price })}
       </div>
+      {floorPlan && <FloorPlanAffordabilitySummary floorPlan={floorPlan} price={result.price} />}
 
       <div className="mb-1.5 flex justify-between gap-3 text-xs">
         <span className="text-ink-2">{t("afford.ratio")}</span>

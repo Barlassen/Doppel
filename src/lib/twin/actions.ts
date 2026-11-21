@@ -274,6 +274,9 @@ function alreadyBudgeted(monthly: number, category: Transaction["category"], ctx
 }
 
 export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new Date(), ctx: UpdateContext = {}): TwinUpdate {
+  if (e.vision?.kind === "chart") {
+    return { kind: "none", summary: e.vision.chart.headline };
+  }
   const amount = Number(e.amount) || 0;
   switch (e.kind) {
     case "listing": {
@@ -281,9 +284,10 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
       if (amount < BOUNDS.housePrice[0] || amount > BOUNDS.housePrice[1])
         return { kind: "none", summary: msg("summary.listingImplausible", { amount }) };
       const house = events.find((x) => x.type === "house");
-      const label = e.rooms
+      const baseLabel = e.rooms
         ? e.location ? msg("event.roomsHomeIn", { rooms: e.rooms, place: e.location }) : msg("event.roomsHome", { rooms: e.rooms })
         : e.location ? msg("event.listingHomeIn", { place: e.location }) : msg("event.listingHome");
+      const label = e.areaM2 ? msg("common.separator", { first: baseLabel, second: `${Math.round(e.areaM2)} m²` }) : baseLabel;
       return {
         kind: "event",
         ops: [{ op: "add", type: "house", ...eventLabel(label), month: house?.month ?? 24, amount }],
