@@ -172,7 +172,7 @@ try {
   await qr.card.getByLabel("Creditor").fill(editedLabel);
   assert.equal(await page.getByText(editedLabel, { exact: false }).count(), 0);
   await qr.card.getByRole("button", { name: "Add to twin" }).click();
-  await page.getByText(editedLabel, { exact: false }).waitFor();
+  await page.getByText(editedLabel, { exact: false }).first().waitFor();
 
   const repeat = await scan(page, "QR-bill");
   check(repeat, 0, "cache", "bill", 412);
@@ -337,9 +337,24 @@ try {
   assert.equal(gatewayCalls.at(-1).task, "narrate");
   assert.equal(gatewayCalls.at(-1).lang, "tr");
 
+  // Account switcher by keyboard: Barlas → Oktay changes the headline and survives a reload.
+  const switcher = (name) => page.getByRole("button", { name: T("header.switchAria", { name }) });
+  const barlasHeadline = await page.locator("h1 .num").textContent();
+  await switcher("Barlas").press("ArrowDown");
+  await page.getByRole("menu", { name: T("header.menu") }).waitFor();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await switcher("Oktay").waitFor();
+  assert.notEqual(await page.locator("h1 .num").textContent(), barlasHeadline);
+  assert.equal(await page.evaluate(() => localStorage.getItem("doppel:account")), "oktay");
+  await assertNoOverflow(page);
+
   const reloaded = await page.reload();
   assert.match(await reloaded.text(), /<html lang="en"/);
   await page.waitForFunction(() => document.documentElement.lang === "tr-TR");
+  await switcher("Oktay").waitFor();
+  console.log("Account switcher: keyboard switch, headline change and persistence across reload passed");
 
   const preferenceContext = await browser.newContext({ locale: "fr-CH" });
   const preferencePage = await preferenceContext.newPage();

@@ -33,7 +33,6 @@ export const en = {
   },
 
   header: {
-    profiles: "Demo profile",
     accounts: "Account",
     switchAria: "Switch account (current: {name})",
     menu: "Accounts",

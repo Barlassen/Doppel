@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PROFILES } from "@/lib/data/profiles";
+import {
+  addReceipt,
+  getAccount,
+  hydrateAccounts,
+  resetAccount,
+  setActiveAccount,
+  useAccounts,
+  type Account,
+  type AccountsState,
+} from "@/lib/accounts";
 import { simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe, type SolverResult } from "@/lib/finance/goalSolver";
@@ -40,12 +49,27 @@ import { AffordabilityCard, BehaviorCard, RecipesCard, Timeline } from "./Cards"
 import { RetirementCard } from "./RetirementCard";
 import { PlanCompare, type PinnedPlan } from "./PlanCompare";
 import { InvestControls, WaitingStrip } from "./InvestControls";
+import { AccountSwitcher } from "./AccountSwitcher";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/** Cantons whose city names are French (for the `lang` attribute of the hero line). */
+const FRENCH_CANTONS = new Set(["GE", "VD", "NE", "JU"]);
 
 // ---------------- deterministic engine helpers (0 tokens) ----------------
 
-const keyOf = (profileId: string, s: Scenario) => JSON.stringify([profileId, s]);
+/** Cache key of a simulation: the account's data version (id included) + the scenario. */
+const keyOf = (accountVersion: string, s: Scenario) => JSON.stringify([accountVersion, s]);
+
+const activeOf = (st: AccountsState): Account => st.accounts.find((a) => a.id === st.activeId) ?? st.accounts[0];
+
+/** An account's starting scenario: its profile, plus its saved snapped receipts as "this month". */
+const baseScenarioFor = (a: Account): Scenario => ({ ...baseScenario(a.profile), extraTx: [...a.receipts] });
+
+/** Bounded insertion-order cache. */
+function remember<V>(cache: Map<string, V>, key: string, value: V, max = 30) {
+  cache.set(key, value);
+  if (cache.size > max) cache.delete(cache.keys().next().value!);
+}
 
 function runPair(base: Profile, s: Scenario) {
   const b = analyzeBehavior(effectiveProfile(base, s), s.extraTx);
@@ -79,13 +103,28 @@ interface PendingImpact {
   afterKey: string;
   snapId?: string;
 }
+/** Everything that belongs to one account while the app is open; restored when switching back. */
+interface Session {
+  version: string;
+  scenario: Scenario;
+  pin: (PinnedPlan & { scenario: Scenario }) | null;
+  snaps: SnapItem[];
+  ledger: LedgerEntry[];
+  impact: Impact | null;
+}
 
 export default function DoppelApp() {
   const { locale, setLocale, t, tm, rich, fmt, mounted } = useI18n();
-  const [profileId, setProfileId] = useState(PROFILES[0].id);
-  const base = PROFILES.find((p) => p.id === profileId)!;
+  const accountsState = useAccounts();
+  // The account the screens show. Server render and first client render: the built-in default (Barlas);
+  // the stored account is loaded after mount (see the hydration effect below).
+  const [account, setAccount] = useState<Account>(() => activeOf(accountsState));
+  const base = account.profile;
+  const profileId = account.id;
+  const accountRef = useRef(account);
+  const sessions = useRef(new Map<string, Session>());
 
-  const [scenario, setScenario] = useState<Scenario>(() => baseScenario(PROFILES[0]));
+  const [scenario, setScenario] = useState<Scenario>(() => baseScenarioFor(account));
   const [pin, setPin] = useState<(PinnedPlan & { scenario: Scenario }) | null>(null);
   const [snaps, setSnaps] = useState<SnapItem[]>([]);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
@@ -99,20 +138,26 @@ export default function DoppelApp() {
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
 
-  // Profile-scoped request revision: async results that resolve after a profile switch are ignored.
+  // Account-scoped request revision: async results that resolve after an account switch are ignored.
   const [profileRev, setProfileRev] = useState(0);
   const profileRevRef = useRef(0);
   // Always-current copies for async callbacks (no stale closures).
   const scenarioRef = useRef(scenario);
   const pinRef = useRef(pin);
-  const profileIdRef = useRef(profileId);
+  const snapsRef = useRef(snaps);
+  const ledgerRef = useRef(ledger);
+  const impactRef = useRef(impact);
+  useEffect(() => {
+    snapsRef.current = snaps;
+    ledgerRef.current = ledger;
+    impactRef.current = impact;
+  }, [snaps, ledger, impact]);
 
   // Results. The first render is computed synchronously (deterministic → identical on server and client);
   // later recomputations are debounced and split into chunks so the page stays responsive.
   const [main, setMain] = useState<MainResults>(() => {
-    const p = PROFILES[0];
-    const s = baseScenario(p);
-    return { key: keyOf(p.id, s), ...runPair(p, s) };
+    const s = baseScenarioFor(account);
+    return { key: keyOf(account.version, s), ...runPair(account.profile, s) };
   });
   const [planA, setPlanA] = useState<{ key: string; result: SimResult } | null>(null);
   const [extras, setExtras] = useState<Extras | null>(null);
@@ -120,6 +165,9 @@ export default function DoppelApp() {
   const mainRef = useRef(main);
   const probCache = useRef(new Map<string, number>([[main.key, main.real.successProb]]));
   const pendingImpacts = useRef<PendingImpact[]>([]);
+  // Solver and habit results per scenario key, so switching back to an account restores them instantly.
+  const solverCache = useRef(new Map<string, SolverResult>());
+  const extrasCache = useRef(new Map<string, Extras>());
 
   function commitScenario(next: Scenario) {
     scenarioRef.current = next;
@@ -130,27 +178,78 @@ export default function DoppelApp() {
     setPin(next);
   }
 
-  function switchProfile(id: string) {
-    if (id === profileIdRef.current) return;
-    const p = PROFILES.find((x) => x.id === id)!;
+  /** Ledger entries go to the account that started the call, even if the user switched meanwhile. */
+  function addLedger(accountId: string, entry: LedgerEntry) {
+    if (accountId === accountRef.current.id) setLedger((l) => [...l, entry]);
+    else {
+      const saved = sessions.current.get(accountId);
+      if (saved) sessions.current.set(accountId, { ...saved, ledger: [...saved.ledger, entry] });
+    }
+  }
+
+  /**
+   * Loads an account into every screen: its saved session (scenario, Plan A, snaps, ledger) when it was open
+   * before with the same data, otherwise a fresh start from its data. `fresh` forces the fresh start.
+   */
+  function loadAccount(next: Account, fresh = false) {
+    const prev = accountRef.current;
+    if (prev.id !== next.id) {
+      sessions.current.set(prev.id, {
+        version: prev.version,
+        scenario: scenarioRef.current,
+        pin: pinRef.current,
+        snaps: snapsRef.current,
+        ledger: ledgerRef.current,
+        impact: impactRef.current,
+      });
+    }
+    const saved = fresh ? undefined : sessions.current.get(next.id);
+    const session = saved && saved.version === next.version ? saved : null;
+    if (fresh) sessions.current.delete(next.id);
     profileRevRef.current += 1;
     setProfileRev(profileRevRef.current);
-    profileIdRef.current = id;
-    setProfileId(id);
-    const s = baseScenario(p);
+    accountRef.current = next;
+    setAccount(next);
+    const s = session?.scenario ?? baseScenarioFor(next);
     commitScenario(s);
-    // A profile switch is a full context change: compute its headline synchronously (no stale flash).
-    const m = { key: keyOf(id, s), ...runPair(p, s) };
+    // An account switch is a full context change: compute its headline synchronously (no stale flash).
+    const key = keyOf(next.version, s);
+    const m = mainRef.current.key === key ? mainRef.current : { key, ...runPair(next.profile, s) };
     mainRef.current = m;
     probCache.current.set(m.key, m.real.successProb);
     setMain(m);
-    commitPin(null);
+    commitPin(session?.pin ?? null);
     pendingImpacts.current = [];
-    setImpact(null);
-    setSnaps([]);
+    setImpact(session?.impact ?? null);
+    setSnaps(session?.snaps ?? []);
+    setLedger(session?.ledger ?? []);
     setNarrative(null);
     setCmdMsg(undefined);
   }
+
+  function onResetAccount(id: string) {
+    resetAccount(id);
+    sessions.current.delete(id);
+    const fresh = getAccount(id);
+    if (fresh && id === accountRef.current.id) loadAccount(fresh, true);
+  }
+
+  // Hydration: read the stored accounts after mount, then follow the store's active account.
+  useEffect(() => {
+    hydrateAccounts();
+  }, []);
+  const storeActive = activeOf(accountsState);
+  const loadedStored = useRef(false);
+  useEffect(() => {
+    const cur = accountRef.current;
+    if (accountsState.hydrated && !loadedStored.current) {
+      loadedStored.current = true;
+      if (storeActive.id !== cur.id || storeActive.version !== cur.version || storeActive.receipts.length) loadAccount(storeActive, true);
+      return;
+    }
+    if (storeActive.id !== cur.id || storeActive.version !== cur.version) loadAccount(storeActive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAccount only reads refs and state setters
+  }, [accountsState.hydrated, storeActive]);
 
   /**
    * Every change to the twin goes through here. Plan A is auto-pinned to the state right before the change
@@ -159,9 +258,9 @@ export default function DoppelApp() {
   function mutate(fn: (s: Scenario) => Scenario, opts: { label: Text; autoPin?: boolean; snapId?: string }) {
     const prev = scenarioRef.current;
     const next = fn(prev);
-    const pid = profileIdRef.current;
-    const beforeKey = keyOf(pid, prev);
-    const afterKey = keyOf(pid, next);
+    const version = accountRef.current.version;
+    const beforeKey = keyOf(version, prev);
+    const afterKey = keyOf(version, next);
     if (beforeKey === afterKey) {
       const p = probCache.current.get(beforeKey);
       if (p !== undefined) resolveImpact({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId }, p, p);
@@ -183,8 +282,8 @@ export default function DoppelApp() {
 
   const effProfile = useMemo(() => effectiveProfile(base, scenario), [base, scenario]);
   const behavior = useMemo(() => analyzeBehavior(effProfile, scenario.extraTx), [effProfile, scenario.extraTx]);
-  const inputsKey = useMemo(() => keyOf(profileId, scenario), [profileId, scenario]);
-  const pinKey = useMemo(() => (pin ? keyOf(profileId, pin.scenario) : null), [profileId, pin]);
+  const inputsKey = useMemo(() => keyOf(account.version, scenario), [account.version, scenario]);
+  const pinKey = useMemo(() => (pin ? keyOf(account.version, pin.scenario) : null), [account.version, pin]);
 
   // ---------------- debounced, chunked recomputation ----------------
   const jobRef = useRef(0);
@@ -200,10 +299,11 @@ export default function DoppelApp() {
           if (job === jobRef.current) fn();
         }, ms),
       );
-    const prof = PROFILES.find((p) => p.id === profileIdRef.current)!;
+    const acc = accountRef.current;
+    const prof = acc.profile;
     const s = scenarioRef.current;
     const pinned = pinRef.current;
-    const key = keyOf(prof.id, s);
+    const key = keyOf(acc.version, s);
     const input = () => simInputFor(prof, s, analyzeBehavior(effectiveProfile(prof, s), s.extraTx).params);
 
     // Resolve "28% → 11%" deltas once the futures before and after the change are both known.
@@ -221,7 +321,7 @@ export default function DoppelApp() {
 
     const afterMain = () => {
       resolvePending();
-      const aKey = pinned ? keyOf(prof.id, pinned.scenario) : null;
+      const aKey = pinned ? keyOf(acc.version, pinned.scenario) : null;
       if (aKey !== planAKeyRef.current) {
         step(() => {
           if (pinned && aKey !== key) {
@@ -234,20 +334,34 @@ export default function DoppelApp() {
         });
       }
       if (extrasKeyRef.current !== key) {
-        step(() => {
-          const habits = habitCosts(input());
+        const cached = extrasCache.current.get(key);
+        if (cached) {
+          setExtras(cached);
+          extrasKeyRef.current = key;
+        } else
           step(() => {
-            setExtras({ key, profileId: prof.id, habits, waiting: costOfWaiting(input()) });
-            extrasKeyRef.current = key;
+            const habits = habitCosts(input());
+            step(() => {
+              const e = { key, profileId: prof.id, habits, waiting: costOfWaiting(input()) };
+              remember(extrasCache.current, key, e);
+              setExtras(e);
+              extrasKeyRef.current = key;
+            });
           });
-        });
       }
       if (solverKeyRef.current !== key) {
-        step(() => {
-          const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
-          setSolver({ key, profileId: prof.id, result: solveGoal(simInputFor(prof, s, b.params), { spendTip: b.spendTip }) });
+        const cached = solverCache.current.get(key);
+        if (cached) {
+          setSolver({ key, profileId: prof.id, result: cached });
           solverKeyRef.current = key;
-        });
+        } else
+          step(() => {
+            const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
+            const result = solveGoal(simInputFor(prof, s, b.params), { spendTip: b.spendTip });
+            remember(solverCache.current, key, result);
+            setSolver({ key, profileId: prof.id, result });
+            solverKeyRef.current = key;
+          });
       }
     };
 
@@ -297,9 +411,10 @@ export default function DoppelApp() {
 
   // ---------------- multimodal snap ----------------
   const renderRev = profileRev;
+  const renderAccountId = account.id;
   function onSnap(name: Text, r: SnapResult) {
-    setLedger((l) => [...l, entryFromSnap(name, r)]);
-    if (renderRev !== profileRevRef.current) return; // snap started for another profile
+    addLedger(renderAccountId, entryFromSnap(name, r));
+    if (renderRev !== profileRevRef.current) return; // snap started for another account
     const cur = scenarioRef.current;
     const update = extractionToUpdate(r.extraction, cur.events, new Date(), {
       transactions: base.transactions,
@@ -316,6 +431,7 @@ export default function DoppelApp() {
         break;
       case "transaction":
         mutate((s) => ({ ...s, extraTx: [...s.extraTx, update.tx] }), { label, snapId: id, autoPin: false });
+        addReceipt(renderAccountId, update.tx); // kept for this account across reloads
         break;
       case "recurring":
         mutate((s) => ({ ...s, recurring: [...s.recurring, update.expense], extraTx: [...s.extraTx, update.tx] }), { label, snapId: id });
@@ -337,6 +453,7 @@ export default function DoppelApp() {
   // ---------------- what-if commands ----------------
   async function onCommand(text: string) {
     const rev = profileRevRef.current;
+    const accountId = accountRef.current.id;
     setCmdBusy(true);
     setCmdMsg(undefined);
     const t0 = performance.now();
@@ -345,8 +462,8 @@ export default function DoppelApp() {
     let status: Msg;
 
     if (local) {
-      setLedger((l) => [
-        ...l,
+      addLedger(
+        accountId,
         entryFromCommand({
           text,
           tier: "local-parser",
@@ -355,14 +472,14 @@ export default function DoppelApp() {
           ms: performance.now() - t0,
           stateChars,
         }),
-      ]);
+      );
       status = msg("cmd.parsedLocally");
     } else {
       const now = new Date().toISOString().slice(0, 7);
       const r = await callTwin<{ ops: unknown }>({ task: "command", text, now, events: compactEvents(scenarioRef.current.events) });
       if (r.ok && r.data) {
-        setLedger((l) => [
-          ...l,
+        addLedger(
+          accountId,
           entryFromCommand({
             text,
             tier: "llm",
@@ -371,7 +488,7 @@ export default function DoppelApp() {
             ms: performance.now() - t0,
             stateChars,
           }),
-        ]);
+        );
         // Validate against the CURRENT events (the twin may have changed while the model was thinking).
         ops = validateOps(r.data.ops, scenarioRef.current.events);
         status = ops.length ? msg("cmd.parsedBy", { model: r.usage?.model ?? "LLM" }) : msg("cmd.noValidChange");
@@ -383,7 +500,7 @@ export default function DoppelApp() {
 
     if (rev !== profileRevRef.current) {
       setCmdBusy(false);
-      return; // profile switched while parsing — don't apply to the wrong twin
+      return; // account switched while parsing — don't apply to the wrong twin
     }
     if (ops && ops.length) {
       const valid = ops;
@@ -397,6 +514,7 @@ export default function DoppelApp() {
   // ---------------- private banker narration ----------------
   async function narrate() {
     const rev = profileRevRef.current;
+    const accountId = accountRef.current.id;
     setNarrative({ fallback: [], loading: true });
     const top = recipes[0];
     const ret = real.retirement;
@@ -435,7 +553,7 @@ export default function DoppelApp() {
     } else {
       usage = { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "template (offline)", mode: "offline" };
     }
-    setLedger((l) => [...l, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: request }, ms: performance.now() - t0, stateChars })]);
+    addLedger(accountId, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: request }, ms: performance.now() - t0, stateChars }));
     if (rev !== profileRevRef.current) return;
     setNarrative({ fallback, cloud, loading: false });
   }
@@ -484,20 +602,12 @@ export default function DoppelApp() {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-1 sm:gap-0 sm:rounded-full sm:border sm:border-line sm:p-0.5" role="group" aria-label={t("header.profiles")}>
-            {PROFILES.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => switchProfile(p.id)}
-                aria-pressed={p.id === profileId}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${p.id === profileId ? "bg-ink text-bg" : "border border-line text-ink-2 hover:text-ink sm:border-transparent"}`}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-          <div className="justify-self-end">
-            <FrugalBadge entries={ledger} onClick={() => setInspector(true)} />
+          {/* Mobile: own full-width row; from sm the two items join the header grid (`contents`). */}
+          <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
+            <AccountSwitcher accounts={accountsState.accounts} activeId={account.id} onSelect={setActiveAccount} onReset={onResetAccount} />
+            <div className="shrink-0 justify-self-end">
+              <FrugalBadge entries={ledger} onClick={() => setInspector(true)} />
+            </div>
           </div>
         </div>
       </header>
@@ -506,7 +616,7 @@ export default function DoppelApp() {
         {/* Hero */}
         <div className="mb-6">
           <div className="label">
-            {rich("hero.who", { name: <span lang="de-CH">{effProfile.name}</span>, age: effProfile.age, city: <span lang="de-CH">{effProfile.city}</span>, tagline: effProfile.tagline })}
+            {rich("hero.who", { name: <span>{effProfile.name}</span>, age: effProfile.age, city: <span lang={FRENCH_CANTONS.has(effProfile.canton) ? "fr-CH" : "de-CH"}>{effProfile.city}</span>, tagline: effProfile.tagline })}
           </div>
           <h1 className="mt-1 font-serif text-4xl leading-tight sm:text-5xl">
             {t("hero.goal", { goal: effProfile.goal.label })}{" "}

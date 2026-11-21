@@ -28,7 +28,6 @@ export const de = {
   },
 
   header: {
-    profiles: "Demoprofil",
     accounts: "Konto",
     switchAria: "Konto wechseln (aktuell: {name})",
     menu: "Konten",

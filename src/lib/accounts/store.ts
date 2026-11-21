@@ -1,0 +1,361 @@
+/**
+ * Accounts store: the three built-in accounts, user-created accounts, the active account and every local addition
+ * (snapped receipts today; imported / manual transactions, trades and profile edits in the next phase).
+ *
+ * Hydration-safe: the module starts with the built-in accounts and Barlas active, which is exactly what the server
+ * renders. `hydrateAccounts()` reads localStorage after mount; subscribers then re-render with the stored state.
+ * Every storage access is wrapped in try/catch: without storage the app simply works in memory.
+ *
+ * See docs/ACCOUNTS.md for the API.
+ */
+import { PROFILES, takeHomeMonth } from "@/lib/data/profiles";
+import { monthlySpend, withDerivedBehavior } from "@/lib/finance/investBehavior";
+import type { InvestmentTrade, Profile, Transaction } from "@/lib/finance/types";
+import type { Account, AccountRecord, AccountsState, LocalData, NewAccountInput, ProfileFields } from "./types";
+
+export const ACTIVE_KEY = "doppel:account";
+export const DATA_KEY = "doppel:accounts:v1";
+
+interface Persisted {
+  v: 1;
+  local: Record<string, LocalData>;
+  /** User-created accounts: their original data (transactions and trades included). */
+  users: Profile[];
+}
+
+const BUILT_IN = new Map(PROFILES.map((p) => [p.id, p]));
+export const DEFAULT_ACCOUNT_ID = PROFILES[0].id;
+
+const emptyLocal = (): LocalData => ({
+  receipts: [],
+  txAdded: [],
+  txEdited: {},
+  txDeleted: [],
+  tradesAdded: [],
+  tradesEdited: {},
+  tradesDeleted: [],
+  profile: {},
+});
+
+// ---------------- materialization (pure) ----------------
+
+/** Stable ids for an account's original records: "tx-0", "tx-1", … and "tr-0", … */
+function records<T>(prefix: string, base: T[], added: AccountRecord<T>[], edited: Record<string, Partial<T>>, deleted: string[]): AccountRecord<T>[] {
+  const gone = new Set(deleted);
+  return [...base.map((value, i) => ({ id: `${prefix}-${i}`, value })), ...added]
+    .filter((r) => !gone.has(r.id))
+    .map((r) => (edited[r.id] ? { id: r.id, value: { ...r.value, ...edited[r.id] } } : r));
+}
+
+export function transactionRecords(base: Profile, local: LocalData): AccountRecord<Transaction>[] {
+  return records("tx", base.transactions, local.txAdded, local.txEdited, local.txDeleted);
+}
+
+export function tradeRecords(base: Profile, local: LocalData): AccountRecord<InvestmentTrade>[] {
+  return records("tr", base.trades, local.tradesAdded, local.tradesEdited, local.tradesDeleted);
+}
+
+/** Original data + local additions → the profile the engine runs on. Pure and deterministic. */
+export function materialize(base: Profile, local: LocalData): Profile {
+  const touched =
+    local.txAdded.length + Object.keys(local.txEdited).length + local.txDeleted.length +
+    local.tradesAdded.length + Object.keys(local.tradesEdited).length + local.tradesDeleted.length +
+    Object.keys(local.profile).length;
+  if (!touched) return base;
+  const transactions = transactionRecords(base, local).map((r) => r.value);
+  const trades = tradeRecords(base, local).map((r) => r.value);
+  const f = local.profile;
+  const spend = monthlySpend(transactions);
+  const txChanged = local.txAdded.length + Object.keys(local.txEdited).length + local.txDeleted.length > 0;
+  const incomeChanged = f.grossIncomeYear !== undefined || f.marginalTaxRate !== undefined;
+  const { investShare, contributes3a, ...fields } = f;
+  const merged: Profile = {
+    ...base,
+    ...fields,
+    transactions,
+    trades,
+    expensesMonth: f.expensesMonth ?? (txChanged && spend.months ? Math.round(spend.average / 10) * 10 : base.expensesMonth),
+    rentMonth: f.rentMonth ?? (txChanged && spend.rent ? Math.round(spend.rent) : base.rentMonth),
+    netIncomeMonth:
+      f.netIncomeMonth ?? (incomeChanged ? takeHomeMonth(f.grossIncomeYear ?? base.grossIncomeYear, f.marginalTaxRate ?? base.marginalTaxRate) : base.netIncomeMonth),
+  };
+  const derived = withDerivedBehavior(merged);
+  return {
+    ...derived,
+    ...(investShare !== undefined ? { investShare } : {}),
+    ...(contributes3a !== undefined ? { contributes3a } : {}),
+  };
+}
+
+function countChanges(local: LocalData): number {
+  return (
+    local.receipts.length + local.txAdded.length + Object.keys(local.txEdited).length + local.txDeleted.length +
+    local.tradesAdded.length + Object.keys(local.tradesEdited).length + local.tradesDeleted.length +
+    Object.keys(local.profile).length
+  );
+}
+
+const withoutReceipts = (local: LocalData) => JSON.stringify({ ...local, receipts: undefined });
+const EMPTY = withoutReceipts(emptyLocal());
+
+/** Short deterministic hash (djb2) of the profile-changing local data; receipts are excluded on purpose. */
+function versionOf(id: string, local: LocalData): string {
+  const text = withoutReceipts(local);
+  if (text === EMPTY) return `${id}:0`;
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (Math.imul(h, 33) ^ text.charCodeAt(i)) >>> 0;
+  return `${id}:${h.toString(36)}`;
+}
+
+// ---------------- store state ----------------
+
+let persisted: Persisted = { v: 1, local: {}, users: [] };
+let activeId = DEFAULT_ACCOUNT_ID;
+const accountCache = new Map<string, { local: LocalData; base: Profile; account: Account }>();
+
+function baseOf(id: string): Profile | undefined {
+  return BUILT_IN.get(id) ?? persisted.users.find((u) => u.id === id);
+}
+
+function buildAccount(base: Profile, builtIn: boolean): Account {
+  const local = persisted.local[base.id] ?? emptyLocal();
+  const cached = accountCache.get(base.id);
+  if (cached && cached.local === local && cached.base === base) return cached.account;
+  const account: Account = {
+    id: base.id,
+    builtIn,
+    profile: materialize(base, local),
+    receipts: local.receipts,
+    localChanges: countChanges(local),
+    version: versionOf(base.id, local),
+  };
+  accountCache.set(base.id, { local, base, account });
+  return account;
+}
+
+function buildState(hydrated: boolean): AccountsState {
+  const accounts = [...PROFILES.map((p) => buildAccount(p, true)), ...persisted.users.map((u) => buildAccount(u, false))];
+  const active = accounts.some((a) => a.id === activeId) ? activeId : DEFAULT_ACCOUNT_ID;
+  return { hydrated, activeId: active, accounts };
+}
+
+const SERVER_STATE: AccountsState = buildState(false);
+let state: AccountsState = SERVER_STATE;
+const listeners = new Set<() => void>();
+
+function emit() {
+  state = buildState(state.hydrated);
+  for (const l of listeners) l();
+}
+
+function save() {
+  try {
+    localStorage.setItem(DATA_KEY, JSON.stringify(persisted));
+  } catch {
+    // Storage full or blocked: keep working in memory.
+  }
+}
+
+function update(id: string, fn: (local: LocalData) => LocalData) {
+  if (!baseOf(id)) throw new Error(`Unknown account: ${id}`);
+  const next = fn(persisted.local[id] ?? emptyLocal());
+  persisted = { ...persisted, local: { ...persisted.local, [id]: next } };
+  save();
+  emit();
+}
+
+const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+// ---------------- React plumbing ----------------
+
+export function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+export const getSnapshot = (): AccountsState => state;
+/** Server render and hydration: built-in data only, Barlas active. */
+export const getServerSnapshot = (): AccountsState => SERVER_STATE;
+
+/** Reads localStorage once (call after mount). Safe to call repeatedly. */
+export function hydrateAccounts(): void {
+  if (state.hydrated) return;
+  try {
+    const raw = localStorage.getItem(DATA_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Partial<Persisted>) : null;
+    if (parsed && parsed.v === 1) {
+      const local: Record<string, LocalData> = {};
+      for (const [id, l] of Object.entries(parsed.local ?? {})) local[id] = { ...emptyLocal(), ...l };
+      persisted = { v: 1, local, users: Array.isArray(parsed.users) ? parsed.users : [] };
+    }
+  } catch {
+    // Corrupt or blocked storage: start from the original data.
+  }
+  try {
+    const stored = localStorage.getItem(ACTIVE_KEY);
+    if (stored && baseOf(stored)) activeId = stored;
+  } catch {
+    // ignore
+  }
+  state = buildState(true);
+  for (const l of listeners) l();
+}
+
+// ---------------- public API ----------------
+
+export const listAccounts = (): Account[] => state.accounts;
+export const getAccount = (id: string): Account | undefined => state.accounts.find((a) => a.id === id);
+export const getActiveAccount = (): Account => getAccount(state.activeId) ?? state.accounts[0];
+
+export function setActiveAccount(id: string): void {
+  if (!baseOf(id)) throw new Error(`Unknown account: ${id}`);
+  activeId = id;
+  try {
+    localStorage.setItem(ACTIVE_KEY, id);
+  } catch {
+    // ignore
+  }
+  emit();
+}
+
+/** A snapped receipt (counted in "this month", not in the multi-month baseline). */
+export function addReceipt(accountId: string, tx: Transaction): void {
+  update(accountId, (l) => ({ ...l, receipts: [...l.receipts, { ...tx }] }));
+}
+
+export function listTransactions(accountId: string): AccountRecord<Transaction>[] {
+  const base = baseOf(accountId);
+  return base ? transactionRecords(base, persisted.local[accountId] ?? emptyLocal()) : [];
+}
+
+export function addTransaction(accountId: string, tx: Transaction): string {
+  const id = newId("tx");
+  update(accountId, (l) => ({ ...l, txAdded: [...l.txAdded, { id, value: { ...tx } }] }));
+  return id;
+}
+
+/** Adds many transactions in one write (e.g. a bank statement import). Returns their ids. */
+export function addTransactions(accountId: string, txs: Transaction[]): string[] {
+  const added = txs.map((value, i) => ({ id: `${newId("tx")}-${i}`, value: { ...value } }));
+  update(accountId, (l) => ({ ...l, txAdded: [...l.txAdded, ...added] }));
+  return added.map((a) => a.id);
+}
+
+export function updateTransaction(accountId: string, recordId: string, patch: Partial<Transaction>): void {
+  update(accountId, (l) => {
+    const i = l.txAdded.findIndex((r) => r.id === recordId);
+    if (i >= 0) return { ...l, txAdded: l.txAdded.map((r, j) => (j === i ? { id: r.id, value: { ...r.value, ...patch } } : r)) };
+    return { ...l, txEdited: { ...l.txEdited, [recordId]: { ...l.txEdited[recordId], ...patch } } };
+  });
+}
+
+export function deleteTransaction(accountId: string, recordId: string): void {
+  update(accountId, (l) =>
+    l.txAdded.some((r) => r.id === recordId)
+      ? { ...l, txAdded: l.txAdded.filter((r) => r.id !== recordId) }
+      : { ...l, txDeleted: [...new Set([...l.txDeleted, recordId])] },
+  );
+}
+
+export function listTrades(accountId: string): AccountRecord<InvestmentTrade>[] {
+  const base = baseOf(accountId);
+  return base ? tradeRecords(base, persisted.local[accountId] ?? emptyLocal()) : [];
+}
+
+export function addTrade(accountId: string, trade: InvestmentTrade): string {
+  const id = newId("tr");
+  update(accountId, (l) => ({ ...l, tradesAdded: [...l.tradesAdded, { id, value: { ...trade } }] }));
+  return id;
+}
+
+export function addTrades(accountId: string, trades: InvestmentTrade[]): string[] {
+  const added = trades.map((value, i) => ({ id: `${newId("tr")}-${i}`, value: { ...value } }));
+  update(accountId, (l) => ({ ...l, tradesAdded: [...l.tradesAdded, ...added] }));
+  return added.map((a) => a.id);
+}
+
+export function updateTrade(accountId: string, recordId: string, patch: Partial<InvestmentTrade>): void {
+  update(accountId, (l) => {
+    const i = l.tradesAdded.findIndex((r) => r.id === recordId);
+    if (i >= 0) return { ...l, tradesAdded: l.tradesAdded.map((r, j) => (j === i ? { id: r.id, value: { ...r.value, ...patch } } : r)) };
+    return { ...l, tradesEdited: { ...l.tradesEdited, [recordId]: { ...l.tradesEdited[recordId], ...patch } } };
+  });
+}
+
+export function deleteTrade(accountId: string, recordId: string): void {
+  update(accountId, (l) =>
+    l.tradesAdded.some((r) => r.id === recordId)
+      ? { ...l, tradesAdded: l.tradesAdded.filter((r) => r.id !== recordId) }
+      : { ...l, tradesDeleted: [...new Set([...l.tradesDeleted, recordId])] },
+  );
+}
+
+/** Sets profile fields; `undefined` values remove an earlier override (back to original / derived). */
+export function setProfileFields(accountId: string, fields: ProfileFields): void {
+  update(accountId, (l) => {
+    const profile: Record<string, unknown> = { ...l.profile };
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) delete profile[k];
+      else profile[k] = v;
+    }
+    return { ...l, profile: profile as ProfileFields };
+  });
+}
+
+/** Creates a user account from scratch and returns its id. It is not activated automatically. */
+export function createAccount(input: NewAccountInput): string {
+  const id = newId("user");
+  const transactions = input.transactions ?? [];
+  const spend = monthlySpend(transactions);
+  const goalAge = Math.max(50, input.age + 10);
+  const profile: Profile = {
+    id,
+    name: input.name.trim() || "Account",
+    age: input.age,
+    city: input.city,
+    canton: input.canton.toUpperCase(),
+    tagline: { key: "profile.user.tagline" },
+    grossIncomeYear: input.grossIncomeYear,
+    netIncomeMonth: input.netIncomeMonth ?? takeHomeMonth(input.grossIncomeYear, input.marginalTaxRate),
+    expensesMonth: input.expensesMonth ?? Math.round(spend.average / 10) * 10,
+    rentMonth: input.rentMonth ?? Math.round(spend.rent),
+    cash: input.cash ?? 0,
+    portfolio: input.portfolio ?? 0,
+    pillar2: input.pillar2 ?? 0,
+    pillar3a: input.pillar3a ?? 0,
+    contributes3a: false,
+    investShare: 0,
+    marginalTaxRate: input.marginalTaxRate,
+    riskProfile: input.riskProfile ?? "balanced",
+    retirementAge: input.retirementAge ?? 65,
+    goal: input.goal ?? { label: { key: "profile.goalK", params: { target: 500_000, age: goalAge } }, target: 500_000, age: goalAge },
+    events: input.events ?? [],
+    transactions,
+    trades: input.trades ?? [],
+    history: { soldInDrawdown: false, drawdownSellPct: 0 },
+  };
+  persisted = { ...persisted, users: [...persisted.users, withDerivedBehavior(profile)] };
+  save();
+  emit();
+  return id;
+}
+
+/** Deletes a user-created account (built-in accounts can only be reset). */
+export function deleteAccount(id: string): void {
+  if (BUILT_IN.has(id)) throw new Error("Built-in accounts cannot be deleted; use resetAccount()");
+  const { [id]: _gone, ...local } = persisted.local;
+  void _gone;
+  persisted = { ...persisted, local, users: persisted.users.filter((u) => u.id !== id) };
+  if (activeId === id) setActiveAccount(DEFAULT_ACCOUNT_ID);
+  save();
+  emit();
+}
+
+/** "Reset to original data": drops every local addition and edit of this account. */
+export function resetAccount(id: string): void {
+  if (!baseOf(id)) throw new Error(`Unknown account: ${id}`);
+  const { [id]: _gone, ...local } = persisted.local;
+  void _gone;
+  persisted = { ...persisted, local };
+  save();
+  emit();
+}

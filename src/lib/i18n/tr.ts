@@ -35,7 +35,6 @@ export const tr = {
   },
 
   header: {
-    profiles: "Demo profil",
     accounts: "Hesap",
     switchAria: "Hesap değiştir (şu anki: {name})",
     menu: "Hesaplar",
