@@ -168,7 +168,7 @@ export const tr = {
 
   cmd: {
     inputAria: "İkizin için senaryo sorusu",
-    placeholder: "İkizine bir senaryo sor…",
+    placeholder: "Bir senaryo sor…",
     dictate: "Sorunu sesle söyle",
     stopDictation: "Ses tanımayı durdur",
     speechTitle: "Tarayıcı ses tanıma",
@@ -214,7 +214,7 @@ export const tr = {
   },
 
   chart: {
-    title: "Net varlık (emeklilik ve evdeki pay dahil), bugünkü CHF ile",
+    title: "Net varlık (emeklilik + ev payı dahil), bugünkü CHF",
     engine: "Monte Carlo · deterministik motor · 0 token",
     legendRange: "Gerçek sen · %10–90 aralığı",
     legendReal: "Gerçek sen · medyan",
@@ -239,8 +239,8 @@ export const tr = {
     duration: " · {months} ay",
     earlier: "6 ay öne al",
     later: "6 ay ertele",
-    earlierShort: "−6 ay",
-    laterShort: "+6 ay",
+    earlierShort: "−6 ay",
+    laterShort: "+6 ay",
     eventAction: "{action}: {label}",
   },
 
@@ -268,12 +268,12 @@ export const tr = {
     habitPanic: "Panikle satış",
     approxPerMonth: "≈ {amount:chf}/ay",
     none: "Maliyetli bir alışkanlık görünmüyor. 👏",
-    snapped: "Bu ay taranan · {months} aylık ortalamaya göre",
-    snappedWith_one: "Bu ay taranan ({count} fiş) · {months} aylık ortalamaya göre",
-    snappedWith_other: "Bu ay taranan ({count} fiş) · {months} aylık ortalamaya göre",
-    discretionary: "/ {amount:chf} isteğe bağlı",
+    snapped: "Bu ayki taramalar · {months} ay ortalaması",
+    snappedWith_one: "Bu ayki taramalar ({count} fiş) · {months} ay ortalaması",
+    snappedWith_other: "Bu ayki taramalar ({count} fiş) · {months} ay ortalaması",
+    discretionary: "/ {amount:chf} esnek",
     crunch: "Nakit sıkışması riski",
-    crunchBefore: "{age} yaşından önce nakit sıkışması",
+    crunchBefore: "{age} yaş öncesi nakit sıkışması",
   },
 
   insight: {
@@ -320,14 +320,14 @@ export const tr = {
   },
 
   afford: {
-    title: "Tragbarkeit (banka ödeme gücü testi)",
+    title: "Banka ödeme gücü testi",
     passes: "✓ Geçiyor",
     fails: "✕ Geçmiyor",
-    basis: "alım tarihinde ({when}) medyan senaryo · %5 stres faizi, %1 bakım, brüt gelirin en fazla ⅓ kadarı",
+    basis: "Tragbarkeit · alım tarihinde ({when}) medyan senaryo · %5 stres faizi, %1 bakım, brüt gelirin en fazla ⅓ kadarı",
     ratio: "Maliyet / brüt gelir",
     equity: "Öz kaynak (peşinat)",
     mortgage: "Konut kredisi (ipotek)",
-    imputed: "Bankanın hesapladığı (varsayımsal) maliyet / yıl",
+    imputed: "Bankanın hesapladığı yıllık maliyet",
     closing: "Noter ve tapu masrafları (öz kaynaktan)",
     maxPrice: "Alınabilir en yüksek fiyat",
     passShare: "Senaryoların {share} kadarında geçiyor — aynı test her senaryoda alım tarihinde yeniden yapılıyor.",
@@ -339,23 +339,23 @@ export const tr = {
   },
 
   retire: {
-    title: "Emeklilik için yeterince biriktiriyor muyum?",
+    title: "Birikimim emekliliğe yeter mi?",
     earlier: "Bir yıl erken emekli ol",
     later: "Bir yıl geç emekli ol",
-    at: "{age} yaşında emeklilik",
+    at: "{age} yaş",
     simulating: "90 yaşına kadar hesaplanıyor…",
     lasts: "Birikimlerinin 90 yaşına kadar yetme ihtimali: {odds}.",
     badCase: "Kötü senaryoda (10'da 1) {age} yaşında tükeniyor.",
     badCaseOk: "Kötü senaryoda (10'da 1) bile 90 yaşından sonrasına yetiyor.",
-    ahv: "AHV (devlet emekliliği) · 65'ten itibaren, 13. aylık dahil",
-    bvg: "BVG / emeklilik sandığı (Pensionskasse) · {age} yaşından itibaren",
+    ahv: "AHV (devlet emekliliği) · 65+, 13. aylık dahil",
+    bvg: "BVG / emeklilik sandığı (Pensionskasse) · {age}+",
     income: "Emeklilik geliri",
     spending: "Emeklilikte harcama",
     gap: "Birikimden karşılanan açık",
     gapNone: "yok",
     savingsAt: "{age} yaşında birikim (medyan)",
     replacement: "Gelir ikame oranı",
-    replacementNote: "son maaşın (pratik kural %60–80)",
+    replacementNote: "(önerilen %60–80)",
     bridge_one:
       "{age} yaşında emekli olmak, {count} yıl AHV almadan geçirmek demek — bu köprü birikiminden ödenir ve emeklilik sandığı sermayeni daha düşük oranla aylığa çevirir.",
     bridge_other:
@@ -379,7 +379,7 @@ export const tr = {
     oddsUnchanged: " · ihtimal değişmedi ({p:pct})",
     oddsChanged: " · ihtimal {before:pct} → {after:pct}",
     samples: {
-      qr: "QR fatura",
+      qr: "Fatura",
       qrHint: "Sağlık sigortası",
       listing: "İlan",
       listingHint: "Zürih'te daire",
