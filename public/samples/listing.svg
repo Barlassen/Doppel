@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="#f6f6f4"/>
+  <rect width="1080" height="96" fill="#fff"/>
+  <text x="48" y="60" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="bold" fill="#1d4f3b">immolake</text>
+  <text x="840" y="60" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#555">Kaufen</text>
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bcd3e6"/><stop offset="1" stop-color="#e9eef2"/></linearGradient></defs>
+  <rect x="0" y="96" width="1080" height="560" fill="url(#sky)"/>
+  <rect x="180" y="300" width="720" height="356" fill="#d9cbb5"/>
+  <rect x="180" y="270" width="720" height="40" fill="#8c6f56"/>
+  <g fill="#6f8aa3"><rect x="220" y="340" width="70" height="90"/><rect x="330" y="340" width="70" height="90"/><rect x="440" y="340" width="70" height="90"/><rect x="550" y="340" width="70" height="90"/><rect x="660" y="340" width="70" height="90"/><rect x="770" y="340" width="70" height="90"/><rect x="220" y="490" width="70" height="90"/><rect x="330" y="490" width="70" height="90"/><rect x="440" y="490" width="70" height="90"/><rect x="550" y="490" width="70" height="90"/><rect x="660" y="490" width="70" height="90"/><rect x="770" y="490" width="70" height="90"/></g>
+  <rect x="0" y="600" width="1080" height="56" fill="#7c9a6b"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111">
+    <text x="48" y="740" font-size="44" font-weight="bold">4.5 Zimmer Wohnung</text>
+    <text x="48" y="796" font-size="30" fill="#444">Schaffhauserstrasse 220, 8050 Zürich</text>
+    <text x="48" y="880" font-size="52" font-weight="bold">CHF 940'000.–</text>
+    <text x="48" y="920" font-size="26" fill="#555">Kaufpreis</text>
+    <text x="48" y="1010" font-size="30">Wohnfläche 112 m²</text>
+    <text x="48" y="1060" font-size="30">Baujahr 2016 · Balkon · Lift</text>
+    <text x="48" y="1110" font-size="30">Bezugsbereit ab 01.04.2027</text>
+  </g>
+  <rect x="48" y="1180" width="984" height="96" rx="12" fill="#1d4f3b"/>
+  <text x="540" y="1240" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="32" fill="#fff">Kontakt aufnehmen</text>
+</svg>

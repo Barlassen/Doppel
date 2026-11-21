@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f5f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0eee8;
+  --line: #e2dfd6;
+  --ink: #0f1115;
+  --ink-2: #52514e;
+  --ink-3: #8a877f;
+  --accent: #b3122e; /* Swiss red, used sparingly */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #0a7a3d;
+  --warn: #a86500;
+  --bad: #c42b1c;
+  --frugal: #0a7a3d;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111110;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --line: #2f2e2b;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --ink-3: #8f8d84;
+    --accent: #e5484d;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --good: #3fb871;
+    --warn: #e0a030;
+    --bad: #ef5b4c;
+    --frugal: #3fb871;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111110;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --line: #2f2e2b;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --ink-3: #8f8d84;
+  --accent: #e5484d;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --good: #3fb871;
+  --warn: #e0a030;
+  --bad: #ef5b4c;
+  --frugal: #3fb871;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-s1: var(--series-1);
+  --color-s2: var(--series-2);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-frugal: var(--frugal);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.pulse-soft {
+  animation: pulse-soft 1.2s ease-in-out infinite;
+}
