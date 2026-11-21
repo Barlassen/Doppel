@@ -400,6 +400,8 @@ export const tr = {
       payslipHint: "Aylık maaş",
       note: "Not",
       noteHint: "El yazısı hedef",
+      plan: "Plan",
+      planHint: "İsviçre kat planı",
     },
   },
 
@@ -431,6 +433,50 @@ export const tr = {
     rooms: "Oda",
     discard: "Vazgeç",
     add: "İkizine ekle",
+  },
+
+  vision: {
+    whyHeading: "Görsel model neden gerekti",
+    whyOcrSufficient: "Basılı metin doğrusal; yerel OCR ve regex yeterli (0 görsel token).",
+    whyPlan:
+      "OCR dağınık {numbers} sayı buldu ve piksel analizi dik açılı oda duvarları tespit etti (skor {walls}). Boyutları ve alanları odalarla yalnızca görsel model eşleştirebilir.",
+    whyChart:
+      "Veri etiketi olmayan {kind} tespit edildi ({colors} renk dilimi, eğri skoru {curve}). Görsel model dilimleri ve eksen ölçeğini okur.",
+    chartKindDonut: "dağılım halka grafiği",
+    chartKindLine: "portföy değeri çizgi grafiği",
+    chartKindBoth: "dağılım halkası ve performans çizgi grafiği",
+    stepDetect: "Görsel yapı algılayıcı",
+    stepCropPlan: "Kat planını kırp ve küçült (≤768px)",
+    stepVerify: "Deterministik TypeScript doğrulaması",
+    planBadge: "Doğrulanmış İsviçre kat planı",
+    planHeadline: "{rooms} oda · {area:int} m² · {pricePerM2:chf}/m² · {delta}",
+    planHeadlineNoBench: "{rooms} oda · {area:int} m² · {pricePerM2:chf}/m²",
+    planHeadlineAreaOnly: "{rooms} oda · {area:int} m² net yaşam alanı",
+    aboveMedian: "{region} medyanının {pct:pct} üzerinde",
+    belowMedian: "{region} medyanının {pct:pct} altında",
+    atMedian: "{region} medyanı düzeyinde",
+    medianFootnote:
+      "Bölgesel karşılaştırma, {region} için yaklaşık örnek daire medyanını kullanır ({median:chf}/m²).",
+    verifyAreaOk:
+      "✓ Oda alanları toplamı {computed:num1} m² (belirtilen {stated:num1} m² yaşam alanının ±{tol:pct} toleransı içinde).",
+    verifyAreaFromDims:
+      "✓ Net yaşam alanı oda boyutlarından deterministik olarak hesaplandı: {computed:num1} m².",
+    verifyRoomsOk:
+      "✓ İsviçre oda sayısı doğrulandı: {computed} oda (salon ve yatak odaları sayılır; açık yemek alanı 0,5; mutfak, banyo ve hol hariç).",
+    warnRoomDimArea:
+      "⚠ {room}: boyutların çarpımı {computed:num1} m², basılı alan ise {printed:num1} m².",
+    warnAreaIncludesBalcony:
+      "⚠ Belirtilen {stated:num1} m² alanına {balcony:num1} m² balkon/teras dahil edilmiş. İç net yaşam alanı {computed:num1} m² (±%10 tolerans).",
+    warnAreaMismatch:
+      "⚠ İç odaların toplamı {computed:num1} m²; belirtilen {stated:num1} m² değerinden {diff:pct} sapıyor (tolerans ±{tol:pct}).",
+    warnRoomCount:
+      "⚠ İsviçre oda sayısı kontrolü: plandaki odalar {computed} odaya karşılık geliyor (mutfak, banyo ve hol hariç), ilanda ise {stated} yazıyor.",
+    roomsTableTitle: "Kat planından okunan odalar ({count:int} alan · {sum:num1} m² iç alan)",
+    roomCount_one: "{count} oda",
+    roomCount_other: "{count} oda",
+    roomFromDims: "{dims} m → {area:num1} m² (hesaplanan)",
+    balconyArea: "Dış balkon / teras: {area:num1} m² (net yaşam alanına dahil değildir).",
+    livingArea: "Yaşam alanı (m²)",
   },
 
   receipt: {
@@ -477,6 +523,8 @@ export const tr = {
     "local-parser": "Yerel çözümleyici",
     "text-llm": "Metin LLM",
     "vision-llm": "Görsel LLM",
+    "vision-plan": "Görsel · kat planı",
+    "vision-chart": "Görsel · grafik",
     "offline-heuristic": "Çevrimdışı regex",
     "offline-template": "Çevrimdışı şablon",
   },
@@ -487,6 +535,8 @@ export const tr = {
     "local-regex": "Yerel regex",
     "text-llm": "Metin modeli",
     "vision-llm": "Görsel model",
+    "vision-plan": "Kat planı modeli",
+    "vision-chart": "Grafik modeli",
     "offline-heuristic": "Yerel yedek",
   },
 

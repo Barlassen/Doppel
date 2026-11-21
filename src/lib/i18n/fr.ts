@@ -402,6 +402,8 @@ export const fr = {
       payslipHint: "Fiche de salaire mensuelle",
       note: "Note",
       noteHint: "Objectif manuscrit",
+      plan: "Plan",
+      planHint: "Plan d’étage suisse",
     },
   },
 
@@ -433,6 +435,50 @@ export const fr = {
     rooms: "Pièces",
     discard: "Ignorer",
     add: "Ajouter au jumeau",
+  },
+
+  vision: {
+    whyHeading: "Pourquoi la vision était nécessaire",
+    whyOcrSufficient: "Le texte imprimé est linéaire\u202f; l’OCR local et les regex suffisent (0 token visuel).",
+    whyPlan:
+      "L’OCR a trouvé {numbers} nombres épars et l’analyse d’image a détecté des murs orthogonaux (score {walls}). Seule la vision associe les dimensions et surfaces à chaque pièce.",
+    whyChart:
+      "Détecté\u202f: {kind} ({colors} segments colorés, score de courbe {curve}) sans étiquettes de valeurs. La vision lit les parts et l’échelle des axes.",
+    chartKindDonut: "un graphique en anneau d’allocation",
+    chartKindLine: "un graphique linéaire de valeur du portefeuille",
+    chartKindBoth: "un anneau d’allocation et une courbe de performance",
+    stepDetect: "Détecteur de structure visuelle",
+    stepCropPlan: "Recadrer et réduire le plan (≤768px)",
+    stepVerify: "Vérification TypeScript déterministe",
+    planBadge: "Plan d’étage suisse vérifié",
+    planHeadline: "{rooms} pièces · {area:int} m² · {pricePerM2:chf}/m² · {delta}",
+    planHeadlineNoBench: "{rooms} pièces · {area:int} m² · {pricePerM2:chf}/m²",
+    planHeadlineAreaOnly: "{rooms} pièces · {area:int} m² de surface habitable",
+    aboveMedian: "{pct:pct} au-dessus de la médiane pour {region}",
+    belowMedian: "{pct:pct} en dessous de la médiane pour {region}",
+    atMedian: "au niveau de la médiane pour {region}",
+    medianFootnote:
+      "La comparaison régionale utilise une médiane indicative approximative pour {region} ({median:chf}/m²).",
+    verifyAreaOk:
+      "✓ La somme des pièces fait {computed:num1} m² (dans la tolérance de ±{tol:pct} des {stated:num1} m² annoncés).",
+    verifyAreaFromDims:
+      "✓ Surface habitable calculée de façon déterministe à partir des dimensions\u202f: {computed:num1} m².",
+    verifyRoomsOk:
+      "✓ Nombre de pièces suisse vérifié\u202f: {computed} pièces (séjour et chambres comptent\u202f; coin à manger ouvert 0,5\u202f; cuisine, bain et hall exclus).",
+    warnRoomDimArea:
+      "⚠ {room}\u202f: les dimensions donnent {computed:num1} m², contre {printed:num1} m² imprimés.",
+    warnAreaIncludesBalcony:
+      "⚠ Les {stated:num1} m² annoncés incluent {balcony:num1} m² de balcon/terrasse. La surface habitable nette est de {computed:num1} m² (tolérance ±10\u202f%).",
+    warnAreaMismatch:
+      "⚠ La somme des pièces intérieures ({computed:num1} m²) s’écarte de {diff:pct} des {stated:num1} m² annoncés (tolérance ±{tol:pct}).",
+    warnRoomCount:
+      "⚠ Convention suisse des pièces\u202f: le plan correspond à {computed} pièces (hors cuisine, bain et hall), contre {stated} annoncées.",
+    roomsTableTitle: "Pièces lues sur le plan ({count:int} espaces · {sum:num1} m² intérieurs)",
+    roomCount_one: "{count} p.",
+    roomCount_other: "{count} p.",
+    roomFromDims: "{dims} m → {area:num1} m² (calculé)",
+    balconyArea: "Balcon / terrasse extérieur\u202f: {area:num1} m² (hors surface habitable nette).",
+    livingArea: "Surface habitable (m²)",
   },
 
   receipt: {
@@ -479,6 +525,8 @@ export const fr = {
     "local-parser": "Analyseur local",
     "text-llm": "LLM texte",
     "vision-llm": "LLM vision",
+    "vision-plan": "Vision · plan d’étage",
+    "vision-chart": "Vision · graphique",
     "offline-heuristic": "Regex hors ligne",
     "offline-template": "Modèle hors ligne",
   },
@@ -489,6 +537,8 @@ export const fr = {
     "local-regex": "Regex locale",
     "text-llm": "Modèle texte",
     "vision-llm": "Modèle vision",
+    "vision-plan": "Vision plan d’étage",
+    "vision-chart": "Vision graphique",
     "offline-heuristic": "Repli local",
   },
 

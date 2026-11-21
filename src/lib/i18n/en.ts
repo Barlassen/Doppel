@@ -398,6 +398,8 @@ export const en = {
       payslipHint: "Monthly pay",
       note: "Note",
       noteHint: "Handwritten goal",
+      plan: "Plan",
+      planHint: "Swiss floor plan",
     },
   },
 
@@ -429,6 +431,46 @@ export const en = {
     rooms: "Rooms",
     discard: "Discard",
     add: "Add to twin",
+  },
+
+  vision: {
+    whyHeading: "Why vision was needed",
+    whyOcrSufficient: "Printed text is linear; local OCR and regex suffice (0 vision tokens).",
+    whyPlan:
+      "OCR found {numbers} scattered numbers, and pixel analysis detected orthogonal room walls (score {walls}). Only vision can map dimensions and areas to individual rooms.",
+    whyChart:
+      "Detected {kind} ({colors} colour segments, curve score {curve}) without data labels. Vision reads the slices and axis scale.",
+    chartKindDonut: "an allocation donut chart",
+    chartKindLine: "a portfolio value line chart",
+    chartKindBoth: "an allocation donut and performance line chart",
+    stepDetect: "Visual structure detector",
+    stepCropPlan: "Crop & downscale floor plan (≤768px)",
+    stepVerify: "Deterministic TypeScript verification",
+    planBadge: "Verified Swiss floor plan",
+    planHeadline: "{rooms} rooms · {area:int} m² · {pricePerM2:chf}/m² · {delta}",
+    planHeadlineNoBench: "{rooms} rooms · {area:int} m² · {pricePerM2:chf}/m²",
+    planHeadlineAreaOnly: "{rooms} rooms · {area:int} m² net living area",
+    aboveMedian: "{pct:pct} above the {region} median",
+    belowMedian: "{pct:pct} below the {region} median",
+    atMedian: "at the {region} median",
+    medianFootnote: "Regional comparison uses an illustrative approximate condo median for {region} ({median:chf}/m²).",
+    verifyAreaOk: "✓ Room areas sum to {computed:num1} m² (within ±{tol:pct} of stated {stated:num1} m² living area).",
+    verifyAreaFromDims: "✓ Net living area computed deterministically from room dimensions: {computed:num1} m².",
+    verifyRoomsOk:
+      "✓ Swiss room count verified: {computed} rooms (living & bedrooms count; open dining counts 0.5; kitchen, bath & hall excluded).",
+    warnRoomDimArea: "⚠ {room}: dimensions multiply to {computed:num1} m², which differs from printed {printed:num1} m².",
+    warnAreaIncludesBalcony:
+      "⚠ Stated {stated:num1} m² includes the {balcony:num1} m² balcony/terrace. Interior net living area is {computed:num1} m² (±10% tolerance).",
+    warnAreaMismatch:
+      "⚠ Interior rooms sum to {computed:num1} m², which differs by {diff:pct} from stated {stated:num1} m² (tolerance ±{tol:pct}).",
+    warnRoomCount:
+      "⚠ Swiss room-count check: rooms on the plan correspond to {computed} rooms (kitchen, bath & hall excluded), whereas the listing states {stated}.",
+    roomsTableTitle: "Rooms read from floor plan ({count:int} spaces · {sum:num1} m² interior)",
+    roomCount_one: "{count} rm",
+    roomCount_other: "{count} rm",
+    roomFromDims: "{dims} m = {area:num1} m²",
+    balconyArea: "Exterior balcony / terrace: {area:num1} m² (excluded from net living area).",
+    livingArea: "Living area (m²)",
   },
 
   receipt: {
@@ -475,6 +517,8 @@ export const en = {
     "local-parser": "Local parser",
     "text-llm": "Text LLM",
     "vision-llm": "Vision LLM",
+    "vision-plan": "Vision · plan",
+    "vision-chart": "Vision · chart",
     "offline-heuristic": "Offline regex",
     "offline-template": "Offline template",
   },
@@ -485,6 +529,8 @@ export const en = {
     "local-regex": "Local regex",
     "text-llm": "Text model",
     "vision-llm": "Vision model",
+    "vision-plan": "Floor-plan vision",
+    "vision-chart": "Chart vision",
     "offline-heuristic": "Local fallback",
   },
 

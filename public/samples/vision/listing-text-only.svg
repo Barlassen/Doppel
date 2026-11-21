@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="820" viewBox="0 0 1000 820">
+  <rect width="1000" height="820" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="64" y="88" font-size="36" font-weight="bold" fill="#1d4f3b">immolake · Objektdatenblatt</text>
+    <text x="64" y="170" font-size="42" font-weight="bold">4.5 Zimmer Eigentumswohnung</text>
+    <text x="64" y="224" font-size="28" fill="#444444">Römerstrasse 88, 8400 Winterthur</text>
+    <text x="64" y="320" font-size="48" font-weight="bold">Kaufpreis CHF 860'000.–</text>
+    <text x="64" y="410" font-size="30">Wohnfläche: 108 m²</text>
+    <text x="64" y="464" font-size="30">Zimmer: 4.5 Zimmer</text>
+    <text x="64" y="518" font-size="30">Etage: 2. Obergeschoss mit Lift</text>
+    <text x="64" y="572" font-size="30">Baujahr: 2019 · Minergie-Standard</text>
+    <text x="64" y="626" font-size="30">Verfügbar ab: 01.07.2027</text>
+  </g>
+</svg>

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="900" viewBox="0 0 1100 900">
+  <rect width="1100" height="900" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="56" font-size="28" font-weight="bold">Grundriss · 4.5 Zimmer</text>
+    <text x="60" y="88" font-size="20" fill="#444444">Aareblick Wohnungen · 3013 Bern · Verkaufspreis CHF 845'000</text>
+    <text x="1040" y="56" text-anchor="end" font-size="20" font-weight="bold">Massstab 1:100</text>
+    <text x="1040" y="86" text-anchor="end" font-size="16" fill="#555555">Alle Masse in Metern</text>
+  </g>
+
+  <!-- Outer structural walls -->
+  <rect x="60" y="130" width="760" height="610" fill="#fcfcfa" stroke="#111111" stroke-width="10"/>
+  <!-- Terrace -->
+  <rect x="820" y="130" width="210" height="340" fill="#f5f7f5" stroke="#111111" stroke-width="5" stroke-dasharray="10 6"/>
+
+  <!-- Interior walls -->
+  <line x1="60" y1="385" x2="820" y2="385" stroke="#111111" stroke-width="7"/>
+  <line x1="60" y1="485" x2="520" y2="485" stroke="#111111" stroke-width="7"/>
+  <line x1="270" y1="130" x2="270" y2="385" stroke="#111111" stroke-width="6"/>
+  <line x1="470" y1="130" x2="470" y2="385" stroke="#111111" stroke-width="6"/>
+  <line x1="650" y1="130" x2="650" y2="385" stroke="#111111" stroke-width="6"/>
+  <line x1="260" y1="485" x2="260" y2="740" stroke="#111111" stroke-width="6"/>
+  <line x1="520" y1="385" x2="520" y2="740" stroke="#111111" stroke-width="6"/>
+  <line x1="520" y1="520" x2="820" y2="520" stroke="#444444" stroke-width="3" stroke-dasharray="8 8"/>
+
+  <!-- Room names and dimensions ONLY (no m² anywhere) -->
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111" text-anchor="middle">
+    <text x="165" y="245" font-size="22" font-weight="bold">Schlafen 1</text>
+    <text x="165" y="280" font-size="20">4.20 × 3.80</text>
+
+    <text x="370" y="245" font-size="22" font-weight="bold">Schlafen 2</text>
+    <text x="370" y="280" font-size="20">3.80 × 3.20</text>
+
+    <text x="560" y="245" font-size="21" font-weight="bold">Arbeitszimmer</text>
+    <text x="560" y="280" font-size="20">3.50 × 3.00</text>
+
+    <text x="735" y="245" font-size="22" font-weight="bold">Küche</text>
+    <text x="735" y="280" font-size="20">3.20 × 2.80</text>
+
+    <text x="290" y="440" font-size="20" font-weight="bold">Korridor · 4.50 × 1.80</text>
+
+    <text x="160" y="605" font-size="22" font-weight="bold">Bad / WC</text>
+    <text x="160" y="640" font-size="20">2.80 × 2.20</text>
+
+    <text x="670" y="445" font-size="21" font-weight="bold">Essbereich (offen)</text>
+    <text x="670" y="480" font-size="20">3.20 × 2.50</text>
+
+    <text x="670" y="620" font-size="24" font-weight="bold">Wohnen</text>
+    <text x="670" y="658" font-size="22">5.50 × 4.80</text>
+
+    <text x="925" y="295" font-size="22" font-weight="bold">Terrasse</text>
+    <text x="925" y="330" font-size="20">4.80 × 2.50</text>
+  </g>
+
+  <!-- Scale bar -->
+  <g transform="translate(60, 810)" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#222222">
+    <line x1="0" y1="0" x2="250" y2="0" stroke="#111111" stroke-width="4"/>
+    <line x1="0" y1="-8" x2="0" y2="8" stroke="#111111" stroke-width="3"/>
+    <line x1="50" y1="-6" x2="50" y2="6" stroke="#111111" stroke-width="2"/>
+    <line x1="100" y1="-6" x2="100" y2="6" stroke="#111111" stroke-width="2"/>
+    <line x1="250" y1="-8" x2="250" y2="8" stroke="#111111" stroke-width="3"/>
+    <text x="0" y="26">0 m</text>
+    <text x="45" y="26">1 m</text>
+    <text x="95" y="26">2 m</text>
+    <text x="235" y="26">5 m</text>
+  </g>
+</svg>

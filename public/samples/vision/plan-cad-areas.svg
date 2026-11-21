@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="900" viewBox="0 0 1100 900">
+  <rect width="1100" height="900" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="56" font-size="28" font-weight="bold">Grundriss · 4.5-Zimmer-Eigentumswohnung</text>
+    <text x="60" y="88" font-size="20" fill="#444444">Residenz Eulachpark · 8400 Winterthur · Kaufpreis CHF 940'000</text>
+    <text x="1040" y="56" text-anchor="end" font-size="24" font-weight="bold">Nettowohnfläche 112 m²</text>
+    <text x="1040" y="88" text-anchor="end" font-size="18" fill="#555555">Massstab 1:100 · Balkon 14.0 m²</text>
+  </g>
+
+  <!-- Outer structural walls -->
+  <rect x="60" y="130" width="780" height="620" fill="#fcfcfa" stroke="#111111" stroke-width="10"/>
+
+  <!-- Balcony (exterior, right side) -->
+  <rect x="840" y="130" width="190" height="360" fill="#f3f6f4" stroke="#111111" stroke-width="5" stroke-dasharray="12 6"/>
+
+  <!-- Interior partition walls -->
+  <!-- Horizontal main spine separating North rooms (y:130..390) from Corridor/South rooms -->
+  <line x1="60" y1="390" x2="840" y2="390" stroke="#111111" stroke-width="7"/>
+  <!-- Corridor bottom wall (y=490 from x=60 to x=540) -->
+  <line x1="60" y1="490" x2="540" y2="490" stroke="#111111" stroke-width="7"/>
+
+  <!-- North rooms vertical partitions: Eltern | Zimmer 2 | Zimmer 3 / Büro | Küche -->
+  <line x1="280" y1="130" x2="280" y2="390" stroke="#111111" stroke-width="6"/>
+  <line x1="480" y1="130" x2="480" y2="390" stroke="#111111" stroke-width="6"/>
+  <line x1="660" y1="130" x2="660" y2="390" stroke="#111111" stroke-width="6"/>
+
+  <!-- South/middle vertical partitions: Bad/WC | DU/WC | Entrée/Korridor | Essbereich | Wohnen -->
+  <line x1="210" y1="490" x2="210" y2="750" stroke="#111111" stroke-width="6"/>
+  <line x1="340" y1="490" x2="340" y2="750" stroke="#111111" stroke-width="6"/>
+  <line x1="540" y1="390" x2="540" y2="750" stroke="#111111" stroke-width="6"/>
+  <!-- Dashed open separator between Essbereich (open dining half-room) and Wohnen -->
+  <line x1="540" y1="530" x2="840" y2="530" stroke="#444444" stroke-width="3" stroke-dasharray="8 8"/>
+
+  <!-- Room labels, printed areas, and dimensions -->
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111" text-anchor="middle">
+    <!-- 1. Eltern (17.6 m²) -->
+    <text x="170" y="235" font-size="22" font-weight="bold">Eltern</text>
+    <text x="170" y="268" font-size="22">17.6 m²</text>
+    <text x="170" y="298" font-size="16" fill="#555555">4.40 × 4.00 m</text>
+
+    <!-- 2. Zimmer 2 (14.4 m²) -->
+    <text x="380" y="235" font-size="22" font-weight="bold">Zimmer 2</text>
+    <text x="380" y="268" font-size="22">14.4 m²</text>
+    <text x="380" y="298" font-size="16" fill="#555555">4.00 × 3.60 m</text>
+
+    <!-- 3. Zimmer 3 / Büro (12.6 m²) -->
+    <text x="570" y="235" font-size="21" font-weight="bold">Zimmer 3 / Büro</text>
+    <text x="570" y="268" font-size="22">12.6 m²</text>
+    <text x="570" y="298" font-size="16" fill="#555555">3.60 × 3.50 m</text>
+
+    <!-- 4. Küche (10.8 m²) -->
+    <text x="750" y="235" font-size="22" font-weight="bold">Küche</text>
+    <text x="750" y="268" font-size="22">10.8 m²</text>
+    <text x="750" y="298" font-size="16" fill="#555555">3.60 × 3.00 m</text>
+
+    <!-- 5. Entrée / Korridor (8.8 m²) -->
+    <text x="300" y="435" font-size="20" font-weight="bold">Entrée / Korridor</text>
+    <text x="300" y="465" font-size="20">8.8 m² · 4.40 × 2.00 m</text>
+
+    <!-- 6. Bad / WC (7.2 m²) -->
+    <text x="135" y="600" font-size="21" font-weight="bold">Bad / WC</text>
+    <text x="135" y="632" font-size="21">7.2 m²</text>
+    <text x="135" y="660" font-size="16" fill="#555555">3.00 × 2.40 m</text>
+
+    <!-- 7. DU / WC (4.2 m²) -->
+    <text x="275" y="600" font-size="21" font-weight="bold">DU / WC</text>
+    <text x="275" y="632" font-size="21">4.2 m²</text>
+    <text x="275" y="660" font-size="16" fill="#555555">2.10 × 2.00 m</text>
+
+    <!-- 8. Essbereich offen (10.4 m²) -->
+    <text x="690" y="445" font-size="21" font-weight="bold">Essbereich (offen)</text>
+    <text x="690" y="476" font-size="21">10.4 m²</text>
+    <text x="690" y="504" font-size="16" fill="#555555">3.25 × 3.20 m</text>
+
+    <!-- 9. Wohnen (26.0 m²) -->
+    <text x="690" y="620" font-size="24" font-weight="bold">Wohnen</text>
+    <text x="690" y="655" font-size="24">26.0 m²</text>
+    <text x="690" y="685" font-size="17" fill="#555555">5.20 × 5.00 m</text>
+
+    <!-- 10. Balkon (14.0 m²) -->
+    <text x="935" y="290" font-size="22" font-weight="bold">Balkon</text>
+    <text x="935" y="322" font-size="22">14.0 m²</text>
+    <text x="935" y="352" font-size="16" fill="#555555">5.00 × 2.80 m</text>
+  </g>
+
+  <!-- Scale bar at bottom -->
+  <g transform="translate(60, 810)" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#222222">
+    <line x1="0" y1="0" x2="250" y2="0" stroke="#111111" stroke-width="4"/>
+    <line x1="0" y1="-8" x2="0" y2="8" stroke="#111111" stroke-width="3"/>
+    <line x1="50" y1="-6" x2="50" y2="6" stroke="#111111" stroke-width="2"/>
+    <line x1="100" y1="-6" x2="100" y2="6" stroke="#111111" stroke-width="2"/>
+    <line x1="250" y1="-8" x2="250" y2="8" stroke="#111111" stroke-width="3"/>
+    <text x="0" y="26">0 m</text>
+    <text x="45" y="26">1 m</text>
+    <text x="95" y="26">2 m</text>
+    <text x="235" y="26">5 m</text>
+  </g>
+</svg>

@@ -393,6 +393,8 @@ export const de = {
       payslipHint: "Monatliche Lohnabrechnung",
       note: "Notiz",
       noteHint: "Handschriftliches Ziel",
+      plan: "Grundriss",
+      planHint: "Schweizer Wohnungsgrundriss",
     },
   },
 
@@ -424,6 +426,50 @@ export const de = {
     rooms: "Zimmer",
     discard: "Verwerfen",
     add: "Übernehmen",
+  },
+
+  vision: {
+    whyHeading: "Warum Bildverständnis nötig war",
+    whyOcrSufficient: "Gedruckter Text ist linear; lokale OCR und Suchmuster reichen aus (0 Vision-Tokens).",
+    whyPlan:
+      "OCR fand {numbers} verstreute Zahlen, und die Pixelanalyse erkannte orthogonale Raumwände (Wert {walls}). Nur ein Bildmodell kann Masse und Flächen den einzelnen Räumen zuordnen.",
+    whyChart:
+      "Erkannt: {kind} ({colors} Farbsegmente, Kurvenwert {curve}) ohne Datenbeschriftung. Das Bildmodell liest Segmente und Achsenskala.",
+    chartKindDonut: "ein Allokations-Ringdiagramm",
+    chartKindLine: "ein Linienchart der Wertentwicklung",
+    chartKindBoth: "ein Allokations-Ringdiagramm und ein Wertentwicklungs-Linienchart",
+    stepDetect: "Visuelle Strukturerkennung",
+    stepCropPlan: "Grundriss zuschneiden & verkleinern (≤768px)",
+    stepVerify: "Deterministische TypeScript-Prüfung",
+    planBadge: "Geprüfter Schweizer Grundriss",
+    planHeadline: "{rooms} Zimmer · {area:int} m² · {pricePerM2:chf}/m² · {delta}",
+    planHeadlineNoBench: "{rooms} Zimmer · {area:int} m² · {pricePerM2:chf}/m²",
+    planHeadlineAreaOnly: "{rooms} Zimmer · {area:int} m² Nettowohnfläche",
+    aboveMedian: "{pct:pct} über dem Median für {region}",
+    belowMedian: "{pct:pct} unter dem Median für {region}",
+    atMedian: "auf Höhe des Medians für {region}",
+    medianFootnote:
+      "Der Regionalvergleich nutzt einen illustrativen Richtwert für Eigentumswohnungen in {region} ({median:chf}/m²).",
+    verifyAreaOk:
+      "✓ Raumflächen ergeben {computed:num1} m² (innerhalb von ±{tol:pct} der angegebenen {stated:num1} m² Wohnfläche).",
+    verifyAreaFromDims:
+      "✓ Nettowohnfläche deterministisch aus den Raummassen berechnet: {computed:num1} m².",
+    verifyRoomsOk:
+      "✓ Schweizer Zimmerzahl geprüft: {computed} Zimmer (Wohnen & Schlafzimmer zählen; offener Essbereich 0.5; Küche, Bad & Korridor zählen nicht).",
+    warnRoomDimArea:
+      "⚠ {room}: Masse ergeben {computed:num1} m², gedruckt sind jedoch {printed:num1} m².",
+    warnAreaIncludesBalcony:
+      "⚠ Die angegebenen {stated:num1} m² enthalten {balcony:num1} m² Balkon/Terrasse. Die Nettowohnfläche innen beträgt {computed:num1} m² (±10% Toleranz).",
+    warnAreaMismatch:
+      "⚠ Die Innenräume ergeben {computed:num1} m² und weichen um {diff:pct} von den angegebenen {stated:num1} m² ab (Toleranz ±{tol:pct}).",
+    warnRoomCount:
+      "⚠ Schweizer Zimmerregel: Der Grundriss ergibt {computed} Zimmer (ohne Küche, Bad & Korridor), angegeben sind {stated}.",
+    roomsTableTitle: "Aus dem Grundriss gelesene Räume ({count:int} Bereiche · {sum:num1} m² innen)",
+    roomCount_one: "{count} Zi.",
+    roomCount_other: "{count} Zi.",
+    roomFromDims: "{dims} m → {area:num1} m² (berechnet)",
+    balconyArea: "Balkon / Terrasse aussen: {area:num1} m² (nicht in der Nettowohnfläche enthalten).",
+    livingArea: "Wohnfläche (m²)",
   },
 
   receipt: {
@@ -470,6 +516,8 @@ export const de = {
     "local-parser": "Lokal erkannt",
     "text-llm": "Sprachmodell",
     "vision-llm": "Bildmodell",
+    "vision-plan": "Vision · Grundriss",
+    "vision-chart": "Vision · Grafik",
     "offline-heuristic": "Offline-Suchmuster",
     "offline-template": "Offline-Vorlage",
   },
@@ -480,6 +528,8 @@ export const de = {
     "local-regex": "Lokal",
     "text-llm": "Textmodell",
     "vision-llm": "Bildmodell",
+    "vision-plan": "Grundriss-Vision",
+    "vision-chart": "Grafik-Vision",
     "offline-heuristic": "Lokal ausgewertet",
   },
 
