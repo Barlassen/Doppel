@@ -14,7 +14,7 @@ import kotlin.math.roundToLong
 internal val LocalLanguage = staticCompositionLocalOf { Language.EN }
 internal expect fun setResourceLanguage(language: Language)
 
-private val placeholder = Regex("""\{(\w+)(?::(\w+))?}""")
+private val placeholder = Regex("""\{(\w+)(?::(\w+))?\}""")
 
 @Composable
 internal fun localized(key: String, vararg params: Pair<String, Any>): String = localized(message(key, *params))
