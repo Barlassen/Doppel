@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="860" viewBox="0 0 1100 860">
+  <rect width="1100" height="860" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="56" font-size="28" font-weight="bold">Plan d’étage · Appartement 3.5 pièces</text>
+    <text x="60" y="88" font-size="20" fill="#444444">Résidence Beaulieu · 1004 Lausanne · Prix de vente CHF 890'000</text>
+    <text x="1040" y="56" text-anchor="end" font-size="24" font-weight="bold">Surface habitable 88 m²</text>
+    <text x="1040" y="88" text-anchor="end" font-size="18" fill="#555555">Échelle 1:100 · Loggia 11.0 m²</text>
+  </g>
+
+  <rect x="60" y="130" width="760" height="580" fill="#fcfcfa" stroke="#111111" stroke-width="10"/>
+  <rect x="820" y="130" width="210" height="320" fill="#f3f6f4" stroke="#111111" stroke-width="5" stroke-dasharray="10 6"/>
+
+  <line x1="60" y1="380" x2="820" y2="380" stroke="#111111" stroke-width="7"/>
+  <line x1="330" y1="130" x2="330" y2="380" stroke="#111111" stroke-width="6"/>
+  <line x1="590" y1="130" x2="590" y2="380" stroke="#111111" stroke-width="6"/>
+  <line x1="360" y1="380" x2="360" y2="710" stroke="#111111" stroke-width="6"/>
+  <line x1="60" y1="490" x2="360" y2="490" stroke="#111111" stroke-width="6"/>
+  <line x1="360" y1="530" x2="820" y2="530" stroke="#444444" stroke-width="3" stroke-dasharray="8 8"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111" text-anchor="middle">
+    <text x="195" y="235" font-size="22" font-weight="bold">Chambre 1</text>
+    <text x="195" y="268" font-size="22">15.6 m²</text>
+    <text x="195" y="298" font-size="16" fill="#555555">4.10 × 3.80 m</text>
+
+    <text x="460" y="235" font-size="22" font-weight="bold">Chambre 2</text>
+    <text x="460" y="268" font-size="22">12.4 m²</text>
+    <text x="460" y="298" font-size="16" fill="#555555">3.65 × 3.40 m</text>
+
+    <text x="705" y="235" font-size="21" font-weight="bold">Salle de bain</text>
+    <text x="705" y="268" font-size="22">6.2 m²</text>
+    <text x="705" y="298" font-size="16" fill="#555555">2.60 × 2.38 m</text>
+
+    <text x="210" y="442" font-size="20" font-weight="bold">Hall / Entrée · 7.5 m²</text>
+
+    <text x="590" y="438" font-size="21" font-weight="bold">Cuisine ouverte / Coin à manger</text>
+    <text x="590" y="470" font-size="21">16.5 m² (0.5 pièce)</text>
+    <text x="590" y="498" font-size="16" fill="#555555">4.40 × 3.75 m</text>
+
+    <text x="590" y="610" font-size="24" font-weight="bold">Séjour</text>
+    <text x="590" y="644" font-size="24">24.8 m²</text>
+    <text x="590" y="674" font-size="16" fill="#555555">5.15 × 4.82 m</text>
+
+    <text x="925" y="275" font-size="22" font-weight="bold">Loggia / Balcon</text>
+    <text x="925" y="308" font-size="22">11.0 m²</text>
+    <text x="925" y="338" font-size="16" fill="#555555">4.40 × 2.50 m</text>
+  </g>
+</svg>

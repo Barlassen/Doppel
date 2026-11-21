@@ -7,6 +7,7 @@ import { categoryMsg } from "@/lib/data/merchants";
 import { receiptMoney } from "@/lib/format";
 import { isReceiptItemAmount, MAX_RECEIPT_ITEMS, RECEIPT_ITEM_NAME_LIMIT, receiptItemCategory, receiptSum } from "@/lib/snap/receipt";
 import { TierChip } from "./Inspector";
+import { VisionReviewCard } from "./VisionReview";
 import { ReceiptDetails } from "./ReceiptDetails";
 import { CardHeader } from "./ui";
 
@@ -19,6 +20,8 @@ const SAMPLES = [
   { id: "listing", file: "/samples/listing.svg" },
   { id: "payslip", file: "/samples/payslip.svg" },
   { id: "note", file: "/samples/note.svg" },
+  { id: "plan", file: "/samples/vision/plan-cad-areas.svg" },
+  { id: "chart", file: "/samples/vision/chart-app-both.svg" },
 ] as const;
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -152,10 +155,17 @@ export function SnapPanel({ onResult, items, forceLlm }: {
 
       {error && <p role="alert" className="mt-3 text-xs text-bad">{tm(error)}</p>}
       {review && (
-        <ReviewCard review={review} onDiscard={closeReview} onConfirm={(extraction) => {
-          onResult(review.name, { ...review.result, extraction });
-          closeReview();
-        }} />
+        review.result.extraction.vision ? (
+          <VisionReviewCard name={review.name} result={review.result} onDiscard={closeReview} onConfirm={(extraction) => {
+            onResult(review.name, { ...review.result, extraction });
+            closeReview();
+          }} />
+        ) : (
+          <ReviewCard review={review} onDiscard={closeReview} onConfirm={(extraction) => {
+            onResult(review.name, { ...review.result, extraction });
+            closeReview();
+          }} />
+        )
       )}
 
       {items.length > 0 && (

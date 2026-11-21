@@ -5,7 +5,7 @@ import type { DocKind, PipelineStep, SnapResult, Tier, Usage } from "@/lib/snap/
 import type { ReceiptItem } from "@/lib/finance/types";
 
 export type SnapOutcome = "ok" | "partial" | "failed";
-export type SnapRoute = "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "offline-heuristic";
+export type SnapRoute = "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "vision-plan" | "vision-chart" | "offline-heuristic";
 export type LedgerRoute = SnapRoute | "local-parser" | "offline-template";
 
 /**
@@ -58,6 +58,8 @@ export interface LedgerEntry {
   receiptItems?: ReceiptItem[];
   receiptCurrency?: string;
   imageSize?: { width: number; height: number };
+  visionReason?: Text;
+  cropSize?: { width: number; height: number };
 }
 
 export type ExclusionReason = "offline" | "failed" | "usage-unknown";
@@ -220,6 +222,8 @@ export function entryFromSnap(name: Text, r: SnapResult): LedgerEntry {
     extractedKind: r.extraction.kind,
     ...(r.extraction.kind === "receipt" ? { receiptItems: r.extraction.items, receiptCurrency: r.extraction.currency } : {}),
     imageSize: r.imageSize,
+    visionReason: r.visionReason,
+    cropSize: r.cropSize,
   };
 }
 
