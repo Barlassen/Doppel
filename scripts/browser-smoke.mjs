@@ -209,7 +209,8 @@ try {
 
   if (payslipAvailable) {
     const payslip = await scan(page, "Payslip");
-    check(payslip, 1, "offline-heuristic", "payslip", 8650);
+    check(payslip, 1, "local-regex", "payslip", 8650);
+    assert.equal(gatewayCalls.length, 0);
     await payslip.card.getByRole("button", { name: "Discard" }).click();
   } else {
     console.log("Payslip fixture is supplied by the companion branch. Set DOPPEL_SMOKE_PAYSLIP to its path to include it before merge.");

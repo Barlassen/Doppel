@@ -6,6 +6,7 @@ import type { RiskProfile } from "@/lib/finance/types";
 import { RISK_PROFILES } from "@/lib/finance/types";
 import { EQUITY_WEIGHT } from "@/lib/finance/monteCarlo";
 import { chf, pct } from "@/lib/format";
+import { groupCh } from "@/lib/format";
 
 const RISK_LABEL: Record<RiskProfile, string> = { conservative: "Conservative", balanced: "Balanced", growth: "Growth" };
 
@@ -62,7 +63,7 @@ export function InvestControls({
       {!contributes3a && (
         <p className="mt-2 text-xs text-ink-2">
           💡 3a tax left on the table: <b className="num text-ink">{chf(PILLAR_3A_MAX * marginalTaxRate)}</b>/yr (CHF{" "}
-          {PILLAR_3A_MAX.toLocaleString("de-CH")} at your {pct(marginalTaxRate)} marginal rate).
+          {groupCh(PILLAR_3A_MAX)} at your {pct(marginalTaxRate)} marginal rate).
         </p>
       )}
       {risk === "growth" && panicHistory && (

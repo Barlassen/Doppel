@@ -1,4 +1,15 @@
-export const chf = (n: number) => `CHF ${Math.round(n).toLocaleString("de-CH")}`;
+/**
+ * Swiss thousands grouping with the typographic apostrophe (1’362’649).
+ * Deterministic on purpose: Node and browsers disagree on de-CH (' vs ’), which breaks hydration.
+ */
+export function groupCh(n: number): string {
+  const neg = n < 0;
+  const [int, dec] = Math.abs(n).toString().split(".");
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, "’");
+  return `${neg ? "-" : ""}${grouped}${dec ? "." + dec : ""}`;
+}
+
+export const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
 
 export const chfShort = (n: number) => {
   const a = Math.abs(n);

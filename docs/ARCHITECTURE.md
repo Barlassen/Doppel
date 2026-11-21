@@ -8,7 +8,7 @@
 |---|---|---|
 | Read a Swiss QR-bill | Multi-scale `jsQR` + SIX payload parser | 0 tokens, ~5–90 ms |
 | Repeat snap of the same image | Local content-hash cache (`route: "cache"`) | 0 tokens, < 5 ms |
-| Read clean printed docs (receipts, listings, payslips) | Canvas cleanup + Tesseract.js (`eng+deu` worker) → DE/FR/EN regex fast path (`local-regex`) | 0 tokens, ~0.7–1.9 s |
+| Read clean printed docs (receipts, listings, payslips) | Canvas cleanup + Tesseract.js (`eng+deu+fra`, self-hosted worker) → DE/FR/EN regex fast path (`local-regex`) | 0 tokens, ~0.7–1.9 s |
 | Read ambiguous printed text / typed notes | Compact filtered OCR lines (≤ 600 chars) → small text LLM (`text-llm`) | ~150–250 tokens |
 | Read handwriting / dim or blurry photos | 512px grayscale JPEG (~11–25 KB) → small VLM (`vision-llm`, only when OCR conf < 65%) | ~380–450 tokens |
 | Understand a what-if | Local regex intent parser → small LLM only on miss | 0 or ~150 tokens |
@@ -64,7 +64,7 @@ image ──► decode + resize (≤1600px) + optional naive JPEG (≤2048px, ke
       ├─► Cache hit (same image) ────────────────────────────────────────────────► route: "cache" (0 tokens) ✔
       ├─► Tier 0: multi-scale jsQR ── "SPC/0200…" ? ──► parse QR-bill ──────────► route: "qr" (0 tokens) ✔
       ├─► grayscale + 2–98 percentile contrast stretch
-      ├─► Tesseract (eng+deu): keep lines with conf ≥ 45, dedupe, ≤24 lines, ≤600 chars
+      ├─► Tesseract (eng+deu+fra): keep lines with conf ≥ 45, dedupe, ≤24 lines, ≤600 chars
       │     ├─► conf ≥ 75% & complete structured parse ──► local regex (DE/FR/EN) ► route: "local-regex" (0 tokens) ✔
       │     ├─► conf ≥ 65% and ≥ 20 chars ──► Tier 1: compact text ──► small LLM  ► route: "text-llm" (~200 tok) ✔
       │     └─► conf < 65% ──► Tier 2: 512px gray JPEG q0.6 (~15 KB) ──► small VLM► route: "vision-llm" (~420 tok) ✔
@@ -80,35 +80,49 @@ See [docs/BENCHMARK.md](docs/BENCHMARK.md) for measured accuracy, latency, token
 
 ## 4. Finance engine
 
-### Monte Carlo (`monteCarlo.ts`)
-* Monthly steps, 1,000 paths, horizon = max(goal age, retirement age), capped at 40 years.
-* Equity 6.5% / 16% vol, bonds 2% / 5% vol, cash 0.3%, inflation 1.2%, wage growth 1.2%, home +1.5%/yr,
-  BVG 1.25% + 14% of gross contributions. Portfolio mix by risk profile (30/50/80% equity); 3a at 45% equity.
-* Events: house (20% equity drawn from cash → portfolio → 3a → pillar 2; then actual mortgage cost at 1.8% +
-  1% upkeep + amortisation replaces rent), child (monthly cost), job loss (70% unemployment insurance),
-  raise, crash (−30% equity shock), one-off expense/income.
+### Monte Carlo (`monteCarlo.ts`, `pension.ts`, `scenario.ts`)
+* Monthly steps, 1,000 seeded paths, horizon to **age 90** (accumulation, then retirement).
+* Equity 6.5% / 16% vol, bonds 2% / 5% vol, cash 0.3%, inflation 1.2%, wage growth 1.2% with 1%/yr career noise,
+  home +1.5%/yr with 5%/yr price volatility. Portfolio mix by risk profile (30/50/80% equity); 3a at 45% equity.
+* BVG: age credits 7/10/15/18% on the coordinated salary, 1.25% interest.
+* Events: house (purchase only if the bank test passes in *that* future; closing costs GE 3% / ZH 1.5%; mortgage cost
+  recomputed monthly: interest on the current loan, amortisation down to ⅔, inflated upkeep), child (monthly cost),
+  job loss (70% of insured salary, capped at CHF 148,200), raise, crash (−30% equity shock), one-off expense/income.
+* Retirement: AHV (maximum × 13/12 × 90%, from 65), pension-fund annuity (5.5% conversion at 65, 0.15 pp lower per
+  year earlier), 3a paid out from 60, savings bridge before 65, spending × 0.8 except housing.
 * Cash shortfalls sell portfolio; if that is empty the path records a **cash crunch**.
-* Success = net worth (today's CHF) ≥ goal at goal age **and** no crunch **and** the planned home could be bought.
-* Output: yearly p10/p50/p90 bands, success probability, crunch probability, median at goal.
+* Goal (`GOAL_DEFINITION`): net worth in today's CHF **including pillar 2, pillar 3a and home equity** ≥ target at goal
+  age, with no crunch and the planned home actually bought.
+* Output: yearly p10/p50/p90 bands, success and crunch probability, `house` (bought in % of futures, median equity,
+  loan and gross at purchase) and `retirement` (lasts-to-90 odds, P10 depletion age, income, replacement ratio).
 
 ### Behavioural twin (`behavioralEngine.ts`)
-* Payday spike: discretionary spend/day in the payday window vs the rest of the month → leakage of surplus.
-* Recurring subscriptions: same merchant in ≥ 2 months.
-* Panic selling: if history shows selling in the last drawdown → probability of going to cash for 9 months
-  when the market is > 15% below its peak. Coin flips use a separate RNG stream so both twins see the same markets.
-* "Real you" = simulation with these parameters; "Disciplined you" = without.
+* Payday spike: discretionary spend/day in the payday window vs the rest of the month → leakage of surplus,
+  shown in CHF/month.
+* Recurring subscriptions: same merchant in ≥ 2 months. Snapped receipts update "this month vs 3-month baseline".
+* Panic selling: with a history of selling, a > 15% drawdown triggers selling `drawdownSellPct` of the portfolio,
+  which is bought back only once the market regains its previous peak (at least 6 months). Coin flips use a separate
+  RNG stream so both twins see the same markets.
+* "Real you" = simulation with these parameters; "Disciplined you" = without. The cost of each habit is measured by
+  re-running with that one habit switched off.
 
 ### Swiss rules (`swissRules.ts`)
-* Equity ≥ 20% of price, ≥ 10% hard (not pillar 2). Extra equity lowers the loan.
-* Imputed yearly cost = 5% × loan + 1% × price + (loan − ⅔ price) / 15 ≤ ⅓ gross income.
-* `maxAffordablePrice()` binary-searches the highest passing price.
-* Equity at purchase date is projected (`projectedHardEquity`): today's liquid assets minus a 3-month buffer plus
-  90% of today's surplus.
+* `tragbarkeit()` is the single test used by the card **and** inside the simulator at the purchase month:
+  equity ≥ 20% of price (≥ 10% hard, not pillar 2), imputed cost = 5% × loan + 1% × price + (loan − ⅔ price) / 15
+  ≤ ⅓ gross income. Extra equity lowers the loan; a 3-month cash buffer is kept in both places.
+* The card shows the simulator's median future at the purchase date, the share of futures in which the bank lends,
+  and the max price at purchase (binary search).
 
 ### Goal solver (`goalSolver.ts`)
-* Spend lever: binary search (8 steps, 300 paths each) for the monthly cut that reaches 80%.
-* Invest lever: invest idle cash above a 3-month buffer + max 3a.
-* Timing lever: earliest 6-month delay at which the home passes the bank test.
+* Levers: monthly spending cut (binary search), invest idle cash above the buffer + max 3a, delay the home in 6-month
+  steps, and a delay + spending combination.
+* The search uses 300 paths; every recipe is then **re-scored on the same seed and 1,000 paths as the headline**, so
+  "→ 81%" is exactly what the headline shows after *Apply*. Recipes that do not reach 80% say "improves to X%".
+
+### Scenarios and Plan A vs Plan B
+* A `Scenario` holds events, recurring bills, spending change, monthly investing, risk profile, 3a and retirement age.
+* What-if ops (`add`, `shift`, `remove`, `set`) are validated in `twin/actions.ts` against current state.
+* Before any what-if, snap or recipe, the previous scenario is pinned as Plan A and simulated on the same seed.
 
 ## 5. LLM gateway (`/api/twin`)
 

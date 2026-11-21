@@ -26,8 +26,7 @@ import {
   type Op,
 } from "@/lib/twin/actions";
 import { callTwin } from "@/lib/llm";
-import type { LedgerEntry } from "@/lib/frugal/ledger";
-import { naiveReasoning, naiveSnap } from "@/lib/frugal/tokens";
+import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
 import { chf, monthToLabel, pct } from "@/lib/format";
 import { ConeChart } from "./ConeChart";
@@ -294,7 +293,7 @@ export default function DoppelApp() {
   // ---------------- multimodal snap ----------------
   const renderRev = profileRev;
   function onSnap(name: string, r: SnapResult) {
-    setLedger((l) => [...l, ledgerSnapEntry(name, r)]);
+    setLedger((l) => [...l, entryFromSnap(name, r)]);
     if (renderRev !== profileRevRef.current) return; // snap started for another profile
     const cur = scenarioRef.current;
     const update = extractionToUpdate(r.extraction, cur.events, new Date(), {
@@ -343,7 +342,7 @@ export default function DoppelApp() {
     if (local) {
       setLedger((l) => [
         ...l,
-        ledgerCommandEntry({
+        entryFromCommand({
           text,
           tier: "local-parser",
           usage: { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "regex intent parser (local)", mode: "local" },
@@ -359,7 +358,7 @@ export default function DoppelApp() {
       if (r.ok && r.data) {
         setLedger((l) => [
           ...l,
-          ledgerCommandEntry({
+          entryFromCommand({
             text,
             tier: "llm",
             usage: { ...r.usage!, mode: "llm" },
@@ -421,7 +420,7 @@ export default function DoppelApp() {
       text = templateNarrative(facts);
       usage = { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "template (offline)", mode: "offline" };
     }
-    setLedger((l) => [...l, ledgerNarrateEntry({ usage, payload: r.request ?? { wouldSend: facts }, ms: performance.now() - t0, stateChars })]);
+    setLedger((l) => [...l, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: facts }, ms: performance.now() - t0, stateChars })]);
     if (rev !== profileRevRef.current) return;
     setNarrative({ text, loading: false });
   }
@@ -686,60 +685,4 @@ function templateNarrative(f: {
   if (f.retirement) parts.push(`Retiring at ${f.retirement.age}, your savings last to 90 in ${f.retirement.savings_last_to_90} of futures.`);
   if (f.best_move) parts.push(`Next step: ${f.best_move}.`);
   return parts.join(" ");
-}
-
-// =====================================================================================
-// LEDGER (frugal accounting) — kept in one block so it can be swapped for the shared
-// builders in src/lib/frugal/ledger.ts (entryFromSnap / entryFromCommand / entryFromNarrate).
-// =====================================================================================
-
-function ledgerSnapEntry(name: string, r: SnapResult): LedgerEntry {
-  return {
-    id: uid(),
-    at: Date.now(),
-    kind: "snap",
-    title: `Snap · ${name}`,
-    tier: r.tier,
-    ms: r.steps.reduce((s, x) => s + x.ms, 0),
-    usage: r.usage,
-    naive: naiveSnap(Math.max(r.imageSize.width, 1600), Math.max(r.imageSize.height, 1200)),
-    payload: r.payload,
-    steps: r.steps,
-    preview: r.preview,
-  };
-}
-
-function ledgerCommandEntry(c: {
-  text: string;
-  tier: "local-parser" | "llm";
-  usage: Usage;
-  payload: unknown;
-  ms: number;
-  stateChars: number;
-}): LedgerEntry {
-  return {
-    id: uid(),
-    at: Date.now(),
-    kind: "command",
-    title: `What-if · “${c.text}”`,
-    tier: c.tier,
-    ms: c.ms,
-    usage: c.usage,
-    naive: naiveReasoning(c.stateChars),
-    payload: c.payload,
-  };
-}
-
-function ledgerNarrateEntry(c: { usage: Usage; payload: unknown; ms: number; stateChars: number }): LedgerEntry {
-  return {
-    id: uid(),
-    at: Date.now(),
-    kind: "narrate",
-    title: "Private banker summary",
-    tier: "llm",
-    ms: c.ms,
-    usage: c.usage,
-    naive: naiveReasoning(c.stateChars, 450),
-    payload: c.payload,
-  };
 }

@@ -2,6 +2,7 @@ import { simulate } from "./monteCarlo";
 import { HEADLINE } from "./scenario";
 import { BUFFER_MONTHS, PILLAR_3A_MAX } from "./swissRules";
 import type { SimInput, SimResult } from "./types";
+import { groupCh } from "@/lib/format";
 
 export interface Recipe {
   id: "spend" | "invest" | "timing" | "combo";
@@ -75,7 +76,7 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
   if (spend) {
     recipes.push({
       id: "spend",
-      title: `Spend CHF ${spend.cut.toLocaleString("de-CH")} less per month`,
+      title: `Spend CHF ${groupCh(spend.cut)} less per month`,
       detail: `≈ CHF ${Math.round(spend.cut / 30)} a day. ${opts.spendTip ?? ""}`.trim(),
       newProb: spend.prob,
       reaches: spend.prob >= TARGET,
@@ -91,7 +92,7 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
     recipes.push({
       id: "invest",
       title: `Invest CHF ${Math.round(idle / 1000)}k idle cash${taxSaving ? " + max out 3a" : ""}`,
-      detail: `Keep a ${BUFFER_MONTHS}-month buffer, invest the rest and every month's surplus${taxSaving ? `; 3a saves ~CHF ${taxSaving.toLocaleString("de-CH")} tax per year` : ""}.`,
+      detail: `Keep a ${BUFFER_MONTHS}-month buffer, invest the rest and every month's surplus${taxSaving ? `; 3a saves ~CHF ${groupCh(taxSaving)} tax per year` : ""}.`,
       newProb: prob,
       reaches: prob >= TARGET,
       apply: { kind: "optimize" },
@@ -121,7 +122,7 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
         if (combo) {
           recipes.push({
             id: "combo",
-            title: `Buy ${d} months later + spend CHF ${combo.cut.toLocaleString("de-CH")} less`,
+            title: `Buy ${d} months later + spend CHF ${groupCh(combo.cut)} less`,
             detail: `The delay gets you through the bank test (${passPct}% of futures); the cut closes the rest of the gap to your goal.`,
             newProb: combo.prob,
             reaches: combo.prob >= TARGET,

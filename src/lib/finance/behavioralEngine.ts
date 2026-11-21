@@ -1,4 +1,5 @@
 import type { BehaviorParams, Profile, Transaction } from "./types";
+import { groupCh } from "@/lib/format";
 
 export interface BehaviorInsight {
   id: string;
@@ -92,7 +93,7 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
     insights.push({
       id: "leak",
       title: `${Math.round(leakageRate * 100)}% of your surplus leaks`,
-      detail: `Of the ≈ CHF ${surplus.toLocaleString("de-CH")} left each month, about this much is spent unplanned instead of saved.`,
+      detail: `Of the ≈ CHF ${groupCh(surplus)} left each month, about this much is spent unplanned instead of saved.`,
       monthlyChf: leakageChfMonth,
     });
   }
@@ -130,7 +131,7 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
     for (const t of tx) if (DISCRETIONARY.has(t.category)) byCat.set(t.category, (byCat.get(t.category) ?? 0) + t.amount);
     const top = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
     spendTip = top
-      ? `Your biggest flexible line is ${top[0]} (≈ CHF ${Math.round(top[1] / historyMonths).toLocaleString("de-CH")}/month); fixed costs like rent and insurance are the next lever.`
+      ? `Your biggest flexible line is ${top[0]} (≈ CHF ${groupCh(Math.round(top[1] / historyMonths))}/month); fixed costs like rent and insurance are the next lever.`
       : "Look at fixed costs first: rent, insurance and transport.";
   }
 

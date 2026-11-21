@@ -7,6 +7,7 @@ import { ENERGY_ASSUMPTIONS, NAIVE_PRICE } from "@/lib/frugal/tokens";
 import { callTwin } from "@/lib/llm";
 import type { Extraction } from "@/lib/snap/types";
 import { chf, usd } from "@/lib/format";
+import { groupCh } from "@/lib/format";
 
 const TIER_STYLE: Record<string, { label: string; cls: string }> = {
   "0": { label: "Tier 0 · QR", cls: "bg-good/15 text-good" },
@@ -41,7 +42,7 @@ export function FrugalBadge({ entries, onClick }: { entries: LedgerEntry[]; onCl
       title="Open the Frugal Pipeline Inspector"
     >
       <span className="text-frugal" aria-hidden="true">⚡</span>
-      <span className="num">{t.ours.toLocaleString("de-CH")} tokens</span>
+      <span className="num">{groupCh(t.ours)} tokens</span>
       {t.tokenSavedPct !== null && (
         <span className="num font-semibold text-frugal">−{(t.tokenSavedPct * 100).toFixed(1)}%</span>
       )}
@@ -68,6 +69,31 @@ function parseAmount(v: unknown): number | undefined {
     if (Number.isFinite(n) && n > 0) return n;
   }
   return undefined;
+}
+
+/**
+ * The naive prompt asks GPT-4o for "every financial detail", so it nests amounts freely
+ * (e.g. price.amount, totals.net_pay). Walk the whole object: prefer a value equal to ours,
+ * otherwise the first number under an amount-like key. Never penalise GPT-4o for its layout.
+ */
+function findNaiveAmount(data: unknown, ours?: number): number | undefined {
+  const found: { key: string; value: number }[] = [];
+  const walk = (v: unknown, key: string, depth: number) => {
+    if (depth > 6 || v == null) return;
+    if (typeof v === "number" || typeof v === "string") {
+      const cleaned = typeof v === "string" ? v.replace(/CHF|Fr\.?/gi, "").replace(/[’'\s]/g, "").replace(/,(?=\d{3}(?!\d))/g, "") : "";
+      const n = typeof v === "number" ? v : /^\d+(?:\.\d+)?$/.test(cleaned) ? Number(cleaned) : undefined;
+      if (n != null && Number.isFinite(n) && n > 0) found.push({ key, value: n });
+      return;
+    }
+    if (Array.isArray(v)) v.forEach((x) => walk(x, key, depth + 1));
+    else if (typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k, depth + 1);
+  };
+  walk(data, "", 0);
+  const sameAsOurs = ours != null ? found.find((f) => amountsMatch(ours, f.value)) : undefined;
+  if (sameAsOurs) return sameAsOurs.value;
+  const amountLike = /amount|total|price|preis|net|lohn|salary|payable|sum|betrag|target|budget/i;
+  return (found.find((f) => amountLike.test(f.key) && !/date|year|zip|postal|iban|rooms?|area|m2|qty|quantity|rate|percent/i.test(f.key)) ?? undefined)?.value;
 }
 
 function amountsMatch(a?: number, b?: number): boolean | null {
@@ -180,7 +206,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
       res.usage?.costUsd && res.usage.costUsd > 0
         ? res.usage.costUsd
         : (promptTokens * NAIVE_PRICE.input + completionTokens * NAIVE_PRICE.output) / 1e6;
-    const naiveAmount = parseAmount(res.data?.amount);
+    const naiveAmount = findNaiveAmount(res.data, e.extractedAmount);
     const result: NaiveComparison = {
       model: res.usage?.model ?? NAIVE_PRICE.model,
       promptTokens,
@@ -245,7 +271,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
             <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
               <div className="label">Doppel · measured</div>
               <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {t.ours.toLocaleString("de-CH")} tokens
+                {groupCh(t.ours)} tokens
               </div>
               <div className="num text-xs text-ink-2 sm:text-sm">
                 {usd(t.oursCost)} · {t.measuredCount} {t.measuredCount === 1 ? "call" : "calls"}
@@ -254,7 +280,7 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
             <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
               <div className="label">Naive baseline · {baselineTag}</div>
               <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {t.naive.toLocaleString("de-CH")} tokens
+                {groupCh(t.naive)} tokens
               </div>
               <div className="num text-xs text-ink-2 sm:text-sm">
                 {usd(t.naiveCost)} · {NAIVE_PRICE.formula}
@@ -435,11 +461,11 @@ function EntryRow({
         )}
         <span className="num text-xs text-ink-2">{Math.round(e.ms)} ms</span>
         <span className="num text-xs font-semibold">
-          {!usageKnown && e.usage.mode === "llm" ? "usage unknown" : `${oursTok.toLocaleString("de-CH")} tok`}
+          {!usageKnown && e.usage.mode === "llm" ? "usage unknown" : `${groupCh(oursTok)} tok`}
         </span>
         {!excluded && (
           <span className="num text-xs text-ink-3 line-through" title={comparison ? "Measured GPT-4o" : "Estimated GPT-4o"}>
-            {naiveTok.toLocaleString("de-CH")}
+            {groupCh(naiveTok)}
           </span>
         )}
       </button>
@@ -540,9 +566,9 @@ function EntryRow({
                       <tr>
                         <td className="py-1 pr-2 font-sans text-ink-2">Tokens</td>
                         <td className="py-1 pr-2 font-medium">
-                          {!usageKnown && e.usage.mode === "llm" ? "unknown" : oursTok.toLocaleString("de-CH")}
+                          {!usageKnown && e.usage.mode === "llm" ? "unknown" : groupCh(oursTok)}
                         </td>
-                        <td className="py-1 pr-2">{naiveTok.toLocaleString("de-CH")}</td>
+                        <td className="py-1 pr-2">{groupCh(naiveTok)}</td>
                         <td className="py-1 font-semibold text-frugal">
                           {naiveTok > 0 && usageKnown
                             ? `−${((1 - oursTok / naiveTok) * 100).toFixed(1)}%`
@@ -645,7 +671,7 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
       <div className="h-3 flex-1 rounded-full bg-surface-2">
         <div className="h-3 rounded-full" style={{ width: `${Math.max(0.8, (value / max) * 100)}%`, background: color }} />
       </div>
-      <span className="num w-16 shrink-0 text-right font-medium sm:w-20">{value.toLocaleString("de-CH")}</span>
+      <span className="num w-16 shrink-0 text-right font-medium sm:w-20">{groupCh(value)}</span>
     </div>
   );
 }

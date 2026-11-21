@@ -2,6 +2,7 @@ import type { EventType, LifeEvent, RecurringExpense, RiskProfile, Scenario, Tra
 import { RISK_PROFILES } from "@/lib/finance/types";
 import { payslipToIncome } from "@/lib/finance/pension";
 import type { Extraction } from "@/lib/snap/types";
+import { groupCh } from "@/lib/format";
 
 export type SetKey = "retirementAge" | "riskProfile" | "contributes3a" | "monthlyInvest" | "expenseDelta" | "optimize";
 
@@ -314,7 +315,7 @@ export interface UpdateContext {
   income?: { grossIncomeYear: number; netIncomeMonth: number };
 }
 
-const chf = (n: number) => `CHF ${Math.round(n).toLocaleString("de-CH")}`;
+const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
 
 const RECURRING_HINT = /pr[äa]mie|praemie|premium|prime|cotisation|monat|monthly|mensuel|abo\b|abonnement|subscription|leasing|miete|loyer|rent\b|rate\b|quartal|quarter|trimest|jahres|annual|annuel|yearly/i;
 

@@ -171,7 +171,7 @@ export function SnapPanel({ onResult, items, forceLlm }: {
           {items.slice(-4).reverse().map((it) => (
             <li key={it.id} className="rounded-lg bg-surface-2 px-3 py-2 text-sm">
               <div className="mb-1 flex flex-wrap items-center gap-2">
-                <TierChip tier={it.result.tier} />
+                <TierChip tier={it.result.tier} route={it.result.route} />
                 <span className="num text-[11px] text-ink-3">
                   {it.result.usageKnown ? `${it.result.usage.promptTokens + it.result.usage.completionTokens} tokens` : "Usage unavailable"} ·{" "}
                   {Math.round(it.result.steps.reduce((s, x) => s + x.ms, 0))} ms
@@ -221,7 +221,7 @@ function ReviewCard({ review, onConfirm, onDiscard }: {
       <div>
         <h3 ref={heading} tabIndex={-1} className="break-words text-sm font-semibold">Review scan · {name}</h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <TierChip tier={result.tier} />
+          <TierChip tier={result.tier} route={result.route} />
           <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2">{ROUTES[result.route]}</span>
           {result.ocrConfidence !== undefined && (
             <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2">
