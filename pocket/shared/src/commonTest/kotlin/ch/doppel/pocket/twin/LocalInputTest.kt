@@ -2,7 +2,10 @@ package ch.doppel.pocket.twin
 
 import ch.doppel.pocket.LocalDate
 import ch.doppel.pocket.finance.*
+import ch.doppel.pocket.snap.QrExpense
 import ch.doppel.pocket.snap.parseQrBill
+import ch.doppel.pocket.snap.reviewQrExpense
+import ch.doppel.pocket.snap.withQrExpense
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -85,6 +88,21 @@ class LocalInputTest {
         assertEquals("Lukas", bill.debtorName)
         assertEquals(412.0, bill.amount)
         assertEquals(Category.INSURANCE, bill.category)
+        val scenario = baseScenario(profile)
+        assertEquals(QrExpense.AlreadyBudgeted, reviewQrExpense(bill, profile, scenario))
+        val recurringBill = bill.copy(amount = 1_500.0, message = "Quartalsprämie")
+        val recurring = reviewQrExpense(recurringBill, profile, scenario)
+        assertEquals(QrExpense.Recurring(500.0), recurring)
+        val budget = scenario.withQrExpense(recurringBill, recurring)
+        assertEquals(500.0, budget.recurring.single().monthly)
+        assertEquals(QrExpense.AlreadyBudgeted, reviewQrExpense(recurringBill, profile, budget))
+        val invoice = bill.copy(creditor = bill.creditor.copy(name = "Velowerkstatt"), message = "Reparatur")
+        val oneOff = reviewQrExpense(invoice, profile, scenario)
+        assertEquals(QrExpense.OneOff(412.0), oneOff)
+        val entry = scenario.withQrExpense(invoice, oneOff).events.last()
+        assertEquals(0, entry.month)
+        assertEquals(EventType.EXPENSE, entry.type)
+        assertEquals(QrExpense.InvalidAmount, reviewQrExpense(invoice.copy(currency = "EUR"), profile, scenario))
         lines[18] = "NaN"
         assertNull(assertNotNull(parseQrBill(lines.joinToString("\n"))).amount)
         lines[30] = ""

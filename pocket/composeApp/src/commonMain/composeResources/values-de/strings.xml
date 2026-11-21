@@ -98,7 +98,7 @@
     <string name="pocket_scanreading">Bild wird gelesen…</string>
     <string name="pocket_scanerror">Keine Schweizer QR-Rechnung im Bild gefunden.</string>
     <string name="pocket_scanamount">Ein positiver CHF-Betrag ist nötig.</string>
-    <string name="pocket_scanoneoff">Einmalige Ausgabe · {amount:chf}</string>
+    <string name="pocket_scanoneoff">Einmalige Ausgabe · {amount:chf2}</string>
     <string name="pocket_scanrecurring">Monatliche Ausgabe · {amount:chf}</string>
     <string name="pocket_scanduplicate">Diese wiederkehrende Ausgabe ist bereits im Budget.</string>
     <string name="pocket_scanadd">Zum Plan hinzufügen</string>

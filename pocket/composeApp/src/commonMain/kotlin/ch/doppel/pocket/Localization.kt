@@ -42,6 +42,14 @@ internal fun swissInteger(value: Long): String {
 
 internal fun chf(value: Double): String = "CHF " + swissInteger(value.roundToLong())
 
+private fun chfWithCents(value: Double, language: Language): String {
+    val cents = (abs(value) * 100).roundToLong()
+    val separator = if (language == Language.FR || language == Language.TR) ',' else '.'
+    val fraction = (cents % 100).toString().padStart(2, '0')
+    val prefix = if (value < 0) "−CHF " else "CHF "
+    return prefix + swissInteger(cents / 100) + separator + fraction
+}
+
 @Composable
 internal fun percent(value: Double): String = percent(value, LocalLanguage.current, 1)
 
@@ -75,6 +83,7 @@ internal fun compactChf(value: Double, language: Language): String = when {
 
 private fun format(value: Double, kind: String, language: Language): String = when (kind) {
     "chf" -> chf(value)
+    "chf2" -> chfWithCents(value, language)
     "chfShort" -> compactChf(value, language)
     "chfSigned" -> sign(value) + chf(abs(value))
     "mio" -> decimal(value / 1e6, language, 2, trimZeros = true)

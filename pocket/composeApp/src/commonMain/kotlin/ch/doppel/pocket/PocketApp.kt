@@ -35,7 +35,7 @@ private data class Evaluation(val profileId: String, val scenario: Scenario, val
 
 @Composable
 fun PocketApp() {
-    var language by rememberSaveable {
+    var language by remember {
         mutableStateOf(Language.entries.firstOrNull { it.tag == Locale.current.language } ?: Language.EN)
     }
     var theme by rememberSaveable { mutableStateOf(ThemeMode.SYSTEM) }
@@ -107,7 +107,10 @@ fun PocketApp() {
                                             if (plan.changes.isNotEmpty()) {
                                                 ChangeSummary(plan, result) { plans.remove(profileId) }
                                             }
-                                            if (result == null) Loading("cmd.simulating") else Overview(profile, result)
+                                            if (result == null) Loading("cmd.simulating") else {
+                                                Overview(profile, result)
+                                                QrImport(profile, scenario, ::update)
+                                            }
                                         }
                                         Screen.WHAT_IF -> WhatIf(
                                             command, { command = it }, scenario.events, language,

@@ -98,7 +98,7 @@
     <string name="pocket_scanreading">Reading image…</string>
     <string name="pocket_scanerror">No Swiss QR bill found in the image.</string>
     <string name="pocket_scanamount">A positive CHF amount is required.</string>
-    <string name="pocket_scanoneoff">One-off expense · {amount:chf}</string>
+    <string name="pocket_scanoneoff">One-off expense · {amount:chf2}</string>
     <string name="pocket_scanrecurring">Monthly expense · {amount:chf}</string>
     <string name="pocket_scanduplicate">This recurring expense already appears in the budget.</string>
     <string name="pocket_scanadd">Add to plan</string>

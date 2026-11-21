@@ -105,7 +105,7 @@ const pocketLabels: Record<string, readonly string[]> = {
   scanReading: ["Reading image…","Bild wird gelesen…","Lecture de l’image…","Görsel okunuyor…"],
   scanError: ["No Swiss QR bill found in the image.","Keine Schweizer QR-Rechnung im Bild gefunden.","Aucune QR-facture suisse trouvée dans l’image.","Görselde İsviçre QR faturası bulunamadı."],
   scanAmount: ["A positive CHF amount is required.","Ein positiver CHF-Betrag ist nötig.","Un montant positif en CHF est nécessaire.","Pozitif bir CHF tutarı gerekli."],
-  scanOneOff: ["One-off expense · {amount:chf}","Einmalige Ausgabe · {amount:chf}","Dépense ponctuelle · {amount:chf}","Tek seferlik gider · {amount:chf}"],
+  scanOneOff: ["One-off expense · {amount:chf2}","Einmalige Ausgabe · {amount:chf2}","Dépense ponctuelle · {amount:chf2}","Tek seferlik gider · {amount:chf2}"],
   scanRecurring: ["Monthly expense · {amount:chf}","Monatliche Ausgabe · {amount:chf}","Dépense mensuelle · {amount:chf}","Aylık gider · {amount:chf}"],
   scanDuplicate: ["This recurring expense already appears in the budget.","Diese wiederkehrende Ausgabe ist bereits im Budget.","Cette dépense récurrente figure déjà au budget.","Bu düzenli gider bütçede zaten var."],
   scanAdd: ["Add to plan","Zum Plan hinzufügen","Ajouter au plan","Plana ekle"],

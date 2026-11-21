@@ -9,18 +9,25 @@ kotlin {
     jvmToolchain(17)
     androidTarget()
     jvm("desktop")
+    applyDefaultHierarchyTemplate()
 
     sourceSets {
         commonMain.dependencies {
             implementation(project(":shared"))
-            implementation(compose.foundation)
-            implementation(compose.material3)
-            implementation(compose.components.resources)
+            implementation("org.jetbrains.compose.foundation:foundation:1.10.3")
+            implementation("org.jetbrains.compose.material3:material3:1.9.0")
+            implementation("org.jetbrains.compose.components:components-resources:1.10.3")
         }
-        androidMain.dependencies {
-            implementation("androidx.activity:activity-compose:1.10.1")
+        val jvmImagesMain by creating {
+            dependsOn(commonMain.get())
+            dependencies { implementation("com.google.zxing:core:3.5.4") }
+        }
+        androidMain {
+            dependsOn(jvmImagesMain)
+            dependencies { implementation("androidx.activity:activity-compose:1.10.1") }
         }
         val desktopMain by getting {
+            dependsOn(jvmImagesMain)
             dependencies {
                 implementation(compose.desktop.currentOs)
             }

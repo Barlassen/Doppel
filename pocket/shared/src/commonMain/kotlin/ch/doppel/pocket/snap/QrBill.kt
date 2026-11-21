@@ -1,10 +1,6 @@
 package ch.doppel.pocket.snap
 
 import ch.doppel.pocket.finance.Category
-import ch.doppel.pocket.finance.EventSource
-import ch.doppel.pocket.finance.EventType
-import ch.doppel.pocket.finance.LifeEvent
-import ch.doppel.pocket.finance.Scenario
 
 data class Creditor(val name: String, val postcode: String, val town: String, val country: String)
 data class QrBill(
@@ -42,12 +38,4 @@ fun parseQrBill(raw: String): QrBill? {
         message = line(29),
         billingInfo = line(31),
     )
-}
-
-/** A confirmed CHF bill is a one-off expense now, using the first simulated month. */
-fun Scenario.withQrExpense(bill: QrBill): Scenario {
-    val amount = bill.amount?.takeIf { bill.currency == "CHF" && it > 0 } ?: return this
-    val id = generateSequence(1) { it + 1 }.map { "qr-bill-$it" }.first { candidate -> events.none { it.id == candidate } }
-    val label = bill.creditor.name.ifBlank { bill.message }.take(60)
-    return copy(events = events + LifeEvent(id, EventType.EXPENSE, label, 0, amount, source = EventSource.SNAP))
 }

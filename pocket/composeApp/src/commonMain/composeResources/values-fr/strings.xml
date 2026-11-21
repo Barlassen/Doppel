@@ -98,7 +98,7 @@
     <string name="pocket_scanreading">Lecture de l’image…</string>
     <string name="pocket_scanerror">Aucune QR-facture suisse trouvée dans l’image.</string>
     <string name="pocket_scanamount">Un montant positif en CHF est nécessaire.</string>
-    <string name="pocket_scanoneoff">Dépense ponctuelle · {amount:chf}</string>
+    <string name="pocket_scanoneoff">Dépense ponctuelle · {amount:chf2}</string>
     <string name="pocket_scanrecurring">Dépense mensuelle · {amount:chf}</string>
     <string name="pocket_scanduplicate">Cette dépense récurrente figure déjà au budget.</string>
     <string name="pocket_scanadd">Ajouter au plan</string>

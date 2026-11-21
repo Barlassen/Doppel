@@ -98,7 +98,7 @@
     <string name="pocket_scanreading">Görsel okunuyor…</string>
     <string name="pocket_scanerror">Görselde İsviçre QR faturası bulunamadı.</string>
     <string name="pocket_scanamount">Pozitif bir CHF tutarı gerekli.</string>
-    <string name="pocket_scanoneoff">Tek seferlik gider · {amount:chf}</string>
+    <string name="pocket_scanoneoff">Tek seferlik gider · {amount:chf2}</string>
     <string name="pocket_scanrecurring">Aylık gider · {amount:chf}</string>
     <string name="pocket_scanduplicate">Bu düzenli gider bütçede zaten var.</string>
     <string name="pocket_scanadd">Plana ekle</string>

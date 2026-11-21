@@ -82,6 +82,7 @@ private fun HouseCard(house: HouseStats, modifier: Modifier) {
             color = if (result.plan.pass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
         Metric(localized("afford.ratio"), if (result.plan.costToIncome.isFinite()) percent(result.plan.costToIncome) else "—")
         Metric(localized("afford.equity"), chf(result.equityUsed))
+        Metric(localized("afford.mortgage"), chf(result.plan.loan))
         Metric(localized("afford.maxPrice"), chf(result.maxPrice))
         Metric(localized("pocket.passShare"), percent(house.boughtProb))
         if (result.plan.equityGap > 0) Text(
