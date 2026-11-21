@@ -12,7 +12,14 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        jvmTest.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+        }
     }
+}
+
+tasks.named<Test>("jvmTest") {
+    testLogging.showStandardStreams = true
 }
 
 android {
