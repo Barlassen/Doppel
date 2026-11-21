@@ -975,7 +975,7 @@ export const de = {
       s7: "Import",
     },
     wizardName: "Dein Name",
-    wizardNamePlaceholder: "z. B. Elena",
+    wizardNamePlaceholder: "z. B. Lea",
     wizardAge: "Alter",
     wizardCanton: "Kanton",
     wizardCity: "Wohnort",

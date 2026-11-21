@@ -981,7 +981,7 @@ export const tr = {
       s7: "İçe aktar",
     },
     wizardName: "Adın",
-    wizardNamePlaceholder: "ör. Elena",
+    wizardNamePlaceholder: "ör. Lea",
     wizardAge: "Yaş",
     wizardCanton: "Kanton",
     wizardCity: "Şehir",

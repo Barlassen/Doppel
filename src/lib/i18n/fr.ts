@@ -984,7 +984,7 @@ export const fr = {
       s7: "Import",
     },
     wizardName: "Votre prénom ou nom",
-    wizardNamePlaceholder: "p. ex. Elena",
+    wizardNamePlaceholder: "p. ex. Lea",
     wizardAge: "Âge",
     wizardCanton: "Canton",
     wizardCity: "Ville",
