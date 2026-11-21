@@ -70,7 +70,7 @@ function parse({ text, house, now }: IntentContext): Op[] {
   }
 
   // passer au profil croissance / profil prudent / stratégie équilibrée / portefeuille dynamique
-  if (/\b(?:profil|strategie|portefeuille|risques?|mode)\b|\b(?:pass|chang|adopt|invest|opt|bascul|deven|placer)\w*\b/.test(t)) {
+  if (/\b(?:profil|strategie|portefeuille|risques?|mode)\b|\b(?:pass|chang|adopt|invest|opt|bascul|deven|placer)\w*\b|\b(?:plus\s+(?:prudent\w*|sur)|(?:plus|moins)\s+d'actions)\b/.test(t)) {
     const w = t.match(re(String.raw`\b(?:au|a|sur|pour)\s+(?:(?:un|une|le|la)\s+)?(?:(?:profil|strategie|portefeuille)\s+)?(${RISK_WORDS})\b`))
       ?? t.match(re(String.raw`\b(${RISK_WORDS})\b`));
     if (w) {
@@ -95,7 +95,7 @@ function parse({ text, house, now }: IntentContext): Op[] {
 
   // maximiser le 3a / commencer le pilier 3a / ouvrir un 3e pilier / arrêter le 3a
   if (/\b(?:3a|pilier\s*3a?|3e(?:me)?\s+pilier|troisieme\s+pilier)\b/.test(t)) {
-    if (/\b(?:arret|stop|suspend|sist|desactiv|coup|abandonn)\w*\b|\b(?:ne|n')\s*[^.!?]{0,30}?\bplus\b|\b(?:plus (?:rien|de versements?|de 3a|cotiser)|sans (?:pilier )?3a)\b/.test(t))
+    if (/\b(?:arret|stop|suspend|sist|desactiv|coup|abandonn)\w*\b|\b(?:ne|n')\s*[^.!?]{0,30}?\bplus\b|\b(?:plus (?:rien|de versements?|de (?:pilier )?3a?|cotiser)|sans (?:pilier )?3a?)\b/.test(t))
       ops.push({ op: "set", key: "contributes3a", value: false });
     else if (/\b(?:max\w*|plafonn\w*|commenc\w*|debut\w*|ouvr\w*|vers\w*|cotis\w*|utilis\w*|rempli\w*|plein|activ\w*|aliment\w*|mets|mett\w*)\b/.test(t))
       ops.push({ op: "set", key: "contributes3a", value: true });

@@ -191,6 +191,8 @@ const intentCases: Record<Locale, IntentCase[]> = {
     ["Si je plaçais 500,– tous les mois", monthly(500)],
     ["J’investis 500 par mois pour mon bébé", monthly(500)],
     ["Et si le bébé arrive en 2028 ?", chipOps.baby],
+    ["Je voudrais être plus prudent", { op: "set", key: "riskProfile", value: "conservative" }],
+    ["Plus de pilier 3a", stop3a],
   ],
   tr: [
     ["Ayda 500", monthly(500)],
