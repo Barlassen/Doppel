@@ -369,9 +369,9 @@ export const fr = {
   snap: {
     title: "Ajouter un document",
     subtitle: "D’abord dans votre navigateur",
-    intro: "Déposez une facture QR, un ticket, une fiche de salaire, une annonce immobilière ou une note manuscrite.",
-    uploadAria: "Importer une image",
-    drop: "Déposez ou importez une image",
+    intro: "Importez une photo de votre ticket pour retrouver vos achats. Vous pouvez aussi scanner une facture QR, une fiche de salaire, une annonce ou une note manuscrite.",
+    uploadAria: "Importer une photo de votre ticket",
+    drop: "Importez ou déposez la photo de votre ticket",
     maxSize: "Jusqu’à 15 Mo",
     takePhoto: "Prendre une photo",
     tooBig: "Choisissez une image de moins de 15 Mo.",
@@ -422,6 +422,26 @@ export const fr = {
     rooms: "Pièces",
     discard: "Ignorer",
     add: "Ajouter au jumeau",
+  },
+
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → ajouté à vos dépenses",
+    items: "Articles du ticket",
+    category: "Catégorie",
+    total: "Total en {currency}",
+    itemName: "Nom de l’article {count}",
+    itemAmount: "Montant de l’article {count} ({currency})",
+    remove: "Supprimer l’article {count}",
+    addItem: "Ajouter un article",
+    sum: "Articles {sum} · Total {total}",
+    summary_one: "{count:int} article · {amount}",
+    summary_other: "{count:int} articles · {amount}",
+    matched: "La somme des articles correspond au total imprimé.",
+    mismatch: "La somme des articles diffère du total du ticket. Vérifiez les montants.",
+    noItems: "Aucun article trouvé. Ajoutez les articles de votre ticket.",
+    convert: "Pour ajouter ce ticket, saisissez le total et les montants des articles en CHF.",
+    enterChf: "Saisir les montants en CHF",
+    textTier: "Tier 2 · Modèle de texte",
   },
 
   kind: {
@@ -489,6 +509,7 @@ export const fr = {
   },
 
   step: {
+    receiptCheck: "Vérifier la somme des articles",
     decode: "Décoder l’image",
     prepareNaive: "Préparer l’image de comparaison localement",
     cache: "Cache d’images",

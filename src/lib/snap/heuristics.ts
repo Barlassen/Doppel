@@ -1,6 +1,7 @@
 import { translateText } from "@/lib/i18n";
 import { msg, type Msg } from "@/lib/i18n/types";
 import type { DocKind, Extraction } from "./types";
+import { hasReceiptTotal, parseReceipt } from "./receipt";
 
 /**
  * Local deterministic document classifier + regex extractor.
@@ -113,6 +114,7 @@ export function scoreDocKinds(text: string): Record<DocKind, number> {
   add("receipt", [
     [/total\s+ttc|montant\s+ttc/, 5],
     [/\bquittung\b|\bkassenbon\b|\bticket\s+de\s+caisse\b|\breceipt\b/, 4],
+    [/\bscontrino\b|\bricevuta\s+fiscale\b/, 4],
     [/\bmwst\b|\btva\b|\bvat\b/, 3],
     [/\bkasse\b|\bcaisse\b/, 3],
     [/einkauf|merci\s+f[üu]r|merci\s+de\s+votre/, 3],
@@ -152,6 +154,7 @@ export function classifyDoc(text: string): DocKind {
       bestScore = scores[k];
     }
   }
+  if (bestScore < 2 && hasReceiptTotal(text)) return "receipt";
   return bestScore >= 2 ? best : "note";
 }
 
@@ -249,57 +252,6 @@ function extractPayslip(t: string): Extraction {
   };
 }
 
-function extractReceipt(t: string, lower: string): Extraction {
-  const lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  // Prefer explicit Total TTC / Total CHF / Gesamtbetrag over generic "total", and skip subtotals/VAT lines.
-  const strongTotalRe = /(total\s+ttc|montant\s+ttc|total\s+chf|gesamtbetrag|gesamtsumme|zu\s+zahlen|net\s+[àa]\s+payer)/i;
-  const genericTotalRe = /\b(total|summe|montant)\b/i;
-  const skipRe = /(subtotal|zwischensumme|mwst|tva|vat|rabatt|remise|abz[üu]g)/i;
-
-  let amount: number | undefined;
-  const pickFromLine = (l: string): number | undefined => {
-    const vals = extractAmountsFromLine(l).filter((v) => v > 0 && v < 100_000);
-    return vals.length > 0 ? vals[vals.length - 1] : undefined;
-  };
-
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (strongTotalRe.test(lines[i]) && !skipRe.test(lines[i])) {
-      amount = pickFromLine(lines[i]) ?? (lines[i + 1] ? pickFromLine(lines[i + 1]) : undefined);
-      if (amount != null) break;
-    }
-  }
-  if (amount == null) {
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      if (genericTotalRe.test(lines[i]) && !skipRe.test(lines[i])) {
-        amount = pickFromLine(lines[i]) ?? (lines[i + 1] ? pickFromLine(lines[i + 1]) : undefined);
-        if (amount != null) break;
-      }
-    }
-  }
-  // Fallback: card payment line ("Karte Debit 87.45" / "Carte 42.80")
-  if (amount == null) {
-    const payLine = lines.find((l) => /(karte|carte|debit|twint|visa|mastercard)/i.test(l));
-    if (payLine) amount = pickFromLine(payLine);
-  }
-
-  const firstLine = lines.find((l) => /[A-Za-zÀ-ÿ]{3}/.test(l));
-  const category = /restaurant|caf[ée]|bistro|brasserie|boulangerie|b[äa]ckerei|\bbar\b/.test(lower)
-    ? "dining"
-    : /sbb|cff|ffs|vbz|tpg|taxi|uber|tankstelle|essence/.test(lower)
-      ? "transport"
-      : "groceries";
-
-  return {
-    kind: "receipt",
-    amount,
-    merchant: firstLine?.slice(0, 48),
-    date: parseDate(t),
-    category,
-    ...generatedLabel(msg("kind.receipt")),
-  };
-}
-
 function extractBill(t: string, lower: string): Extraction {
   const lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
   let amount: number | undefined;
@@ -382,7 +334,7 @@ export function heuristicExtract(text: string): Extraction {
     case "listing":
       return extractListing(t, lower);
     case "receipt":
-      return extractReceipt(t, lower);
+      return { kind, ...parseReceipt(t), date: parseDate(t), ...generatedLabel(msg("kind.receipt")) };
     case "bill":
       return extractBill(t, lower);
     default:

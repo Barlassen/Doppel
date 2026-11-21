@@ -367,9 +367,9 @@ export const tr = {
   snap: {
     title: "Tara ve ekle",
     subtitle: "önce tarayıcında çalışır",
-    intro: "Fatura, fiş, maaş bordrosu, emlak ilanı ya da el yazısı bir not yükle.",
-    uploadAria: "Görsel yükle",
-    drop: "Görseli bırak ya da yükle",
+    intro: "Ne aldığını görmek için fişinin fotoğrafını yükle. QR fatura, maaş bordrosu, emlak ilanı veya el yazısı notu da tarayabilirsin.",
+    uploadAria: "Kendi fiş fotoğrafını yükle",
+    drop: "Fiş fotoğrafını yükle veya buraya bırak",
     maxSize: "En fazla 15 MB",
     takePhoto: "Fotoğraf çek",
     tooBig: "En fazla 15 MB boyutunda bir görsel seç.",
@@ -420,6 +420,26 @@ export const tr = {
     rooms: "Oda",
     discard: "Vazgeç",
     add: "İkizine ekle",
+  },
+
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → harcamalarına eklendi",
+    items: "Fiş kalemleri",
+    category: "Kategori",
+    total: "Toplam ({currency})",
+    itemName: "{count}. kalemin adı",
+    itemAmount: "{count}. kalemin tutarı ({currency})",
+    remove: "{count}. kalemi kaldır",
+    addItem: "Kalem ekle",
+    sum: "Kalemler {sum} · Toplam {total}",
+    summary_one: "{count:int} kalem · {amount}",
+    summary_other: "{count:int} kalem · {amount}",
+    matched: "Kalemlerin toplamı fişteki tutarla eşleşiyor.",
+    mismatch: "Kalemlerin toplamı fişteki tutardan farklı. Tutarları kontrol et.",
+    noItems: "Kalem bulunamadı. Fişine bakarak kalemleri ekle.",
+    convert: "Fişi eklemek için toplamı ve kalem tutarlarını CHF olarak gir.",
+    enterChf: "Tutarları CHF olarak gir",
+    textTier: "Tier 2 · Metin modeli",
   },
 
   kind: {
@@ -487,6 +507,7 @@ export const tr = {
   },
 
   step: {
+    receiptCheck: "Fiş kalemlerinin toplamını kontrol et",
     decode: "Görseli çözümle",
     prepareNaive: "Karşılaştırma görselini yerelde hazırla",
     cache: "Görsel önbelleği",

@@ -2,6 +2,7 @@ import { msg, type Text } from "@/lib/i18n/types";
 import type { NaiveEstimate } from "./tokens";
 import { estimateEnergyWh, naiveReasoning, naiveSnap } from "./tokens";
 import type { DocKind, PipelineStep, SnapResult, Tier, Usage } from "@/lib/snap/types";
+import type { ReceiptItem } from "@/lib/finance/types";
 
 export type SnapOutcome = "ok" | "partial" | "failed";
 export type SnapRoute = "qr" | "cache" | "local-regex" | "text-llm" | "vision-llm" | "offline-heuristic";
@@ -54,6 +55,8 @@ export interface LedgerEntry {
   fieldsMissing?: string[];
   extractedAmount?: number;
   extractedKind?: DocKind;
+  receiptItems?: ReceiptItem[];
+  receiptCurrency?: string;
   imageSize?: { width: number; height: number };
 }
 
@@ -215,6 +218,7 @@ export function entryFromSnap(name: Text, r: SnapResult): LedgerEntry {
     fieldsMissing: rx.fieldsMissing,
     extractedAmount: r.extraction.amount,
     extractedKind: r.extraction.kind,
+    ...(r.extraction.kind === "receipt" ? { receiptItems: r.extraction.items, receiptCurrency: r.extraction.currency } : {}),
     imageSize: r.imageSize,
   };
 }

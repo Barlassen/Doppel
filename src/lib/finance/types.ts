@@ -30,22 +30,29 @@ export interface LifeEvent {
   source?: "profile" | "snap" | "command" | "solver";
 }
 
+export const TRANSACTION_CATEGORIES = [
+  "groceries", "dining", "transport", "subscriptions", "shopping",
+  "housing", "insurance", "bills", "travel", "investing",
+] as const;
+
+export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
+
+export interface ReceiptItem {
+  name: string;
+  qty?: number;
+  unitPrice?: number;
+  /** Signed line total in the receipt currency. Discounts are negative. */
+  amount: number;
+  category?: TransactionCategory;
+}
+
 export interface Transaction {
   date: string; // ISO yyyy-mm-dd
   merchant: string;
-  category:
-    | "groceries"
-    | "dining"
-    | "transport"
-    | "subscriptions"
-    | "shopping"
-    | "housing"
-    | "insurance"
-    | "bills"
-    | "travel"
-    | "investing";
+  category: TransactionCategory;
   amount: number; // CHF, positive = spend
   note?: string;
+  items?: ReceiptItem[];
 }
 
 /**
