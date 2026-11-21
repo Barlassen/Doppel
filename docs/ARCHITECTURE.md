@@ -33,6 +33,9 @@ src/
     SnapPanel.tsx            → drop / camera / samples → runSnap() → review form
     CommandBar.tsx           → text + browser speech recognition
     Cards.tsx                → timeline, affordability, behaviour, recipes
+    InvestControls.tsx       → risk profile, pillar 3a toggle, standing order, cost-of-waiting strip
+    PlanCompare.tsx          → Plan A pin / auto-pin comparison chip
+    RetirementCard.tsx       → retirement age stepper, AHV + BVG breakdown, depletion odds to age 90
     Inspector.tsx            → Frugal Pipeline Inspector + live GPT-4o check + header badge
   lib/
     finance/
@@ -51,14 +54,17 @@ src/
       ocr.ts                 → Tesseract worker, line filtering and compression
       heuristics.ts          → DE/FR/EN keyword classifier + regex extractor
     twin/actions.ts          → ops (add / shift / remove / set), validation, extraction → twin update
-    twin/intents/            → local what-if parsers per language
+    twin/intents/            → local what-if parsers per language (en, de, fr, tr)
+    i18n/                    → EN/DE/FR/TR dictionaries, number/date formatters, React provider
     frugal/tokens.ts         → naive baselines (actual image size, GPT-4o tile formula), energy assumptions
     frugal/ledger.ts         → ledger entries + totals() with the exclusion rule
     data/profiles.ts         → Lukas (ZH) and Elena (GE), fictional, 3 months of transactions
 scripts/
   make-samples.ts            → the 5 sample documents in public/samples/
+  copy-tesseract-assets.mjs  → postinstall copy of Tesseract worker + WASM loaders into public/tesseract/runtime/
   benchmark.ts               → 11 heuristic unit checks + 16-doc benchmark (Node copy of the cascade) → docs/BENCHMARK.md
   engine-check.ts            → finance engine on both profiles and the demo snaps
+  i18n-check.ts              → dictionary completeness, placeholder parity, and 0-token intent checks
   browser-smoke.mjs          → headless Chromium run of the real pipeline without a key (pipeline-check.ts calls it)
   e2e-live.mjs               → stage demo with real OpenRouter calls
 ```

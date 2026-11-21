@@ -93,7 +93,7 @@ Points to make, from [BENCHMARK.md](BENCHMARK.md), live run on 16 synthetic Swis
 
 ## Limits we state
 
-- **Benchmark vs app.** The benchmark runs a Node copy of the cascade (`scripts/benchmark.ts`). It uses Tesseract `eng+deu` (the app adds `fra`) and accepts local regex at 75% OCR confidence; the app needs 80% plus a second field. With the app's gate at least two of the 11 local documents (OCR 75% and 79%) would go to the text model, so the app's local share on this set is at most 9/16. Not re-measured.
+- **Benchmark vs app.** The benchmark runs a Node copy of the cascade (`scripts/benchmark.ts`). It uses Tesseract `eng+deu` (the app adds `fra`), uses page-average OCR confidence (the app takes the minimum of page confidence and amount-line confidence in `src/lib/snap/ocr.ts`), and accepts local regex at 75% OCR confidence (the app needs 80% plus a second field). With the app's gate at least two of the 11 local documents (OCR 75% and 79%) would go to the text model, so the app's local share on this set is at most 9/16. Not re-measured.
 - **Latency.** The Doppel latency column in BENCHMARK.md includes the GPT-4o baseline call, because the timer starts before it. So we have no fair latency comparison. Local OCR is CPU-bound and takes seconds; do not claim Doppel is faster.
 - **Test set.** 16 synthetic documents that we generated. No real user photos.
 - **Energy.** The Wh figures are rough estimates from published per-token averages, not measurements.

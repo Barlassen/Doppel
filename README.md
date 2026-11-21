@@ -49,11 +49,11 @@ From the live benchmark run in [docs/BENCHMARK.md](docs/BENCHMARK.md) (16 synthe
 
 Limits of that run, also listed in BENCHMARK.md:
 
-- The benchmark runs a Node copy of the cascade, not the browser code. The copy accepts local regex at 75% OCR confidence; the app requires 80% plus a second field. With the app's gate, at least two of the 11 local documents (OCR 75% and 79%) would go to the text model.
+- The benchmark runs a Node copy of the cascade, not the browser code. The copy uses Tesseract `eng+deu`, page-average OCR confidence, and a 75% local-regex threshold; the app adds `fra`, takes the minimum of page confidence and amount-line confidence, and requires 80% plus a second field. With the app's gate, at least two of the 11 local documents (OCR 75% and 79%) would go to the text model.
 - The Doppel latency column includes the GPT-4o baseline call, because the timer starts before it. We have no clean latency comparison yet.
 - The documents are synthetic and were made by us.
 
-The finance numbers used in the pitch (Lukas 40% vs 70%, CHF 131k habit cost, the CHF 940k listing failing the bank test at 38%) are printed by `npx tsx scripts/engine-check.ts`.
+The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from payday spending, and the CHF 940k listing failing the bank test at 38.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 131k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 1,493,741 − CHF 1,362,649 = CHF 131,092`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
 ## Scripts
 
