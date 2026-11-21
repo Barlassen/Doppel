@@ -1,7 +1,5 @@
 /**
- * Swiss 1st & 2nd pillar + tax approximations, deterministic and documented (no LLM).
- * Figures: AHV/BVG parameters 2025/26. These are deliberately simple approximations for a planning twin,
- * not a pension-fund statement.
+ * Swiss 1st and 2nd pillar and tax approximations (2025/26 AHV/BVG figures).
  */
 
 /** Maximum single AHV old-age pension, CHF/month (2025/26). */

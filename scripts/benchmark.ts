@@ -3,8 +3,8 @@ import { translate } from "../src/lib/i18n";
  * Doppel Multimodal Frugality Benchmark
  *
  * 1. Runs deterministic unit checks on src/lib/snap/heuristics.ts (DE/FR/EN + OCR noise).
- * 2. Deterministically generates a 15-document evaluation set (5 clean originals + 2 clean FR
- *    + 8 photo-like degraded JPG variants in public/samples/bench/, total < 3 MB).
+ * 2. Deterministically generates a 16-document evaluation set (5 clean originals + 2 clean FR
+ *    + 9 photo-like degraded JPG variants in public/samples/bench/, 315 KB total).
  * 3. Runs the Node mirror of Doppel's cascade (multi-scale jsQR → grayscale/contrast + Tesseract
  *    eng+deu → local-regex fast path → Tier 1 text LLM → Tier 2 512px gray JPEG VLM).
  *    If OPENROUTER_API_KEY is set (env or .env.local), executes live OpenRouter API calls for
@@ -407,7 +407,7 @@ async function generateBenchDataset(): Promise<BenchDoc[]> {
     .jpeg({ quality: 88, mozjpeg: true })
     .toFile(`${BENCH_DIR}/payslip-fr.jpg`);
 
-  // 8 photo-like degraded JPG variants
+  // 9 photo-like degraded JPG variants
   await degradeToPhoto("public/samples/qr-bill.svg", `${BENCH_DIR}/qr-bill-photo-tilt.jpg`, {
     rotate: 3.2,
     skewX: 0.025,
@@ -1175,12 +1175,16 @@ Assumptions for scale projection: **${SNAPS_PER_USER_MONTH} snaps / user / month
 
 > **Energy note:** ${translate("en", "inspector.energyNote")}
 
-## 5. Honest observations & failure modes
+## 5. Observations and limits
 
-1. **Multi-scale QR decoding pays off immediately:** both clean and tilted/warm-lit Swiss QR-bills decode at Tier 0 (0 tokens, < 100 ms) with exact IBAN, creditor, and CHF amount.
-2. **High-confidence printed docs rarely need an LLM:** clean and mildly degraded receipts, property listings, and payslips clear OCR ≥ 75% and parse deterministically via \`heuristics.ts\` (including French documents and \`Nettolohn\` vs \`Bruttolohn\` disambiguation).
-3. **Why Tier 2 exists:** cursive handwriting (\`note-clean\`, \`note-photo-desk\`) and severely blurred/dim low-res phone photos (\`receipt-photo-dim\`) drop below the 65% OCR confidence gate. Offline regex cannot reliably read handwriting — escalating a 512px grayscale JPEG (~15–30 KB) to a small VLM preserves accuracy without paying frontier VLM prices on the easy majority of documents.
-4. **No strawman baseline:** ${apiKey ? "naive GPT-4o tokens and accuracy were **measured live**: each document was sent at its **actual** resolution with a plain, readable extraction prompt. Both approaches read every amount correctly; the difference is cost, not accuracy. GPT-4o was faster per document in this Node run, because local OCR is CPU-bound." : "naive GPT-4o tokens are calculated from each document's **actual** dimensions using OpenAI's documented 512² tile formula (+160 prompt tokens, +120 output tokens, $2.50/$10 per 1M)."} Inside the app's Inspector, judges can click **"Run the naive way (GPT-4o)"** on any snap to see a live measurement.
+1. **QR decoding and low-res fallback:** \`qr-bill-clean\` and \`qr-bill-photo-tilt\` decode at Tier 0 (\`jsQR\`, 0 tokens, 0 bytes sent). \`qr-bill-photo-lowres\` (895×509, blur 0.45, JPEG quality 45) fails QR decoding and scores 38% OCR confidence, so it falls through to Tier 2 (\`vision-llm\`, 11 KB JPEG, 451 tokens) and still extracts CHF 412.
+2. **Printed documents at Tier 1:** 9 of 16 documents clear the 75% OCR confidence threshold and resolve locally via \`heuristics.ts\` at 0 tokens, including French documents and \`Nettolohn\` vs \`Bruttolohn\` disambiguation. \`note-typed-photo\` clears OCR (86%) without matching a local regex rule, sending 170 characters to the small text model (244 tokens).
+3. **Handwriting and dim photos at Tier 2:** cursive handwriting (\`note-clean\`, \`note-photo-desk\`) and the dim, blurred receipt (\`receipt-photo-dim\`) score 28–34% OCR confidence and escalate a 512px grayscale JPEG (13–17 KB, 402–447 tokens) to the small vision model.
+4. **Limits of this benchmark:**
+   * **Node mirror vs browser pipeline:** \`scripts/benchmark.ts\` runs a Node copy of the cascade (\`eng+deu\` Tesseract, page-average \`data.confidence\`, 75% \`local-regex\` threshold). The browser app (\`src/lib/snap/pipeline.ts\`, \`src/lib/snap/ocr.ts\`) loads \`eng+deu+fra\`, computes confidence as \`min(pageConfidence, amountLineConfidence)\`, and requires 80% confidence plus a supporting field for \`local-regex\`. Under the app's 80% threshold, at least \`receipt-photo-desk\` (79%) and \`receipt-fr-photo\` (75%) would escalate to \`text-llm\`.
+   * **Latency column includes the GPT-4o baseline call:** In \`runDoc()\`, the per-document timer (\`tStart\`) starts before the live \`callOpenRouter(..., NAIVE_MODEL, ...)\` call. Every \`Latency\` cell in Section 2 and the \`${Math.round(avgMs)} ms\` average in Section 4 include both the GPT-4o request and the Doppel cascade, so this run does not provide a standalone cascade latency measurement.
+   * **Synthetic dataset:** All 16 documents are synthetic SVGs and \`sharp\`-degraded JPEGs generated in this repository, not real user photos.
+   * **Baseline prompt vs in-app live check:** ${apiKey ? "Naive GPT-4o tokens and accuracy here were measured live at each document's actual resolution with \`NAIVE_SYS\` (250 max output tokens)." : "Naive GPT-4o tokens are calculated from each document's actual dimensions using OpenAI's 512² tile formula (+160 prompt tokens, +120 output tokens, $2.50/$10 per 1M)."} Inside the app's Inspector, the **"Run the naive way (GPT-4o)"** button uses a longer extraction prompt (\`max_tokens: 400\`), so its live token count is higher than the ${Math.round(avgNaiveTok)}-token average above.
 `;
 
   writeFileSync("docs/BENCHMARK.md", md);

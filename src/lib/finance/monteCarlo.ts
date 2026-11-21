@@ -22,7 +22,7 @@ import {
 } from "./pension";
 import type { HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput, SimResult, YearBand } from "./types";
 
-/** Capital-market and household assumptions (nominal, yearly). Deliberately conservative and documented. */
+/** Yearly nominal capital-market and household assumptions. */
 export const ASSUMPTIONS = {
   equity: { mu: 0.065, sigma: 0.16 },
   bonds: { mu: 0.02, sigma: 0.05 },

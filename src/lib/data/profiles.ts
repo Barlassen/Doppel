@@ -5,7 +5,7 @@ import type { Msg } from "@/lib/i18n/types";
 /** Built-in event: English `label` (data for the LLM prompt) + translatable `labelMsg` for the UI. */
 const labelled = (labelMsg: Msg) => ({ label: translate("en", labelMsg.key, labelMsg.params), labelMsg });
 
-/** Deterministic, realistic Swiss transaction history (Aug–Oct 2026). Fictional people. */
+/** Seeded 3-month transaction history (Aug–Oct 2026) for the two fictional profiles. */
 function buildTransactions(scale: number, heavyPayday: boolean): Transaction[] {
   const tx: Transaction[] = [];
   const months = ["2026-08", "2026-09", "2026-10"];
