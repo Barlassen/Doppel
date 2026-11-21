@@ -395,6 +395,8 @@ export const de = {
       noteHint: "Handschriftliches Ziel",
       plan: "Grundriss",
       planHint: "Schweizer Wohnungsgrundriss",
+      chart: "Grafik",
+      chartHint: "Portfolio- & Allokationsgrafik",
     },
   },
 
@@ -470,6 +472,44 @@ export const de = {
     roomFromDims: "{dims} m → {area:num1} m² (berechnet)",
     balconyArea: "Balkon / Terrasse aussen: {area:num1} m² (nicht in der Nettowohnfläche enthalten).",
     livingArea: "Wohnfläche (m²)",
+    stepCropChart: "Grafik zuschneiden & verkleinern (≤512px)",
+    colorJpeg: "{size} Farb-JPEG",
+    chartBadge: "Geprüfte Portfolio- & Allokationsgrafik",
+    chartHeadlineFull: "Portfolio {value:chf} · {equities:pct} Aktien ({risk}) · {dd:pct1} max. Drawdown",
+    chartHeadlineAllocValue: "Portfolio {value:chf} · {equities:pct} Aktien → Risikoprofil {risk}",
+    chartHeadlineAllocOnly: "{equities:pct} Aktien · {bonds:pct} Obligationen → Risikoprofil {risk}",
+    chartHeadlineValueDd: "Portfolio {value:chf} · {dd:pct1} Rückgang vom Höchststand",
+    chartHeadlineValueOnly: "Portfoliowert {value:chf}",
+    verifyAllocOk:
+      "✓ Allokationsanteile ergeben {sum:pct1} (innerhalb 100% ± 2 Pp.) · {equities:pct} Aktien entspricht {risk}.",
+    warnAllocSum:
+      "⚠ Allokationsanteile ergeben {sum:pct1} und liegen ausserhalb der Toleranz von 100% ± 2 Pp.",
+    verifyMonotoneOk: "✓ {count:int} Monatswerte sind zeitlich streng monoton ({from} → {to}).",
+    warnNonMonotone:
+      "⚠ Die gelesenen Kurvenpunkte waren zeitlich nicht monoton und wurden chronologisch sortiert.",
+    verifyEndpointOk:
+      "✓ Endpunkt der Kurve ({endpoint:chf}) stimmt mit dem gedruckten Gesamtwert ({printed:chf}) überein.",
+    warnEndpointMismatch:
+      "⚠ Endpunkt der Kurve ({endpoint:chf}) weicht um {diff:pct} vom gedruckten Gesamtwert ({printed:chf}) ab.",
+    warnDrawdown:
+      "⚠ Deterministischer Drawdown von −{pct:pct1} vom Höchststand erkannt ({peak:chf} im {peakMonth} → {trough:chf} im {troughMonth}).",
+    verifyNoDrawdown: "✓ Kein Rückgang ≥ 10% vom Höchststand in der gelesenen Zeitreihe.",
+    allocTitle: "Anlageaufteilung (Summe {sum:pct1})",
+    sliceEquities: "Aktien",
+    sliceBonds: "Obligationen",
+    sliceRealEstate: "Immobilien",
+    sliceCash: "Liquidität",
+    sliceOther: "Übrige",
+    seriesTitle: "Verlauf des Portfoliowerts ({count:int} Pkt. · {from} → {to})",
+    portfolioValueField: "Aktueller Portfoliowert (CHF)",
+    equitiesPctField: "Aktienanteil (%)",
+    derivedRiskLabel: "Abgeleitetes Risikoprofil: {risk}",
+    insightDrawdownTitle: "Drawdown in Portfoliografik −{pct:pct1}",
+    insightDrawdownDetail:
+      "Dein gescannter Auszug zeigt einen Rückgang von {peak:chf} ({peakMonth}) auf {trough:chf} ({troughMonth}). Wer bei Rücksetzern ≥10% investiert bleibt, realisiert keine Verluste.",
+    summaryChartBoth: "Portfolio auf {value:chf} aktualisiert · {equities:pct} Aktien → Risikoprofil {risk}",
+    summaryChartValue: "Portfoliowert aus Grafik auf {value:chf} aktualisiert",
+    summaryChartAlloc: "Allokationsgrafik ({equities:pct} Aktien) → Risikoprofil auf {risk} gesetzt",
   },
 
   receipt: {

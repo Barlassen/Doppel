@@ -274,6 +274,9 @@ function alreadyBudgeted(monthly: number, category: Transaction["category"], ctx
 }
 
 export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new Date(), ctx: UpdateContext = {}): TwinUpdate {
+  if (e.vision?.kind === "chart") {
+    return { kind: "none", summary: e.vision.chart.headline };
+  }
   const amount = Number(e.amount) || 0;
   switch (e.kind) {
     case "listing": {

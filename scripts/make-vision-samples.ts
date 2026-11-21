@@ -252,6 +252,171 @@ const LISTING_TEXT_ONLY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10
   </g>
 </svg>`;
 
+/** Helper to draw an SVG donut arc segment from startPct to endPct (0..100). */
+function donutSlicePath(cx: number, cy: number, rOuter: number, rInner: number, startPct: number, endPct: number): string {
+  const startAngle = (startPct / 100) * Math.PI * 2 - Math.PI / 2;
+  const endAngle = (endPct / 100) * Math.PI * 2 - Math.PI / 2;
+  const largeArc = endPct - startPct > 50 ? 1 : 0;
+  const x1 = cx + rOuter * Math.cos(startAngle);
+  const y1 = cy + rOuter * Math.sin(startAngle);
+  const x2 = cx + rOuter * Math.cos(endAngle);
+  const y2 = cy + rOuter * Math.sin(endAngle);
+  const x3 = cx + rInner * Math.cos(endAngle);
+  const y3 = cy + rInner * Math.sin(endAngle);
+  const x4 = cx + rInner * Math.cos(startAngle);
+  const y4 = cy + rInner * Math.sin(startAngle);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} L ${x3.toFixed(2)} ${y3.toFixed(2)} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x4.toFixed(2)} ${y4.toFixed(2)} Z`;
+}
+
+// ---------- 6. Donut allocation chart with a legend ONLY (no numbers/percentages printed) ----------
+// Shares: Equities 65%, Bonds 20%, Real estate 10%, Cash 5% (Sum = 100%, Growth profile)
+const CHART_DONUT_LEGEND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="64" font-size="30" font-weight="bold">Helvetia Vorsorge 3a · Anlageaufteilung</text>
+    <text x="60" y="100" font-size="20" fill="#555555">Strategie Wachstum · Allokation nach Anlageklassen (ohne Wertbeschriftung)</text>
+  </g>
+
+  <!-- Donut slices: Equities 0..65, Bonds 65..85, Real Estate 85..95, Cash 95..100 -->
+  <g stroke="#ffffff" stroke-width="4">
+    <path d="${donutSlicePath(280, 355, 175, 92, 0, 65)}" fill="#2563eb"/>
+    <path d="${donutSlicePath(280, 355, 175, 92, 65, 85)}" fill="#10b981"/>
+    <path d="${donutSlicePath(280, 355, 175, 92, 85, 95)}" fill="#f59e0b"/>
+    <path d="${donutSlicePath(280, 355, 175, 92, 95, 100)}" fill="#8b5cf6"/>
+  </g>
+
+  <!-- Legend with colour swatches ONLY (no printed percentages) -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#111111">
+    <rect x="540" y="235" width="28" height="28" rx="6" fill="#2563eb"/>
+    <text x="586" y="258" font-weight="bold">Aktien Schweiz &amp; Welt</text>
+
+    <rect x="540" y="305" width="28" height="28" rx="6" fill="#10b981"/>
+    <text x="586" y="328" font-weight="bold">Obligationen CHF</text>
+
+    <rect x="540" y="375" width="28" height="28" rx="6" fill="#f59e0b"/>
+    <text x="586" y="398" font-weight="bold">Immobilien Schweiz</text>
+
+    <rect x="540" y="445" width="28" height="28" rx="6" fill="#8b5cf6"/>
+    <text x="586" y="468" font-weight="bold">Liquidität / Cash</text>
+  </g>
+</svg>`;
+
+// ---------- 7. Unlabeled portfolio line chart with a >= 10% peak-to-trough drawdown ----------
+// Peak CHF 108'000 (2026-03) -> Trough CHF 88'500 (2026-06) = 18.1% drawdown; Endpoint CHF 96'500 (2026-11)
+// Y-axis: 80'000 at y=490, 110'000 at y=190 (10px per CHF 1'000)
+const CHART_LINE_DRAWDOWN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="62" font-size="30" font-weight="bold">AlpenBank · Depotentwicklung 2026</text>
+    <text x="60" y="98" font-size="20" fill="#555555">Wertentwicklung Portfolio · Jan – Nov 2026</text>
+    <text x="900" y="62" text-anchor="end" font-size="28" font-weight="bold">Depotwert CHF 96'500</text>
+    <text x="900" y="96" text-anchor="end" font-size="18" fill="#555555">Stand 30.11.2026</text>
+  </g>
+
+  <!-- Y-axis gridlines and ticks (80k..110k) -->
+  <g stroke="#e5e7eb" stroke-width="2">
+    <line x1="150" y1="190" x2="890" y2="190"/>
+    <line x1="150" y1="290" x2="890" y2="290"/>
+    <line x1="150" y1="390" x2="890" y2="390"/>
+    <line x1="150" y1="490" x2="890" y2="490"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563" text-anchor="end">
+    <text x="135" y="196">110'000</text>
+    <text x="135" y="296">100'000</text>
+    <text x="135" y="396">90'000</text>
+    <text x="135" y="496">80'000</text>
+  </g>
+
+  <!-- X-axis month labels -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563" text-anchor="middle">
+    <text x="160" y="535">Jan</text>
+    <text x="304" y="535">Mrz</text>
+    <text x="448" y="535">Mai</text>
+    <text x="592" y="535">Jul</text>
+    <text x="736" y="535">Sep</text>
+    <text x="880" y="535">Nov</text>
+  </g>
+
+  <!-- Unlabeled portfolio curve:
+       Jan 98k (y=310), Feb 102k (y=270), Mar 108k (y=210), Apr 99.5k (y=295),
+       May 91k (y=380), Jun 88.5k (y=405), Jul 90.5k (y=385), Aug 92k (y=370),
+       Sep 93.5k (y=355), Oct 95k (y=340), Nov 96.5k (y=325) -->
+  <polyline
+    fill="none"
+    stroke="#2563eb"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    points="160,310 232,270 304,210 376,295 448,380 520,405 592,385 664,370 736,355 808,340 880,325"
+  />
+</svg>`;
+
+// ---------- 8. Banking-app-style screenshot with BOTH donut (legend only) & unlabeled line chart ----------
+// Total CHF 114'000; Allocation: Equities 70%, Bonds 18%, Real estate 7%, Cash 5%;
+// Line series: Jan 116k -> Mar 125k (peak) -> Jun 106k (trough, -15.2% drawdown) -> Nov 114k (endpoint = printed total)
+const CHART_APP_BOTH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="880" viewBox="0 0 960 880">
+  <rect width="960" height="880" fill="#ffffff"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="60" y="58" font-size="30" font-weight="bold">LemanInvest · Vermögensübersicht &amp; Performance</text>
+    <text x="60" y="92" font-size="20" fill="#555555">Portfolio &amp; Allocation · Stand November 2026</text>
+    <text x="900" y="58" text-anchor="end" font-size="30" font-weight="bold">Portfolio CHF 114'000</text>
+    <text x="900" y="92" text-anchor="end" font-size="18" fill="#555555">Rendite YTD</text>
+  </g>
+
+  <!-- Top panel: Donut allocation with legend only (70% Equities, 18% Bonds, 7% Real estate, 5% Cash) -->
+  <rect x="60" y="120" width="840" height="280" rx="16" fill="#fcfcfa" stroke="#e5e7eb" stroke-width="2"/>
+  <g stroke="#ffffff" stroke-width="3">
+    <path d="${donutSlicePath(240, 260, 108, 56, 0, 70)}" fill="#2563eb"/>
+    <path d="${donutSlicePath(240, 260, 108, 56, 70, 88)}" fill="#10b981"/>
+    <path d="${donutSlicePath(240, 260, 108, 56, 88, 95)}" fill="#f59e0b"/>
+    <path d="${donutSlicePath(240, 260, 108, 56, 95, 100)}" fill="#8b5cf6"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#111111">
+    <text x="440" y="168" font-size="19" font-weight="bold" fill="#555555">Allokation (Legende)</text>
+    <rect x="440" y="190" width="22" height="22" rx="5" fill="#2563eb"/>
+    <text x="476" y="209" font-weight="bold">Aktien / Actions</text>
+
+    <rect x="440" y="236" width="22" height="22" rx="5" fill="#10b981"/>
+    <text x="476" y="255" font-weight="bold">Obligationen / Bonds</text>
+
+    <rect x="440" y="282" width="22" height="22" rx="5" fill="#f59e0b"/>
+    <text x="476" y="301" font-weight="bold">Immobilien</text>
+
+    <rect x="440" y="328" width="22" height="22" rx="5" fill="#8b5cf6"/>
+    <text x="476" y="347" font-weight="bold">Liquidität / Cash</text>
+  </g>
+
+  <!-- Bottom panel: Unlabeled portfolio line chart (95k..130k)
+       y = 770 - (val - 95000) * 0.008  (so 95k -> 770, 110k -> 650, 125k -> 530) -->
+  <rect x="60" y="430" width="840" height="395" rx="16" fill="#fcfcfa" stroke="#e5e7eb" stroke-width="2"/>
+  <g stroke="#e5e7eb" stroke-width="2">
+    <line x1="150" y1="530" x2="870" y2="530"/>
+    <line x1="150" y1="650" x2="870" y2="650"/>
+    <line x1="150" y1="770" x2="870" y2="770"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#4b5563" text-anchor="end">
+    <text x="138" y="536">125'000</text>
+    <text x="138" y="656">110'000</text>
+    <text x="138" y="776">95'000</text>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#4b5563" text-anchor="middle">
+    <text x="160" y="804">Jan</text>
+    <text x="300" y="804">Mrz</text>
+    <text x="440" y="804">Mai</text>
+    <text x="580" y="804">Jun</text>
+    <text x="720" y="804">Sep</text>
+    <text x="860" y="804">Nov</text>
+  </g>
+  <polyline
+    fill="none"
+    stroke="#2563eb"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    points="160,602 300,530 440,634 580,682 650,658 720,646 860,618"
+  />
+</svg>`;
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
 
@@ -259,6 +424,9 @@ async function main() {
   writeFileSync(`${OUT}/plan-dimensions-only.svg`, PLAN_DIMENSIONS_ONLY_SVG);
   writeFileSync(`${OUT}/plan-35-halfroom.svg`, PLAN_35_HALFROOM_SVG);
   writeFileSync(`${OUT}/listing-text-only.svg`, LISTING_TEXT_ONLY_SVG);
+  writeFileSync(`${OUT}/chart-donut-legend.svg`, CHART_DONUT_LEGEND_SVG);
+  writeFileSync(`${OUT}/chart-line-drawdown.svg`, CHART_LINE_DRAWDOWN_SVG);
+  writeFileSync(`${OUT}/chart-app-both.svg`, CHART_APP_BOTH_SVG);
 
   // Photographed / skewed print of the floor plan (with warm indoor lighting & rotation/skew)
   const warmBg = { r: 228, g: 221, b: 208, alpha: 1 };
@@ -278,7 +446,7 @@ async function main() {
     .jpeg({ quality: 58, mozjpeg: true })
     .toFile(`${OUT}/plan-photo-skewed.jpg`);
 
-  console.log("Generated floor-plan vision samples in public/samples/vision/");
+  console.log("Generated floor-plan and chart vision samples in public/samples/vision/");
 }
 
 main().catch((err) => {

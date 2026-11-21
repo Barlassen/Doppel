@@ -4,6 +4,14 @@ import { heuristicExtract } from "../heuristics";
 import type { OcrResult } from "../ocr";
 import type { Extraction, PipelineStep, SnapResult, Usage } from "../types";
 import {
+  offlineChartFromOcr,
+  validateChartExtraction,
+  verifyChart,
+  type ChartExtraction,
+  type ChartVerification,
+} from "./chart";
+import {
+  compressChartForVision,
   compressPlanForVision,
   detectVisionCanvas,
   type VisionDetection,
@@ -16,14 +24,21 @@ import {
   type FloorPlanVerification,
 } from "./floorplan";
 
+export * from "./chart";
 export * from "./detect";
 export * from "./floorplan";
 
-export interface VisionPayload {
-  kind: "floorplan";
-  detection: VisionDetection;
-  floorPlan: FloorPlanVerification;
-}
+export type VisionPayload =
+  | {
+      kind: "floorplan";
+      detection: VisionDetection;
+      floorPlan: FloorPlanVerification;
+    }
+  | {
+      kind: "chart";
+      detection: VisionDetection;
+      chart: ChartVerification;
+    };
 
 const LOCAL_OFFLINE_USAGE: Usage = {
   promptTokens: 0,
@@ -34,8 +49,8 @@ const LOCAL_OFFLINE_USAGE: Usage = {
 };
 
 /**
- * Runs the document-type detector and, if the image is a Swiss floor plan, executes the
- * cropped ≤768px vision extraction + deterministic TypeScript verification.
+ * Runs the 0-token document-type detector and, if the image is a Swiss floor plan or financial chart,
+ * executes the cropped & downscaled vision extraction + deterministic TypeScript verification.
  * Returns null if the image is not a vision-routed document so the normal Tier 1/2 cascade proceeds.
  */
 export async function tryVisionSnap(
@@ -44,7 +59,7 @@ export async function tryVisionSnap(
   steps: PipelineStep[],
   onProgress?: (m: Msg) => void,
 ): Promise<{
-  route: "vision-plan";
+  route: "vision-plan" | "vision-chart";
   extraction: Extraction;
   usage: Usage;
   usageKnown: boolean;
@@ -62,23 +77,112 @@ export async function tryVisionSnap(
     detail: detection.reason,
   });
 
-  if (detection.kind !== "floorplan") {
+  if (detection.kind === "none") {
     return null;
   }
 
+  if (detection.kind === "floorplan") {
+    const tCrop = performance.now();
+    const compressed = compressPlanForVision(croppedCanvas, detection.cropBox);
+    steps.push({
+      name: msg("vision.stepCropPlan"),
+      ms: performance.now() - tCrop,
+      bytes: compressed.bytes,
+      detail: msg("step.grayJpeg", { size: `${compressed.width}×${compressed.height}` }),
+    });
+
+    onProgress?.(msg("progress.vision"));
+    const tCall = performance.now();
+    const response = await callTwin<FloorPlanExtraction>({
+      task: "extract_floorplan",
+      image: compressed.dataUrl,
+    });
+    const usageKnown = response.usageKnown ?? Boolean(response.usage || response.offline);
+    steps.push({
+      name: msg("step.visionLlm"),
+      ms: performance.now() - tCall,
+      bytes: compressed.bytes,
+      detail: response.offline ? msg("step.noKey") : response.error ?? response.usage?.model,
+    });
+
+    // Merge OCR text fallback for price/location if printed outside the floor plan box
+    const ocrLocal = heuristicExtract(ocrText);
+    const rawPlan =
+      (response.ok && response.data ? validateFloorPlanExtraction(response.data) : undefined) ??
+      offlineFloorPlanFromOcr(ocrText);
+
+    const mergedPlan: FloorPlanExtraction = {
+      ...rawPlan,
+      priceChf: rawPlan.priceChf ?? (ocrLocal.kind === "listing" ? ocrLocal.amount : undefined),
+      location: rawPlan.location ?? ocrLocal.location,
+    };
+
+    const tVerify = performance.now();
+    const verified = verifyFloorPlan(mergedPlan);
+    steps.push({
+      name: msg("vision.stepVerify"),
+      ms: performance.now() - tVerify,
+      detail: verified.headline,
+    });
+
+    const labelMsg = verified.location
+      ? msg("event.roomsHomeIn", { rooms: verified.rooms, place: verified.location })
+      : msg("event.roomsHome", { rooms: verified.rooms });
+
+    const extraction: Extraction = {
+      kind: "listing",
+      amount: verified.priceChf,
+      rooms: verified.rooms,
+      location: verified.location,
+      areaM2: verified.livingAreaM2,
+      label: translateText("en", labelMsg),
+      labelMsg,
+      vision: {
+        kind: "floorplan",
+        detection,
+        floorPlan: verified,
+      },
+    };
+
+    const usage: Usage =
+      response.ok && response.usage
+        ? { ...response.usage, mode: "llm" }
+        : {
+            ...LOCAL_OFFLINE_USAGE,
+            mode: response.offline ? "offline" : usageKnown ? "local" : "llm",
+          };
+
+    return {
+      route: "vision-plan",
+      extraction,
+      usage,
+      usageKnown,
+      payload: response.request ?? {
+        wouldSend: {
+          task: "extract_floorplan",
+          image: `JPEG ${compressed.width}×${compressed.height} · ${compressed.bytes} bytes`,
+        },
+      },
+      preview: compressed.dataUrl,
+      visionReason: detection.reason,
+      cropSize: { width: compressed.width, height: compressed.height },
+    };
+  }
+
+  // detection.kind === "chart"
   const tCrop = performance.now();
-  const compressed = compressPlanForVision(croppedCanvas, detection.cropBox);
+  const compressed = compressChartForVision(croppedCanvas, detection.cropBox);
   steps.push({
-    name: msg("vision.stepCropPlan"),
+    name: msg("vision.stepCropChart"),
     ms: performance.now() - tCrop,
     bytes: compressed.bytes,
-    detail: msg("step.grayJpeg", { size: `${compressed.width}×${compressed.height}` }),
+    detail: msg("vision.colorJpeg", { size: `${compressed.width}×${compressed.height}` }),
   });
 
   onProgress?.(msg("progress.vision"));
   const tCall = performance.now();
-  const response = await callTwin<FloorPlanExtraction>({
-    task: "extract_floorplan",
+  const response = await callTwin<ChartExtraction>({
+    task: "extract_chart",
     image: compressed.dataUrl,
   });
   const usageKnown = response.usageKnown ?? Boolean(response.usage || response.offline);
@@ -89,42 +193,28 @@ export async function tryVisionSnap(
     detail: response.offline ? msg("step.noKey") : response.error ?? response.usage?.model,
   });
 
-  // Merge OCR text fallback for price/location if printed outside the floor plan box
-  const ocrLocal = heuristicExtract(ocrText);
-  const rawPlan =
-    (response.ok && response.data ? validateFloorPlanExtraction(response.data) : undefined) ??
-    offlineFloorPlanFromOcr(ocrText);
-
-  const mergedPlan: FloorPlanExtraction = {
-    ...rawPlan,
-    priceChf: rawPlan.priceChf ?? (ocrLocal.kind === "listing" ? ocrLocal.amount : undefined),
-    location: rawPlan.location ?? ocrLocal.location,
-  };
+  const rawChart =
+    (response.ok && response.data ? validateChartExtraction(response.data) : undefined) ??
+    offlineChartFromOcr(ocrText, detection.chartSubtype);
 
   const tVerify = performance.now();
-  const verified = verifyFloorPlan(mergedPlan);
+  const verified = verifyChart(rawChart);
   steps.push({
     name: msg("vision.stepVerify"),
     ms: performance.now() - tVerify,
     detail: verified.headline,
   });
 
-  const labelMsg = verified.location
-    ? msg("event.roomsHomeIn", { rooms: verified.rooms, place: verified.location })
-    : msg("event.roomsHome", { rooms: verified.rooms });
-
+  const labelMsg = verified.headline;
   const extraction: Extraction = {
-    kind: "listing",
-    amount: verified.priceChf,
-    rooms: verified.rooms,
-    location: verified.location,
-    areaM2: verified.livingAreaM2,
-    label: translateText("en", labelMsg),
+    kind: "note",
+    amount: verified.latestValueChf,
+    label: verified.provider ?? translateText("en", labelMsg),
     labelMsg,
     vision: {
-      kind: "floorplan",
+      kind: "chart",
       detection,
-      floorPlan: verified,
+      chart: verified,
     },
   };
 
@@ -137,13 +227,13 @@ export async function tryVisionSnap(
         };
 
   return {
-    route: "vision-plan",
+    route: "vision-chart",
     extraction,
     usage,
     usageKnown,
     payload: response.request ?? {
       wouldSend: {
-        task: "extract_floorplan",
+        task: "extract_chart",
         image: `JPEG ${compressed.width}×${compressed.height} · ${compressed.bytes} bytes`,
       },
     },

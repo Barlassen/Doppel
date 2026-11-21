@@ -35,7 +35,8 @@ function readCache(): CacheEntry[] {
     const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "[]");
     return Array.isArray(cache) ? cache.filter((entry): entry is CacheEntry =>
       entry && typeof entry.hash === "string" && typeof entry.signature === "string" && [0, 1, 2].includes(entry.tier)
-      && DOC_KINDS.includes(entry.extraction?.kind) && entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)
+      && DOC_KINDS.includes(entry.extraction?.kind)
+      && ((entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)) || entry.extraction.vision?.kind === "chart")
       && (entry.extraction.kind !== "receipt" || (validatedReceiptItems(entry.extraction.items)
         && receiptExtractionStatus(entry.extraction).outcome === "ok"))) : [];
   } catch {

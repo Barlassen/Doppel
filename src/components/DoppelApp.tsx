@@ -29,7 +29,13 @@ import {
 import { callTwin } from "@/lib/llm";
 import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
-import type { FloorPlanVerification } from "@/lib/snap/vision";
+import {
+  applyChartToProfile,
+  applyChartVisionResult,
+  withChartInsight,
+  type ChartTwinPatch,
+  type FloorPlanVerification,
+} from "@/lib/snap/vision";
 import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -48,7 +54,8 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 // ---------------- deterministic engine helpers (0 tokens) ----------------
 
-const keyOf = (profileId: string, s: Scenario) => JSON.stringify([profileId, s]);
+const keyOf = (profileId: string, s: Scenario, portfolioOverride?: number) =>
+  JSON.stringify([profileId, s, portfolioOverride ?? null]);
 
 function runPair(base: Profile, s: Scenario) {
   const b = analyzeBehavior(effectiveProfile(base, s), s.extraTx);
@@ -86,7 +93,10 @@ interface PendingImpact {
 export default function DoppelApp() {
   const { locale, setLocale, t, tm } = useI18n();
   const [profileId, setProfileId] = useState(PROFILES[0].id);
-  const base = PROFILES.find((p) => p.id === profileId)!;
+  const [chartPatch, setChartPatch] = useState<ChartTwinPatch | null>(null);
+  const chartPatchRef = useRef<ChartTwinPatch | null>(null);
+  const rawBase = PROFILES.find((p) => p.id === profileId)!;
+  const base = useMemo(() => applyChartToProfile(rawBase, chartPatch), [rawBase, chartPatch]);
 
   const [scenario, setScenario] = useState<Scenario>(() => baseScenario(PROFILES[0]));
   const [pin, setPin] = useState<(PinnedPlan & { scenario: Scenario }) | null>(null);
@@ -153,6 +163,8 @@ export default function DoppelApp() {
     setImpact(null);
     setSnaps([]);
     setFloorPlan(null);
+    chartPatchRef.current = null;
+    setChartPatch(null);
     setNarrative(null);
     setCmdMsg(undefined);
   }
@@ -161,12 +173,17 @@ export default function DoppelApp() {
    * Every change to the twin goes through here. Plan A is auto-pinned to the state right before the change
    * (unless the user pinned one), and the odds delta is shown once the new futures are simulated.
    */
-  function mutate(fn: (s: Scenario) => Scenario, opts: { label: Text; autoPin?: boolean; snapId?: string }) {
+  function mutate(
+    fn: (s: Scenario) => Scenario,
+    opts: { label: Text; autoPin?: boolean; snapId?: string; nextPortfolio?: number },
+  ) {
     const prev = scenarioRef.current;
     const next = fn(prev);
     const pid = profileIdRef.current;
-    const beforeKey = keyOf(pid, prev);
-    const afterKey = keyOf(pid, next);
+    const prevPort = chartPatchRef.current?.portfolioChf;
+    const nextPort = opts.nextPortfolio !== undefined ? opts.nextPortfolio : prevPort;
+    const beforeKey = keyOf(pid, prev, prevPort);
+    const afterKey = keyOf(pid, next, nextPort);
     if (beforeKey === afterKey) {
       const p = probCache.current.get(beforeKey);
       if (p !== undefined) resolveImpact({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId }, p, p);
@@ -187,8 +204,11 @@ export default function DoppelApp() {
   }
 
   const effProfile = useMemo(() => effectiveProfile(base, scenario), [base, scenario]);
-  const behavior = useMemo(() => analyzeBehavior(effProfile, scenario.extraTx), [effProfile, scenario.extraTx]);
-  const inputsKey = useMemo(() => keyOf(profileId, scenario), [profileId, scenario]);
+  const behavior = useMemo(
+    () => withChartInsight(analyzeBehavior(effProfile, scenario.extraTx), chartPatch),
+    [effProfile, scenario.extraTx, chartPatch],
+  );
+  const inputsKey = useMemo(() => keyOf(profileId, scenario, chartPatch?.portfolioChf), [profileId, scenario, chartPatch]);
   const pinKey = useMemo(() => (pin ? keyOf(profileId, pin.scenario) : null), [profileId, pin]);
 
   // ---------------- debounced, chunked recomputation ----------------
@@ -205,10 +225,11 @@ export default function DoppelApp() {
           if (job === jobRef.current) fn();
         }, ms),
       );
-    const prof = PROFILES.find((p) => p.id === profileIdRef.current)!;
+    const rawProf = PROFILES.find((p) => p.id === profileIdRef.current)!;
+    const prof = applyChartToProfile(rawProf, chartPatchRef.current);
     const s = scenarioRef.current;
     const pinned = pinRef.current;
-    const key = keyOf(prof.id, s);
+    const key = keyOf(prof.id, s, chartPatchRef.current?.portfolioChf);
     const input = () => simInputFor(prof, s, analyzeBehavior(effectiveProfile(prof, s), s.extraTx).params);
 
     // Resolve "28% → 11%" deltas once the futures before and after the change are both known.
@@ -305,18 +326,35 @@ export default function DoppelApp() {
   function onSnap(name: Text, r: SnapResult) {
     setLedger((l) => [...l, entryFromSnap(name, r)]);
     if (renderRev !== profileRevRef.current) return; // snap started for another profile
+    const cur = scenarioRef.current;
+    const id = uid();
+    const label = msg("change.snap", { name });
+
+    if (r.extraction.vision?.kind === "chart") {
+      const applied = applyChartVisionResult(r.extraction.vision.chart, {
+        scenario: cur,
+        portfolioChf: base.portfolio,
+      });
+      setSnaps((s) => [...s, { id, name, result: r, summary: applied.patch.summary }]);
+      mutate(() => applied.scenario, {
+        label,
+        snapId: id,
+        nextPortfolio: applied.patch.portfolioChf,
+      });
+      chartPatchRef.current = applied.patch;
+      setChartPatch(applied.patch);
+      return;
+    }
+
     if (r.extraction.vision?.kind === "floorplan") setFloorPlan(r.extraction.vision.floorPlan);
     else if (r.extraction.kind === "listing") setFloorPlan(null);
-    const cur = scenarioRef.current;
     const update = extractionToUpdate(r.extraction, cur.events, new Date(), {
       transactions: base.transactions,
       recurring: cur.recurring,
       marginalTaxRate: base.marginalTaxRate,
       income: { grossIncomeYear: base.grossIncomeYear, netIncomeMonth: base.netIncomeMonth },
     });
-    const id = uid();
     setSnaps((s) => [...s, { id, name, result: r, summary: update.summary }]);
-    const label = msg("change.snap", { name });
     switch (update.kind) {
       case "event":
         mutate((s) => applyScenarioOps(s, validateLocalOps(update.ops, s.events), "snap"), { label, snapId: id });

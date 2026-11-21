@@ -402,6 +402,8 @@ export const tr = {
       noteHint: "El yazısı hedef",
       plan: "Plan",
       planHint: "İsviçre kat planı",
+      chart: "Grafik",
+      chartHint: "Portföy ve dağılım grafiği",
     },
   },
 
@@ -477,6 +479,44 @@ export const tr = {
     roomFromDims: "{dims} m → {area:num1} m² (hesaplanan)",
     balconyArea: "Dış balkon / teras: {area:num1} m² (net yaşam alanına dahil değildir).",
     livingArea: "Yaşam alanı (m²)",
+    stepCropChart: "Grafiği kırp ve küçült (≤512px)",
+    colorJpeg: "{size} renkli JPEG",
+    chartBadge: "Doğrulanmış portföy ve dağılım grafiği",
+    chartHeadlineFull: "Portföy {value:chf} · {equities:pct} hisse ({risk}) · azami düşüş {dd:pct1}",
+    chartHeadlineAllocValue: "Portföy {value:chf} · {equities:pct} hisse → {risk} risk profili",
+    chartHeadlineAllocOnly: "{equities:pct} hisse · {bonds:pct} tahvil → {risk} risk profili",
+    chartHeadlineValueDd: "Portföy {value:chf} · zirveden dibe {dd:pct1} düşüş",
+    chartHeadlineValueOnly: "Portföy değeri {value:chf}",
+    verifyAllocOk:
+      "✓ Dağılım dilimleri toplamı {sum:pct1} (%100 ± 2 puan içinde) · {equities:pct} hisse {risk} profiline karşılık gelir.",
+    warnAllocSum:
+      "⚠ Dağılım dilimleri toplamı {sum:pct1}; %100 ± 2 puan toleransının dışında.",
+    verifyMonotoneOk: "✓ {count:int} aylık veri noktası zaman içinde kesin artan sırada ({from} → {to}).",
+    warnNonMonotone:
+      "⚠ Okunan grafik noktaları zaman sırasına göre değildi ve kronolojik olarak yeniden sıralandı.",
+    verifyEndpointOk:
+      "✓ Çizgi grafiği son noktası ({endpoint:chf}) basılı toplamla ({printed:chf}) eşleşiyor.",
+    warnEndpointMismatch:
+      "⚠ Çizgi grafiği son noktası ({endpoint:chf}) basılı toplamdan ({printed:chf}) {diff:pct} sapıyor.",
+    warnDrawdown:
+      "⚠ Zirveden dibe −{pct:pct1} deterministik düşüş tespit edildi ({peakMonth} ayında {peak:chf} → {troughMonth} ayında {trough:chf}).",
+    verifyNoDrawdown: "✓ Çıkarılan seride zirveden dibe %10 veya üzeri düşüş yok.",
+    allocTitle: "Varlık dağılımı (toplam {sum:pct1})",
+    sliceEquities: "Hisse senedi",
+    sliceBonds: "Tahvil",
+    sliceRealEstate: "Gayrimenkul",
+    sliceCash: "Nakit",
+    sliceOther: "Diğer",
+    seriesTitle: "Portföy değer serisi ({count:int} nokta · {from} → {to})",
+    portfolioValueField: "Güncel portföy değeri (CHF)",
+    equitiesPctField: "Hisse senedi oranı (%)",
+    derivedRiskLabel: "Türetilen risk profili: {risk}",
+    insightDrawdownTitle: "Portföy grafiğinde düşüş −{pct:pct1}",
+    insightDrawdownDetail:
+      "Taranan ekstren {peakMonth} ayında {peak:chf} seviyesinden {troughMonth} ayında {trough:chf} seviyesine bir düşüş gösteriyor. %10 ve üzeri düşüşlerde yatırımda kalmak zararı kilitlemeyi önler.",
+    summaryChartBoth: "Portföy {value:chf} olarak güncellendi · {equities:pct} hisse → {risk} risk profili",
+    summaryChartValue: "Portföy değeri grafikten {value:chf} olarak güncellendi",
+    summaryChartAlloc: "Dağılım grafiği ({equities:pct} hisse) → risk profili {risk} olarak ayarlandı",
   },
 
   receipt: {

@@ -219,7 +219,7 @@ export function analyzeImagePixels(
       : Math.min(1, Math.min(1, bothAxes / 9) * 0.65 + Math.min(1, wallDensity) * 0.35);
 
   // 2. Colour segment score (donut / pie charts have >= 3 distinct saturated hue bins)
-  const minBinPixels = Math.max(18, Math.round(totalPixels * 0.0028));
+  const minBinPixels = Math.max(15, Math.round(totalPixels * 0.0012));
   let distinctHueBins = 0;
   for (let b = 0; b < 12; b++) {
     if (hueBins[b] >= minBinPixels) distinctHueBins++;
@@ -232,50 +232,67 @@ export function analyzeImagePixels(
         ? Math.min(0.55, 0.25 + saturatedShare * 3)
         : Math.min(0.2, saturatedShare * 2);
 
-  // 3. Curve continuity score (line chart: localized stroke centroid y(x) across columns with smooth continuity & vertical span)
+  // 3. Curve continuity score (line chart: thin saturated curve stroke y(x) across columns with smooth continuity & vertical span)
   const xStart = Math.floor(width * 0.1);
   const xEnd = Math.floor(width * 0.9);
-  const yStart = Math.floor(height * 0.12);
-  const yEnd = Math.floor(height * 0.88);
-  const centroids: number[] = [];
-  let smoothSteps = 0;
-  let prevY: number | null = null;
-
-  for (let x = xStart; x < xEnd; x += 2) {
-    let sumY = 0;
-    let count = 0;
-    for (let y = yStart; y < yEnd; y++) {
-      const idx = y * width + x;
-      // Prefer saturated curve pixels or sharp mid-dark strokes
-      if (satMask[idx] === 1) {
-        sumY += y;
-        count++;
-      }
-    }
-    // Only accept localized curve strokes (not thick bars or full-height backgrounds)
-    if (count >= 1 && count <= Math.max(14, Math.round(height * 0.07))) {
-      const cy = sumY / count;
-      centroids.push(cy);
-      if (prevY !== null && Math.abs(cy - prevY) <= height * 0.09) {
-        smoothSteps++;
-      }
-      prevY = cy;
-    } else {
-      prevY = null;
-    }
-  }
-
-  let curveScore = 0;
   const totalCols = Math.max(1, Math.floor((xEnd - xStart) / 2));
-  if (centroids.length >= totalCols * 0.3) {
+  const maxStroke = Math.max(8, Math.round(height * 0.04));
+
+  function scoreCurveBand(yMin: number, yMax: number): number {
+    const centroids: number[] = [];
+    let smoothSteps = 0;
+    let prevY: number | null = null;
+
+    for (let x = xStart; x < xEnd; x += 2) {
+      // Find thin vertical runs of saturated pixels in [yMin, yMax)
+      const runs: number[] = [];
+      let runStart = -1;
+      for (let y = yMin; y < yMax; y++) {
+        if (satMask[y * width + x] === 1) {
+          if (runStart === -1) runStart = y;
+        } else if (runStart !== -1) {
+          const len = y - runStart;
+          if (len >= 1 && len <= maxStroke) {
+            runs.push(runStart + (len - 1) / 2);
+          }
+          runStart = -1;
+        }
+      }
+      if (runStart !== -1) {
+        const len = yMax - runStart;
+        if (len >= 1 && len <= maxStroke) {
+          runs.push(runStart + (len - 1) / 2);
+        }
+      }
+
+      // A single-line chart column has 1 thin stroke (avoid double-arc columns from a donut ring)
+      if (runs.length === 1) {
+        const cy = runs[0];
+        centroids.push(cy);
+        if (prevY !== null && Math.abs(cy - prevY) <= height * 0.09) {
+          smoothSteps++;
+        }
+        prevY = cy;
+      } else {
+        prevY = null;
+      }
+    }
+
+    if (centroids.length < totalCols * 0.48) return 0;
     const minCy = Math.min(...centroids);
     const maxCy = Math.max(...centroids);
     const span = (maxCy - minCy) / Math.max(1, height);
     const continuity = smoothSteps / Math.max(1, centroids.length - 1);
-    if (span >= 0.06 && continuity >= 0.65) {
-      curveScore = Math.min(1, 0.35 + continuity * 0.4 + Math.min(0.25, span * 1.2));
+    if (span >= 0.05 && continuity >= 0.65) {
+      return Math.min(1, 0.35 + continuity * 0.4 + Math.min(0.25, span * 1.2));
     }
+    return 0;
   }
+
+  const curveScore = Math.max(
+    scoreCurveBand(Math.floor(height * 0.12), Math.floor(height * 0.88)),
+    scoreCurveBand(Math.floor(height * 0.45), Math.floor(height * 0.92)),
+  );
 
   const padX = Math.round(width * 0.03);
   const padY = Math.round(height * 0.03);

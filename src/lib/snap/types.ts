@@ -74,6 +74,12 @@ export function isAmount(value: unknown): value is number {
 }
 
 export function extractionStatus(extraction: Extraction): Pick<SnapResult, "outcome" | "fieldsMissing"> {
+  if (extraction.vision?.kind === "chart") {
+    const c = extraction.vision.chart;
+    return c.allocation || (c.latestValueChf !== undefined && c.latestValueChf > 0)
+      ? { outcome: "ok" }
+      : { outcome: "partial", fieldsMissing: ["amount"] };
+  }
   if (extraction.kind === "other") return { outcome: "failed", fieldsMissing: ["kind", "amount"] };
   if (!isAmount(extraction.amount)) return { outcome: "partial", fieldsMissing: ["amount"] };
   return { outcome: "ok" };

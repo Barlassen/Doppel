@@ -21,6 +21,7 @@ const SAMPLES = [
   { id: "payslip", file: "/samples/payslip.svg" },
   { id: "note", file: "/samples/note.svg" },
   { id: "plan", file: "/samples/vision/plan-cad-areas.svg" },
+  { id: "chart", file: "/samples/vision/chart-app-both.svg" },
 ] as const;
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;

@@ -404,6 +404,8 @@ export const fr = {
       noteHint: "Objectif manuscrit",
       plan: "Plan",
       planHint: "Plan d’étage suisse",
+      chart: "Graphique",
+      chartHint: "Graphique portefeuille & allocation",
     },
   },
 
@@ -479,6 +481,44 @@ export const fr = {
     roomFromDims: "{dims} m → {area:num1} m² (calculé)",
     balconyArea: "Balcon / terrasse extérieur\u202f: {area:num1} m² (hors surface habitable nette).",
     livingArea: "Surface habitable (m²)",
+    stepCropChart: "Recadrer et réduire le graphique (≤512px)",
+    colorJpeg: "JPEG couleur {size}",
+    chartBadge: "Graphique de portefeuille et d’allocation vérifié",
+    chartHeadlineFull: "Portefeuille {value:chf} · {equities:pct} d’actions ({risk}) · baisse max. {dd:pct1}",
+    chartHeadlineAllocValue: "Portefeuille {value:chf} · {equities:pct} d’actions → profil {risk}",
+    chartHeadlineAllocOnly: "{equities:pct} d’actions · {bonds:pct} d’obligations → profil {risk}",
+    chartHeadlineValueDd: "Portefeuille {value:chf} · baisse de {dd:pct1} du pic au creux",
+    chartHeadlineValueOnly: "Valeur du portefeuille {value:chf}",
+    verifyAllocOk:
+      "✓ Les parts d’allocation totalisent {sum:pct1} (dans 100\u202f% ± 2 pp) · {equities:pct} d’actions correspond à {risk}.",
+    warnAllocSum:
+      "⚠ Les parts d’allocation totalisent {sum:pct1}, hors de la tolérance de 100\u202f% ± 2 pp.",
+    verifyMonotoneOk: "✓ {count:int} points mensuels sont strictement monotones dans le temps ({from} → {to}).",
+    warnNonMonotone:
+      "⚠ Les points lus sur la courbe n’étaient pas monotones dans le temps et ont été triés chronologiquement.",
+    verifyEndpointOk:
+      "✓ Le point final de la courbe ({endpoint:chf}) correspond au total imprimé ({printed:chf}).",
+    warnEndpointMismatch:
+      "⚠ Le point final de la courbe ({endpoint:chf}) s’écarte de {diff:pct} du total imprimé ({printed:chf}).",
+    warnDrawdown:
+      "⚠ Baisse déterministe du pic au creux de −{pct:pct1} détectée ({peak:chf} en {peakMonth} → {trough:chf} en {troughMonth}).",
+    verifyNoDrawdown: "✓ Aucune baisse ≥ 10\u202f% du pic au creux dans la série extraite.",
+    allocTitle: "Allocation d’actifs (somme {sum:pct1})",
+    sliceEquities: "Actions",
+    sliceBonds: "Obligations",
+    sliceRealEstate: "Immobilier",
+    sliceCash: "Liquidités",
+    sliceOther: "Autres",
+    seriesTitle: "Série de valeur du portefeuille ({count:int} pts · {from} → {to})",
+    portfolioValueField: "Dernière valeur du portefeuille (CHF)",
+    equitiesPctField: "Part d’actions (%)",
+    derivedRiskLabel: "Profil de risque dérivé\u202f: {risk}",
+    insightDrawdownTitle: "Baisse du portefeuille sur le graphique −{pct:pct1}",
+    insightDrawdownDetail:
+      "Votre relevé scanné montre un repli de {peak:chf} ({peakMonth}) à {trough:chf} ({troughMonth}). Rester investi lors des baisses ≥10\u202f% évite de figer les pertes.",
+    summaryChartBoth: "Portefeuille mis à jour à {value:chf} · {equities:pct} d’actions → profil {risk}",
+    summaryChartValue: "Valeur du portefeuille mise à jour à {value:chf} depuis le graphique",
+    summaryChartAlloc: "Graphique d’allocation ({equities:pct} d’actions) → profil de risque réglé sur {risk}",
   },
 
   receipt: {
