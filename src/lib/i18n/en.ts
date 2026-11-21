@@ -225,7 +225,7 @@ export const en = {
     tipReal: "Real you (median)",
     tipIdeal: "Disciplined you",
     tipPlanA: "Plan A (median)",
-    tipRange: "Bad year–good year: {p10:chfShort} – {p90:chfShort}",
+    tipRange: "Middle 80% of futures: {p10:chfShort} – {p90:chfShort}",
   },
 
   timeline: {

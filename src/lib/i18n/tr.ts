@@ -227,7 +227,7 @@ export const tr = {
     tipReal: "Gerçek sen (medyan)",
     tipIdeal: "Disiplinli sen",
     tipPlanA: "A planı (medyan)",
-    tipRange: "Kötü yıl–iyi yıl: {p10:chfShort} – {p90:chfShort}",
+    tipRange: "Senaryoların ortadaki %80'i: {p10:chfShort} – {p90:chfShort}",
   },
 
   timeline: {
