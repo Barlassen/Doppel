@@ -28,8 +28,8 @@ const PER_MONTH = String.raw`(?:ayda|aylik(?:\s+olarak)?|her\s+ay|ay\s+basi|\/\s
 /** Placeholder for pillar 3a after normalisation ("3a'yı", "3. sütun", "bireysel emeklilik"). */
 const PILLAR = "sutunuc";
 
-const FOLD: Record<string, string> = { ı: "i", ş: "s", ğ: "g", ç: "c", ö: "o", ü: "u", â: "a", î: "i", û: "u" };
-const fold = (t: string) => t.replace(/[ışğçöüâîû]/g, (c) => FOLD[c]);
+const FOLD: Record<string, string> = { ı: "i", ş: "s", ğ: "g", ç: "c", ö: "o", ü: "u", â: "a", î: "i", û: "u", ä: "a", é: "e", è: "e", ê: "e" };
+const fold = (t: string) => t.replace(/[ışğçöüâîûäéèê]/g, (c) => FOLD[c]);
 
 const UNITS: Record<string, number> = { bir: 1, iki: 2, uc: 3, dort: 4, bes: 5, alti: 6, yedi: 7, sekiz: 8, dokuz: 9 };
 const TENS: Record<string, number> = { on: 10, yirmi: 20, otuz: 30, kirk: 40, elli: 50, altmis: 60, yetmis: 70, seksen: 80, doksan: 90 };
@@ -73,10 +73,10 @@ function prepare(text: string): string {
   // "1.200,50" (Turkish thousands + decimals) → "1200.50" before the shared normaliser sees it.
   let t = text.replace(/(?<![\d.,])(\d{1,3})((?:\.\d{3})+),(\d{1,2})(?!\d)/g, (_m, a: string, b: string, c: string) => `${a}${b.replace(/\./g, "")}.${c}`);
   t = fold(normalizeText(t, "tr"));
-  t = t.replace(/(?<![\p{L}])(?:isvicre\s+)?(?:frank|frang)\p{L}*/gu, " ");
+  t = t.replace(/(?<![\p{L}])(?:isvicre\s+)?(?:frank|frang|chf|sfr)\p{L}*/gu, " ");
   // Pillar 3a in all its spellings, before any suffix stripping can eat the "a".
-  t = t.replace(/(?<![\d.,])(?:3a(?:'\p{L}*|yi|ya|yu|ye|da|dan|nin|m|mi|mu|ma|mdan|n|ni|niz|nizi)?|3\s+a)(?![\p{L}\d])/gu, ` ${PILLAR} `);
-  t = t.replace(/(?:(?:3|uc)\.?\s*|ucuncu\s+)(?:sutun|ayak)\p{L}*|bireysel\s+emeklili?\p{L}*|(?:saule|pillar|pilier)\s*3a?/gu, ` ${PILLAR} `);
+  t = t.replace(/(?:(?:saule|pillar|pilier)\s*)?(?<![\d.,])(?:3a(?:'\p{L}*|yi|ya|yu|ye|da|dan|nin|m|mi|mu|ma|mdan|n|ni|niz|nizi)?|3\s+a)(?![\p{L}\d])/gu, ` ${PILLAR} `);
+  t = t.replace(/(?:(?:3|uc)\.?\s*|ucuncu\s+)(?:sutun|ayak)\p{L}*|bireysel\s+emeklili?\p{L}*|(?:saule|pillar|pilier)\s*3(?:'\p{L}*|[aeiuüoö]\p{L}*)?/gu, ` ${PILLAR} `);
   // Every other apostrophe marks a suffix: "2028'de", "60'ta", "mio'ya", "bern'de".
   t = t.replace(/'\p{L}*/gu, "");
   t = t.replace(new RegExp(String.raw`(\d)${SUFFIX}(?![\p{L}])`, "gu"), "$1");
@@ -97,19 +97,26 @@ function monthFrom(t: string, now: Date): number | undefined {
   return undefined;
 }
 
-const RETIRE_WORD = String.raw`emekli\p{L}*`;
+const RETIRE_WORD = String.raw`(?:emekli\p{L}*|pensionskasse\p{L}*|pension\p{L}*|calismayi\s+birak\p{L}*)`;
 /** A two-digit age, not an amount or duration ("50 bin", "60 ay"). */
 const NOT_MONEY = String.raw`(?![\d.,])(?!\s*(?:bin|milyon|mio|k|m|ay|yil|sene)${E})`;
 
 function retirementAge(t: string): number | undefined {
   const age =
-    // 60 yaşında emekli ol · 60'ta emekli olsam · 62 yaşında erken emekli olmak istiyorum
-    t.match(re(String.raw`(?<![\d.,])(\d{2})${NOT_MONEY}\s*(?:yas\p{L}*\s+)?(?:\p{L}+\s+){0,2}?${RETIRE_WORD}`)) ??
+    // 60 yaşında emekli ol · 60'ta emekli olsam · 62 yaşında erken emekli olmak istiyorum · 62 yaşında Pensionskasse'den emekli olsam
+    t.match(re(String.raw`(?<![\d.,])(\d{2})${NOT_MONEY}\s*(?:yas\p{L}*\s+)?(?:\p{L}+\s+){0,3}?${RETIRE_WORD}`)) ??
     // erken emeklilik 62 · emeklilik yaşı 63 · emekliliği 62 yaşına çek · emekli olmak istiyorum 60 yaşında
-    t.match(re(String.raw`${RETIRE_WORD}\s+(?:\p{L}+\s+){0,3}?(\d{2})${NOT_MONEY}`)) ??
+    t.match(re(String.raw`${RETIRE_WORD}\s+(?:\p{L}+\s+){0,4}?(\d{2})${NOT_MONEY}`)) ??
     // 60 yaşına kadar çalış
     t.match(re(String.raw`(?<![\d.,])(\d{2})\s*yas\p{L}*\s+kadar\s+calis`));
-  return age ? Number(age[1]) : undefined;
+  if (age) return Number(age[1]);
+  if (!re(RETIRE_WORD).test(t)) return undefined;
+  // Relative to Swiss statutory retirement age 65: "emekliliği 3 yıl öne çeksem", "2 yıl erken emekli olsam"
+  const sooner = t.match(/(\d{1,2})\s*(?:yil|sene)\p{L}*\s+(?:daha\s+)?(?:one\s+(?:cek|al)\p{L}*|erken)/u);
+  if (sooner) return 65 - Number(sooner[1]);
+  const later = t.match(/(\d{1,2})\s*(?:yil|sene)\p{L}*\s+(?:daha\s+)?(?:ertele\p{L}*|otele\p{L}*|gec\p{L}*|ileri\p{L}*|sonra\p{L}*)/u);
+  if (later) return 65 + Number(later[1]);
+  return undefined;
 }
 
 function risk(t: string): RiskProfile | undefined {
@@ -140,22 +147,22 @@ function spending(t: string): number | undefined {
 
 function monthlyInvest(t: string): Op | undefined {
   if (t.includes(PILLAR)) return undefined;
-  const verb = re(`yatir|biriktir|kenara\\s+(?:koy|ayir)|${W}(?:etf|fon)${E}`);
+  if (re(`(?:atil|bosta|kenarda|yatan|duran)\\p{L}*\\s+(?:\\p{L}+\\s+)?(?:nakit|nakd|para)|(?:nakit|nakd|para)\\p{L}*\\s+(?:\\p{L}+\\s+)?(?:yatirima|degerlendir|calistir)`).test(t))
+    return { op: "set", key: "optimize", value: true };
+  const verb = re(`yatir|biriktir|kenara\\s+(?:koy|ayir)|${W}(?:etf|fon|borsa|hisse)\\p{L}*|dauerauftrag|duzenli\\s+alim`);
   const bare = re(`^${PER_MONTH}\\s+${AMT}[.!?]?$`);
   if (!verb.test(t) && !bare.test(t)) return undefined;
   const m =
-    t.match(re(`${PER_MONTH}\\s+(?:\\p{L}+\\s+)?${AMT}`)) ??
-    t.match(re(`${AMT}\\s*(?:\\p{L}+\\s+)?${PER_MONTH}`));
+    t.match(re(`${PER_MONTH}\\s+(?:\\p{L}+\\s+){0,3}?${AMT}`)) ??
+    t.match(re(`${AMT}\\s*(?:\\p{L}+\\s+){0,3}?${PER_MONTH}`));
   if (m) return { op: "set", key: "monthlyInvest", value: amountValue(m[1], m[2]) };
-  if (re(`(?:atil|bosta|kenarda|yatan|duran)\\p{L}*\\s+(?:\\p{L}+\\s+)?(?:nakit|nakd|para)|(?:nakit|nakd|para)\\p{L}*\\s+(?:\\p{L}+\\s+)?(?:yatirima|degerlendir|calistir)`).test(t))
-    return { op: "set", key: "optimize", value: true };
   return undefined;
 }
 
 function pillar3a(t: string): boolean | undefined {
   if (!t.includes(PILLAR)) return undefined;
-  if (re(`durdur|birak|${W}kes(?:${E}|elim|sem|ersem|mek|iyorum)|iptal|vazgec|dondur|kapat|ara\\s+ver|yatirma${E}|artik\\s+(?:odeme|yatirma)`).test(t)) return false;
-  if (re(`maks|doldur|basla|${W}ac(?:${E}|ar|sam|alim|mak|in)|ode|yatir|kullan|${W}tam${E}|tavan|limit|katki|aktif|ekle`).test(t)) return true;
+  if (re(`durdur|birak|${W}kes(?:${E}|elim|sem|ersem|mek|iyorum)|iptal|vazgec|dondur|kapat|ara\\s+ver|(?:yatir|ode|yap)ma(?:${E}|sam|sak|zsam|zsak|yalim|yelim|mak|yi)|artik\\s+(?:odeme|yatirma)`).test(t)) return false;
+  if (re(`maks|doldur|full\\p{L}*|basla|${W}ac(?:${E}|ar|sam|alim|mak|in)|ode|yatir|kullan|${W}tam${E}|tavan|limit|katki|aktif|ekle`).test(t)) return true;
   return undefined;
 }
 
@@ -204,16 +211,16 @@ function parse({ text, house, now }: IntentContext): Op[] {
   if (houseWord && re(`${W}(?:satin\\s+)?al(?:sam|sak|irsam|irsak|mak|ayim|alim|acag\\p{L}*|in|ir|im|iyorum|iyoruz)?${E}|alim\\p{L}*|edin\\p{L}*`).test(t) && !shift) {
     const price = largestAmountAbove(t, 50_000);
     if (price) {
-      const where = text.match(/(?<![\p{L}])(\p{Lu}[\p{L}-]+)['’](?:de|da|te|ta|deki|daki|teki|taki)(?!\p{L})/u);
+      const where = text.match(/(?<![\p{L}])((?:St\.\s+)?\p{Lu}[\p{L}-]+)['’](?:de|da|te|ta|deki|daki|teki|taki)(?!\p{L})/u);
       const label = eventLabel(where ? { key: "event.homeIn", params: { place: where[1] } } : { key: "event.home" });
       ops.push({ op: "add", type: "house", ...label, month: when ?? house?.month ?? 24, amount: price });
     }
   }
 
   // işimi kaybedersem · 6 ay işsiz kalırsak · işten çıkarılırsam · kovulursam · bir yıl çalışmazsam
-  if (re(`issiz|(?:isimi|isimden|isini|isinden|isimizi|isten)\\s+(?:\\p{L}+\\s+){0,2}?(?:kayb|ol|cikar|atil|ayril|birak|kovul)|${W}kovul|calismazsam|calismasam|calismazsak`).test(t)) {
-    const m = t.match(/(?<![\d.,])(\d{1,2})\s*ay(?:lik)?(?!\p{L})/u);
-    const y = t.match(/(?<![\d.,])(\d(?:[.,]5)?)\s*(?:yil|sene)(?:lik)?(?!\p{L})(?!\s+(?:sonra|icinde))/u);
+  if (re(`issiz|(?:isimi|isimden|isini|isinden|isimizi|isimizden|isi|isten)\\s+(?:\\p{L}+\\s+){0,2}?(?:kayb|ol|cikar|atil|ayril|birak|kovul)|${W}kovul|calismazsam|calismasam|calismazsak`).test(t)) {
+    const m = t.match(/(?<![\d.,])(\d{1,2})\s*ay(?:lik|ligina)?(?!\p{L})(?!\s+(?:sonra|icinde|icerisinde))/u);
+    const y = t.match(/(?<![\d.,])(\d(?:[.,]5)?)\s*(?:yil|sene)(?:lik|ligina)?(?!\p{L})(?!\s+(?:sonra|icinde|icerisinde))/u);
     const duration = m ? Number(m[1]) : y ? Math.round(Number(y[1].replace(",", ".")) * 12) : 6;
     ops.push({ op: "add", type: "jobloss", ...eventLabel({ key: "event.jobLoss" }), month: when ?? 12, amount: 0, duration });
   }
@@ -223,8 +230,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
     ops.push({ op: "add", type: "crash", ...eventLabel({ key: "event.crash" }), month: when ?? 12, amount: 0 });
   }
 
-  // 2028'de bebeğimiz olursa · çocuğumuz olacak · hamile kalırsam · baba olsam
-  if (re(`bebe|cocug|cocuk|dogum|hamile|${W}(?:anne|baba)\\s+ol`).test(t)) {
+  // 2028'de bebeğimiz olursa · çocuğumuz olacak · hamile kalırsam · baba olsam · çocuk yapsak
+  if (re(`bebe|cocug|cocuk|dogum|hamile|ebeveyn|${W}(?:anne|baba)\\s+ol`).test(t)) {
     ops.push({ op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: when ?? 18, amount: 1500, duration: 216 });
   }
 
