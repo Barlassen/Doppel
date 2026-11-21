@@ -33,11 +33,15 @@ export function AccountSwitcher({
   activeId,
   onSelect,
   onReset,
+  onDelete,
+  onNewAccount,
 }: {
   accounts: Account[];
   activeId: string;
   onSelect: (id: string) => void;
   onReset: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onNewAccount?: () => void;
 }) {
   const { t, fmt } = useI18n();
   const [open, setOpen] = useState(false);
@@ -56,8 +60,10 @@ export function AccountSwitcher({
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
+  const getItems = () => itemRefs.current.filter((el): el is HTMLButtonElement => Boolean(el && el.isConnected));
+
   const focusItem = (i: number) => {
-    const items = itemRefs.current.filter(Boolean) as HTMLButtonElement[];
+    const items = getItems();
     if (!items.length) return;
     items[(i + items.length) % items.length].focus();
   };
@@ -88,7 +94,7 @@ export function AccountSwitcher({
     }
   };
   const onMenuKey = (e: KeyboardEvent) => {
-    const items = itemRefs.current.filter(Boolean) as HTMLButtonElement[];
+    const items = getItems();
     const i = items.indexOf(document.activeElement as HTMLButtonElement);
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -188,6 +194,42 @@ export function AccountSwitcher({
               {active.localChanges > 0 && <>{" · "}{t("header.localChanges", { count: active.localChanges })}</>}
             </span>
           </button>
+          {!active.builtIn && onDelete && (
+            <button
+              ref={(el) => {
+                itemRefs.current[accounts.length + 1] = el;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => {
+                close();
+                onDelete(active.id);
+              }}
+              className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-bad outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="block font-medium">{t("data.deleteAccount")}</span>
+              <span className="block text-[11px] text-ink-3">{t("data.deleteAccountHint")}</span>
+            </button>
+          )}
+          {onNewAccount && (
+            <button
+              ref={(el) => {
+                itemRefs.current[accounts.length + 2] = el;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => {
+                close(false);
+                onNewAccount();
+              }}
+              className="w-full rounded-lg px-2 py-1.5 text-left text-xs outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="block font-medium">{t("data.newAccount")}</span>
+              <span className="block text-[11px] text-ink-3">{t("data.newAccountHint")}</span>
+            </button>
+          )}
         </div>
       )}
     </div>

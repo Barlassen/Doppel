@@ -12,6 +12,7 @@ import { PROFILES, takeHomeMonth } from "@/lib/data/profiles";
 import { monthlySpend, withDerivedBehavior } from "@/lib/finance/investBehavior";
 import type { InvestmentTrade, Profile, Transaction } from "@/lib/finance/types";
 import type { TransactionCategory } from "@/lib/finance/types";
+import { merchantKey } from "@/lib/import/text";
 import type { Account, AccountRecord, AccountsState, ImportInput, ImportRecord, LocalData, NewAccountInput, ProfileFields } from "./types";
 
 export const ACTIVE_KEY = "doppel:account";
@@ -245,10 +246,24 @@ export function addTransactions(accountId: string, txs: Transaction[]): string[]
 }
 
 export function updateTransaction(accountId: string, recordId: string, patch: Partial<Transaction>): void {
+  const base = baseOf(accountId);
   update(accountId, (l) => {
     const i = l.txAdded.findIndex((r) => r.id === recordId);
-    if (i >= 0) return { ...l, txAdded: l.txAdded.map((r, j) => (j === i ? { id: r.id, value: { ...r.value, ...patch } } : r)) };
-    return { ...l, txEdited: { ...l.txEdited, [recordId]: { ...l.txEdited[recordId], ...patch } } };
+    const baseIndex = recordId.startsWith("tx-") ? Number(recordId.slice(3)) : -1;
+    const prev = i >= 0 ? l.txAdded[i].value : base && Number.isInteger(baseIndex) && baseIndex >= 0 ? base.transactions[baseIndex] : undefined;
+    const merchant = patch.merchant ?? prev?.merchant;
+    const categoryOverrides =
+      patch.category && patch.category !== "investing" && merchant
+        ? { ...l.categoryOverrides, [merchantKey(merchant)]: patch.category }
+        : l.categoryOverrides;
+    if (i >= 0) {
+      return {
+        ...l,
+        txAdded: l.txAdded.map((r, j) => (j === i ? { id: r.id, value: { ...r.value, ...patch } } : r)),
+        categoryOverrides,
+      };
+    }
+    return { ...l, txEdited: { ...l.txEdited, [recordId]: { ...l.txEdited[recordId], ...patch } }, categoryOverrides };
   });
 }
 

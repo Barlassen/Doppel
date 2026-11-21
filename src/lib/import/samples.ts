@@ -87,7 +87,8 @@ function zkbCsv(p: Profile): Uint8Array {
       l.debit ? swiss(l.debit) : "", l.credit ? swiss(l.credit) : "", dmy(l.date), swiss(balance), l.purpose ?? "", "",
     ];
   });
-  return cp1252(csv([header, ...rows], ";"));
+  const preamble = ["Kontoauszug Zürcher Kantonalbank", "Konto CH93 0070 0110 0012 3456 7"];
+  return cp1252(csv([preamble, header, ...rows], ";"));
 }
 
 function viacCsv(p: Profile): Uint8Array {
