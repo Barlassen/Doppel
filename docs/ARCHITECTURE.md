@@ -8,9 +8,10 @@ Numbers come from code. Models read documents and language, and only when local 
 |---|---|---|
 | Read a Swiss QR-bill | `jsQR` at up to four crops/scales + SIX payload parser | 0 tokens |
 | Repeat snap of the same image | Local fingerprint cache (`route: "cache"`) | 0 tokens |
-| Read clean printed docs (receipts, listings, payslips) | Canvas cleanup + Tesseract.js (`eng+deu+fra`, self-hosted worker) → DE/FR/EN regex (`local-regex`) | 0 tokens |
+| Read clean printed docs | Canvas cleanup + Tesseract.js (`eng+deu+fra`, self-hosted worker) → local regex, with an item sum check for receipts | 0 tokens |
 | Read printed text the regex cannot finish | ≤ 600 chars of filtered OCR lines → small text model (`text-llm`) | output ≤ 160 tokens |
-| Read handwriting, dim or blurred photos | Grayscale JPEG capped at 512px → small vision model (`vision-llm`), only when OCR confidence < 65% or OCR fails | output ≤ 160 tokens |
+| Recover receipt fields from readable OCR | Up to 2,800 chars of OCR text with the receipt schema → small text model (`text-llm`, Tier 2) | output ≤ 2,200 tokens |
+| Read handwriting, dim or blurred photos | Grayscale JPEG capped at 512px → small vision model (`vision-llm`) when OCR is unusable | output ≤ 2,200 tokens |
 | Understand a what-if | Local regex intent parsers (EN/DE/FR/TR) → small model only on a miss | 0, or output ≤ 150 tokens |
 | Simulate the future | Monte Carlo in TypeScript, 1,000 paths | 0 tokens |
 | Swiss mortgage, pension, 3a rules | Deterministic functions | 0 tokens |
@@ -52,7 +53,8 @@ src/
       qrBill.ts              → Swiss QR-bill payload parser
       image.ts               → load, resize, crop to ink, grayscale/contrast, 512px JPEG, fingerprint
       ocr.ts                 → Tesseract worker, line filtering and compression
-      heuristics.ts          → DE/FR/EN keyword classifier + regex extractor
+    heuristics.ts          → keyword classifier + regex extraction for each document kind
+    receipt.ts             → DE/FR/EN/IT receipt lines, strict model validation, and cent-based reconciliation
     twin/actions.ts          → ops (add / shift / remove / set), validation, extraction → twin update
     twin/intents/            → local what-if parsers per language (en, de, fr, tr)
     i18n/                    → EN/DE/FR/TR dictionaries, number/date formatters, React provider
@@ -60,9 +62,9 @@ src/
     frugal/ledger.ts         → ledger entries + totals() with the exclusion rule
     data/profiles.ts         → Lukas (ZH) and Elena (GE), fictional, 3 months of transactions
 scripts/
-  make-samples.ts            → the 5 sample documents in public/samples/
+  make-samples.ts            → the 7 sample documents in public/samples/
   copy-tesseract-assets.mjs  → postinstall copy of Tesseract worker + WASM loaders into public/tesseract/runtime/
-  benchmark.ts               → 11 heuristic unit checks + 16-doc benchmark (Node copy of the cascade) → docs/BENCHMARK.md
+  benchmark.ts               → heuristic checks + 19-document benchmark with receipt accuracy → docs/BENCHMARK.md
   engine-check.ts            → finance engine on both profiles and the demo snaps
   i18n-check.ts              → dictionary completeness, placeholder parity, and 0-token intent checks
   browser-smoke.mjs          → headless Chromium run of the real pipeline without a key (pipeline-check.ts calls it)
@@ -85,12 +87,13 @@ image ─► decode; keep a ≤ 2048px JPEG in the browser for the optional GPT-
       └─► no key or model error: local heuristics ──────────────────────────────► "offline-heuristic" (excluded from savings)
 ```
 
-- **Extraction schema:** `kind, amount, merchant, date, location, rooms, category, label, year, iban, message`.
+- Receipts use full OCR text. Tier 1 accepts a printed total and item rows if their signed sum is within CHF 0.05 of the total or OCR confidence reaches 80%. Readable receipts that need help escalate to Tier 2 text. Vision handles unusable OCR. The app checks the model's items against the extracted total again and flags differences for review.
+- **Extraction schema:** `kind, amount, merchant, date, location, rooms, category, label, year, iban, message`. Receipts also carry `currency` and `items`, with `name`, `amount`, optional `qty`, `unitPrice`, and `category` on each row.
 - **Result (`SnapResult`):** `tier`, `route`, `outcome` (`ok | partial | failed`), `usageKnown`, optional `fieldsMissing`, and the client-side `naiveImage` for the live GPT-4o check.
 - **Review:** every result opens a review form (route, OCR confidence, editable fields). Nothing changes the twin until the user presses *Add to twin*.
 - **Mapping (`extractionToUpdate`, `twin/actions.ts`):** listing → house event; receipt → transaction (feeds the behaviour model); bill → recurring cost unless the same amount is already budgeted; payslip → net monthly income (`Nettolohn` / `Salaire net`, never `Bruttolohn`); note → planned expense.
 
-[BENCHMARK.md](BENCHMARK.md) measures a Node copy of this cascade. Its thresholds and OCR languages differ from the code above; the differences are listed there.
+The Node benchmark shares the receipt gate and OCR languages with the app. It documents differences in preprocessing and non-receipt thresholds. [Benchmark results](BENCHMARK.md)
 
 ## 4. Finance engine
 
@@ -140,10 +143,10 @@ image ─► decode; keep a ≤ 2048px JPEG in the browser for the optional GPT-
 
 * OpenRouter, default `google/gemini-2.5-flash-lite` for text and vision (`DOPPEL_TEXT_MODEL`,
   `DOPPEL_VISION_MODEL`). `temperature: 0`, JSON response format except for narration, `usage: { include: true }`.
-* Output caps: extraction 160, command 150, narration 160, naive comparison 400.
+* Output caps are 160 for general text extraction, 2,200 for receipt text or image extraction, 150 for commands, 160 for narration and 400 for naive comparisons.
 * Request limits: 12 requests per minute per IP, 6 in flight, body ≤ 3.5 MB, Tier 2 images ≤ 512px and ≤ 1 MB.
 * Tasks:
-  * `extract_text`: OCR text (≤ 800 chars accepted) → JSON (Tier 1)
+  * `extract_text` reads compact OCR text (≤ 800 chars) or receipt OCR text (≤ 2,800 chars, Tier 2).
   * `extract_image`: 512px grayscale JPEG → JSON (Tier 2)
   * `command`: free-form what-if → JSON ops, validated
   * `narrate`: engine facts (client name, age and city, odds, habit cost, home test, retirement, best recipe) →
