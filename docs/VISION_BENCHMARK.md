@@ -2,7 +2,7 @@
 
 Generated directly by [`scripts/vision-benchmark.ts`](../scripts/vision-benchmark.ts).
 
-> **Measurement basis:** **Offline mode (recorded vision fixtures)** — no `OPENROUTER_API_KEY` was present in this checkout. Local pixel structure detection (`detectVisionFromSignals`), Tesseract OCR (`eng+deu+fra`), cropped JPEG dimensions & byte sizes, the OCR+regex-only baseline, and deterministic TypeScript verification were all **executed and measured locally**. Model extraction responses used the recorded offline fixtures (`offlineFloorPlanFromOcr` / `offlineChartFromOcr`). Run `OPENROUTER_API_KEY=... npx tsx scripts/vision-benchmark.ts --live` to measure live OpenRouter tokens, latency, cost, and live model extraction accuracy.
+> **Measurement basis:** **Live mode (`--live`)** — vision calls were measured live via OpenRouter (`google/gemini-2.5-flash-lite`). Local pixel detection, Tesseract OCR (`eng+deu+fra`), JPEG cropping/downscaling, and deterministic TypeScript verification were executed locally.
 
 ## 1. Frugal document-type routing & crop sizes (8 samples)
 
@@ -14,13 +14,13 @@ Instead of waiting for OCR confidence to fail, `detectVisionFromSignals()` (`src
 
 | Sample | Orig px | Wall score | Colour score | Curve score | Hue bins | OCR nums | Chosen route | Left device (crop) | Model tokens |
 |---|---:|---:|---:|---:|---:|---:|---|---:|---:|
-| `plan-cad-areas` | 1100×900 | 0.59 | 0.00 | 0.00 | 0 | 43 | `vision-plan` | 768×624 (31.9 KB) | offline fixture |
-| `plan-dimensions-only` | 1100×900 | 0.46 | 0.00 | 0.00 | 0 | 42 | `vision-plan` | 768×624 (26.4 KB) | offline fixture |
-| `plan-35-halfroom` | 1100×860 | 0.55 | 0.00 | 0.00 | 0 | 41 | `vision-plan` | 768×534 (27.5 KB) | offline fixture |
-| `plan-photo-skewed` | 1001×836 | 0.85 | 0.00 | 0.00 | 0 | 35 | `vision-plan` | 768×658 (30.6 KB) | offline fixture |
-| `chart-donut-legend` | 960×640 | 0.00 | 1.00 | 0.00 | 4 | 0 | `vision-chart` | 512×319 (11.5 KB) | offline fixture |
-| `chart-line-drawdown` | 960×640 | 0.00 | 0.02 | 1.00 | 1 | 14 | `vision-chart` | 512×305 (8.5 KB) | offline fixture |
-| `chart-app-both` | 960×880 | 0.00 | 1.00 | 0.99 | 4 | 8 | `vision-chart` | 512×473 (14.7 KB) | offline fixture |
+| `plan-cad-areas` | 1100×900 | 0.59 | 0.00 | 0.00 | 0 | 43 | `vision-plan` | 768×624 (31.9 KB) | 819 *(live)* |
+| `plan-dimensions-only` | 1100×900 | 0.46 | 0.00 | 0.00 | 0 | 42 | `vision-plan` | 768×624 (26.4 KB) | 687 *(live)* |
+| `plan-35-halfroom` | 1100×860 | 0.55 | 0.00 | 0.00 | 0 | 41 | `vision-plan` | 768×534 (27.5 KB) | 700 *(live)* |
+| `plan-photo-skewed` | 1001×836 | 0.85 | 0.00 | 0.00 | 0 | 35 | `vision-plan` | 768×658 (30.6 KB) | 829 *(live)* |
+| `chart-donut-legend` | 960×640 | 0.00 | 1.00 | 0.00 | 4 | 0 | `vision-chart` | 512×319 (11.5 KB) | 456 *(live)* |
+| `chart-line-drawdown` | 960×640 | 0.00 | 0.02 | 1.00 | 1 | 14 | `vision-chart` | 512×305 (8.5 KB) | 662 *(live)* |
+| `chart-app-both` | 960×880 | 0.00 | 1.00 | 0.99 | 4 | 8 | `vision-chart` | 512×473 (14.7 KB) | 591 *(live)* |
 | `listing-text-only` | 1000×820 | 0.00 | 0.01 | 0.00 | 1 | 11 | `local-regex` | 0 B (local) | 0 *(local)* |
 
 ## 2. Swiss floor plans: OCR+regex-only baseline vs `vision-plan` + TypeScript verification
@@ -31,7 +31,7 @@ Instead of waiting for OCR confidence to fail, `detectVisionFromSignals()` (`src
 
 | Floor-plan sample | OCR+regex rooms mapped | OCR+regex living area | Vision+TS rooms mapped | Vision+TS net living area | Swiss room count | Price / m² (illustrative regional median) | Deterministic verification output |
 |---|---:|---|---:|---|---|---|---|
-| `plan-cad-areas` | 0/10 | 112 m² (OK) | **10/10** | **112 m²** (OK) | 4.5 (4.5 verified) | CHF 8,390/m² (Winterthur) | ✓ Room areas sum to 112.0 m² (within ±10% of stated 112.0 m² living area). |
+| `plan-cad-areas` | 0/10 | 112 m² (OK) | **7/10** | **112 m²** (OK) | 4.5 (4.5 verified) | CHF 8,390/m² (Winterthur) | ⚠ Eltern: dimensions multiply to 16.0 m², which differs from printed 17.6 m². |
 | `plan-dimensions-only` | 0/9 | — (missed) | **9/9** | **96.4 m²** (OK) | 4.5 (4.5 verified) | CHF 8,770/m² (Bern) | ✓ Net living area computed deterministically from room dimensions: 96.4 m². |
 | `plan-35-halfroom` | 0/7 | 88 m² (OK) | **7/7** | **88 m²** (OK) | 3.5 (3.5 verified) | CHF 10,110/m² (Lausanne) | ✓ Room areas sum to 83.0 m² (within ±10% of stated 88.0 m² living area). |
 | `plan-photo-skewed` | 0/10 | 126 m² (WRONG: incl. balcony) | **10/10** | **112 m²** (OK) | 4.5 (4.5 verified) | CHF 8,390/m² (Winterthur) | ⚠ Stated 126.0 m² includes the 14.0 m² balcony/terrace. Interior net living area is 112.0 m² (±10% tolerance). |
@@ -44,9 +44,15 @@ Instead of waiting for OCR confidence to fail, `detectVisionFromSignals()` (`src
 
 | Chart sample | OCR+regex allocation | OCR+regex drawdown | Vision+TS allocation | Sum check (100±2%) | Derived risk | Latest value / endpoint check | Deterministic peak-to-trough drawdown |
 |---|---|---|---|---|---|---|---|
-| `chart-donut-legend` | — (0/4 slices) | — (missed) | **65% eq / 20% bo / 10% re / 5% ca** | 100.0% (✓ 100±2) | `growth` | — | — |
-| `chart-line-drawdown` | — (0/4 slices) | — (missed) | n/a (line chart) | — | `—` | CHF 96,500 (✓ endpoint=total) | **−18.1%** (2026-03 → 2026-06) |
-| `chart-app-both` | — (0/4 slices) | — (missed) | **70% eq / 18% bo / 7% re / 5% ca** | 100.0% (✓ 100±2) | `growth` | CHF 114,000 (✓ endpoint=total) | **−15.2%** (2026-03 → 2026-06) |
+| `chart-donut-legend` | — (0/4 slices) | — (missed) | **50% eq / 25% bo / 20% re / 0% ca** | 100.0% (✓ 100±2) | `balanced` | — | — |
+| `chart-line-drawdown` | — (0/4 slices) | — (missed) | n/a (line chart) | — | `—` | CHF 96,500 (✓ endpoint=total) | **−18.5%** (2026-03 → 2026-05) |
+| `chart-app-both` | — (0/4 slices) | — (missed) | **60% eq / 25% bo / 10% re / 0% ca** | 100.0% (✓ 100±2) | `balanced` | CHF 114,000 (✓ endpoint=total) | **−16.0%** (2026-03 → 2026-06) |
+
+## Live misses
+
+- plan-cad-areas: rooms mapped 7/10
+- chart-donut-legend: risk balanced from 50% equities (expected growth)
+- chart-app-both: risk balanced from 60% equities (expected growth)
 
 ## 4. Control sample (`listing-text-only`) & what `--live` measures
 
