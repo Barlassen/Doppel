@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="660" viewBox="0 0 640 660">
+  <rect width="640" height="660" fill="#fbfaf6"/>
+  <g font-family="'Courier New', Courier, monospace" fill="#111" font-size="26">
+    <text x="320" y="57" text-anchor="middle" font-size="38" font-weight="bold">FALKENRIED MARKT</text>
+    <text x="38" y="101">Marktgasse 7, 3011 Bern</text>
+    <text x="38" y="135">Beleg 00538 · Kasse 2</text>
+    <text x="38" y="169">21.11.2026  10:42</text>
+    <path d="M38 187h564 M38 496h564" stroke="#555" stroke-dasharray="8 6"/>
+    <text x="38" y="224">Vollmilch</text><text x="602" y="224" text-anchor="end">3.90</text>
+    <text x="38" y="267">  2 x 1.95</text>
+    <text x="38" y="310">Ruchbrot</text><text x="602" y="310" text-anchor="end">3.20</text>
+    <text x="38" y="353">Gruyère AOP</text><text x="602" y="353" text-anchor="end">8.50</text>
+    <text x="38" y="396">Waschmittel</text><text x="602" y="396" text-anchor="end">22.95</text>
+    <text x="38" y="439">Äpfel Gala</text><text x="602" y="439" text-anchor="end">10.75</text>
+    <text x="38" y="482">Aktion Waschmittel</text><text x="602" y="482" text-anchor="end">-2.00</text>
+    <text x="38" y="539">TOTAL CHF</text><text x="602" y="539" text-anchor="end">47.30</text>
+    <text x="38" y="582">Karte Debit</text><text x="602" y="582" text-anchor="end">47.30</text>
+    <text x="38" y="625">MWST 2.6% / 8.1%</text>
+  </g>
+</svg>

@@ -1,6 +1,7 @@
 import type { EventType, LifeEvent, RecurringExpense, RiskProfile, Scenario, Transaction } from "@/lib/finance/types";
-import { RISK_PROFILES } from "@/lib/finance/types";
+import { RISK_PROFILES, TRANSACTION_CATEGORIES } from "@/lib/finance/types";
 import { payslipToIncome } from "@/lib/finance/pension";
+import { receiptMoney } from "@/lib/format";
 import type { Extraction } from "@/lib/snap/types";
 import { categoryMsg, merchantText } from "@/lib/data/merchants";
 import { msg, type Locale, type Msg, type Text } from "@/lib/i18n/types";
@@ -293,10 +294,13 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
     case "receipt":
     case "bill": {
       if (!amount) return { kind: "none", summary: msg("summary.noTotal") };
-      const cat = (["groceries", "dining", "transport", "shopping", "insurance", "bills", "travel"].includes(e.category ?? "")
+      const categories: readonly string[] = e.kind === "receipt" ? TRANSACTION_CATEGORIES
+        : ["groceries", "dining", "transport", "shopping", "insurance", "bills", "travel"];
+      const cat = (categories.includes(e.category ?? "")
         ? e.category
         : e.kind === "bill" ? "bills" : "shopping") as Transaction["category"];
-      const tx: Transaction = { date: e.date ?? now.toISOString().slice(0, 10), merchant: e.merchant ?? "Unknown", category: cat, amount, note: e.label };
+      const tx: Transaction = { date: e.date ?? now.toISOString().slice(0, 10), merchant: e.merchant ?? "Unknown", category: cat,
+        amount, note: e.label, ...(e.kind === "receipt" && e.items?.length ? { items: e.items } : {}) };
       const text = `${e.message ?? ""} ${e.label ?? ""}`;
       if (e.kind === "bill" && (RECURRING_HINT.test(text) || cat === "insurance")) {
         const monthly = Math.round(monthlyFromBill(amount, text));
@@ -315,7 +319,9 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
       return {
         kind: "transaction",
         tx,
-        summary: msg("summary.receipt", { merchant: e.merchant ?? msg("summary.spend"), amount, category: categoryMsg(cat) }),
+        summary: e.kind === "receipt"
+          ? msg("receipt.recorded", { merchant: e.merchant ?? msg("summary.spend"), amount: receiptMoney(amount), category: categoryMsg(cat) })
+          : msg("summary.receipt", { merchant: e.merchant ?? msg("summary.spend"), amount, category: categoryMsg(cat) }),
       };
     }
     case "payslip": {

@@ -11,6 +11,11 @@ export function groupCh(n: number): string {
 
 export const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
 
+export function receiptMoney(amount: number, currency = "CHF"): string {
+  const [whole, cents] = Math.abs(amount).toFixed(2).split(".");
+  return currency + " " + (amount < 0 ? "−" : "") + groupCh(Number(whole)) + "." + cents;
+}
+
 export const chfShort = (n: number) => {
   const a = Math.abs(n);
   if (a >= 1e6) return `${(n / 1e6).toFixed(a >= 1e7 ? 0 : 2)}M`;

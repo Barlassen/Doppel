@@ -376,9 +376,9 @@ export const en = {
   snap: {
     title: "Snap to twin",
     subtitle: "runs in your browser first",
-    intro: "Drop a bill, receipt, payslip, property listing or a handwritten note.",
-    uploadAria: "Upload image",
-    drop: "Drop an image or upload",
+    intro: "Upload a receipt photo to see what you bought. You can also scan a QR-bill, payslip, listing or handwritten note.",
+    uploadAria: "Upload your own receipt photo",
+    drop: "Upload or drop your receipt photo",
     maxSize: "Up to 15 MB",
     takePhoto: "Take photo",
     tooBig: "Choose an image under 15 MB.",
@@ -429,6 +429,26 @@ export const en = {
     rooms: "Rooms",
     discard: "Discard",
     add: "Add to twin",
+  },
+
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → added to spending",
+    items: "Receipt items",
+    category: "Category",
+    total: "Total ({currency})",
+    itemName: "Item {count} name",
+    itemAmount: "Item {count} amount ({currency})",
+    remove: "Remove item {count}",
+    addItem: "Add item",
+    sum: "Items {sum} · Total {total}",
+    summary_one: "{count:int} item · {amount}",
+    summary_other: "{count:int} items · {amount}",
+    matched: "The items match the printed total.",
+    mismatch: "The items and receipt total differ. Check the amounts.",
+    noItems: "No items found. Add them from your receipt.",
+    convert: "Enter the total and item amounts in CHF to add this receipt.",
+    enterChf: "Enter CHF amounts",
+    textTier: "Tier 2 · Text model",
   },
 
   kind: {
@@ -496,6 +516,7 @@ export const en = {
   },
 
   step: {
+    receiptCheck: "Check receipt item sum",
     decode: "Decode image",
     prepareNaive: "Prepare comparison image locally",
     cache: "Image cache",

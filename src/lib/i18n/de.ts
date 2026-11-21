@@ -371,9 +371,9 @@ export const de = {
   snap: {
     title: "Beleg scannen",
     subtitle: "Zuerst im Browser",
-    intro: "Lade eine Rechnung, eine Quittung, eine Lohnabrechnung, ein Immobilieninserat oder eine handschriftliche Notiz hoch.",
-    uploadAria: "Bild hochladen",
-    drop: "Bild hierher ziehen oder hochladen",
+    intro: "Lade ein Foto deiner Quittung hoch und sieh, was du gekauft hast. Du kannst auch eine QR-Rechnung, eine Lohnabrechnung, ein Inserat oder eine handschriftliche Notiz scannen.",
+    uploadAria: "Eigenes Quittungsfoto hochladen",
+    drop: "Quittungsfoto hierher ziehen oder hochladen",
     maxSize: "Bis 15 MB",
     takePhoto: "Foto machen",
     tooBig: "Wähle ein Bild unter 15 MB.",
@@ -424,6 +424,26 @@ export const de = {
     rooms: "Zimmer",
     discard: "Verwerfen",
     add: "Übernehmen",
+  },
+
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → zu deinen Ausgaben hinzugefügt",
+    items: "Positionen auf der Quittung",
+    category: "Kategorie",
+    total: "Gesamtbetrag ({currency})",
+    itemName: "Name von Position {count}",
+    itemAmount: "Betrag von Position {count} ({currency})",
+    remove: "Position {count} entfernen",
+    addItem: "Position hinzufügen",
+    sum: "Positionen {sum} · Gesamt {total}",
+    summary_one: "{count:int} Position · {amount}",
+    summary_other: "{count:int} Positionen · {amount}",
+    matched: "Die Positionen ergeben den gedruckten Gesamtbetrag.",
+    mismatch: "Die Summe der Positionen weicht vom Gesamtbetrag ab. Prüfe die Beträge.",
+    noItems: "Keine Positionen gefunden. Ergänze sie anhand deiner Quittung.",
+    convert: "Gib den Gesamtbetrag und die Positionen in CHF ein, um die Quittung hinzuzufügen.",
+    enterChf: "Beträge in CHF eingeben",
+    textTier: "Tier 2 · Textmodell",
   },
 
   kind: {
@@ -491,6 +511,7 @@ export const de = {
   },
 
   step: {
+    receiptCheck: "Summe der Quittungspositionen prüfen",
     decode: "Bild dekodieren",
     prepareNaive: "Vergleichsbild lokal vorbereiten",
     cache: "Bildcache",

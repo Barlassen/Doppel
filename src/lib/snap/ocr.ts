@@ -108,7 +108,7 @@ export function runOcr(canvas: HTMLCanvasElement, progress?: (message: Msg) => v
   return work;
 }
 
-function compactOcr(data: Awaited<ReturnType<Worker["recognize"]>>["data"]): OcrResult {
+export function compactOcr(data: Awaited<ReturnType<Worker["recognize"]>>["data"]): OcrResult {
   const lines: { text: string; confidence: number }[] = [];
   for (const b of data.blocks ?? []) {
     for (const p of b.paragraphs) {
