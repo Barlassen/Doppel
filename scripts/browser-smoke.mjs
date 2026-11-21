@@ -6,6 +6,12 @@ import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import QRCode from "qrcode";
+// Run through tsx (see package.json) so localized steps read their labels from the dictionaries.
+import { DICTIONARIES, translate } from "../src/lib/i18n/index.ts";
+
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The longest fixed fragment of a template, for matching text whose placeholders vary. */
+const fixedFragment = (template) => template.split(/\{[^}]+\}/).map((s) => s.trim()).sort((a, b) => b.length - a.length)[0];
 
 const port = process.env.DOPPEL_SMOKE_PORT || "3302";
 const baseURL = `http://127.0.0.1:${port}`;
@@ -292,11 +298,12 @@ try {
   console.log("OCR recovered on a second snap after a blocked worker request");
 
   const localeCases = [
-    { name: "Deutsch", code: "de", tag: "de-CH", percent: "%", retire: "Mit 60 in Rente gehen" },
-    { name: "Français", code: "fr", tag: "fr-CH", percent: "\u202f%", retire: "Prendre ma retraite à 60 ans" },
-    { name: "Türkçe", code: "tr", tag: "tr-TR", percent: "%", retire: "60 yaşında emekli ol" },
+    { name: "Deutsch", code: "de", tag: "de-CH", percent: "%" },
+    { name: "Français", code: "fr", tag: "fr-CH", percent: "\u202f%" },
+    { name: "Türkçe", code: "tr", tag: "tr-TR", percent: "%" },
   ];
-  for (const { name, code, tag, percent, retire } of localeCases) {
+  for (const { name, code, tag, percent } of localeCases) {
+    const L = (key, params) => translate(code, key, params);
     const language = page.getByRole("button", { name });
     await language.focus();
     await language.press("Enter");
@@ -306,25 +313,27 @@ try {
     const headline = await page.locator("h1 .num").textContent();
     assert.ok(code === "tr" ? headline.startsWith(percent) : headline.endsWith(percent), headline);
 
-    await page.getByRole("button", { name: "Dictate your what-if" }).click();
-    await page.getByText("Review the transcript, then select Simulate.").waitFor();
+    await page.getByRole("button", { name: L("cmd.dictate") }).click();
+    await page.getByText(L("speech.review")).waitFor();
     assert.equal(await page.evaluate(() => window.testSpeechLanguage), tag);
 
     const callsBefore = gatewayCalls.length;
-    await page.getByRole("button", { name: retire, exact: true }).click();
-    await page.getByText(/Parsed locally · 0 tokens/).waitFor();
+    await page.getByRole("button", { name: L("cmd.examples.retire"), exact: true }).click();
+    await page.getByText(new RegExp(escapeRegExp(L("cmd.parsedLocally")))).waitFor();
     assert.equal(gatewayCalls.length, callsBefore);
     await assertNoOverflow(page);
   }
 
-  await page.getByTitle("Open the Frugal Pipeline Inspector").click();
-  const inspector = page.getByRole("dialog", { name: "Every token, accounted for." });
-  await inspector.getByRole("button", { name: /Snap · QR-bill/ }).click();
-  await inspector.getByText("QR scan · Full image", { exact: true }).waitFor();
-  await inspector.getByRole("button", { name: "Close Frugal Pipeline Inspector" }).click();
+  // The last case leaves Turkish active.
+  const T = (key, params) => translate("tr", key, params);
+  await page.getByTitle(T("badge.title")).click();
+  const inspector = page.getByRole("dialog", { name: T("inspector.title") });
+  await inspector.getByRole("button", { name: new RegExp(escapeRegExp(T("ledger.snap", { name: { key: "snap.samples.qr" } }))) }).click();
+  await inspector.getByText(T("step.qrScan", { area: { key: "step.areaFull" } }), { exact: true }).waitFor();
+  await inspector.getByRole("button", { name: T("inspector.closeAria") }).click();
 
-  await page.getByRole("button", { name: "Explain my situation" }).click();
-  await page.getByText(/currently has a %/).waitFor();
+  await page.getByRole("button", { name: T("banker.explain") }).click();
+  await page.getByText(new RegExp(escapeRegExp(fixedFragment(DICTIONARIES.tr.narr.goal)))).waitFor();
   assert.equal(gatewayCalls.at(-1).task, "narrate");
   assert.equal(gatewayCalls.at(-1).lang, "tr");
 
