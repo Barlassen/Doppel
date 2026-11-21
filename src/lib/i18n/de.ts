@@ -25,10 +25,18 @@ export const de = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Schliessen",
+    details: "Details",
+    howCalculated: "Wie wird das berechnet?",
   },
 
   header: {
     profiles: "Demoprofil",
+  },
+
+  layout: {
+    decisions: "Grosse Entscheidungen",
+    nextSteps: "Nächste Schritte",
+    habits: "Gewohnheiten und Timing",
   },
 
   profile: {
@@ -133,6 +141,7 @@ export const de = {
     pillar3aOff: "3a aus",
     standingOrder: "Anlegen per Dauerauftrag · {amount:chf}/Mt.",
     taxLeft: "Mit voller 3a-Einzahlung sparst du {amount} Steuern pro Jahr ({max:chf} Einzahlung bei {rate:pct} Grenzsteuersatz).",
+    taxLeftShort: "Mit voller 3a sparst du {amount:chf} Steuern pro Jahr",
     growthWarning:
       "Mehr Aktien können stärker an Wert verlieren. Beim letzten Rückgang hast du verkauft, und Doppel rechnet damit, dass es wieder passieren kann. Die höhere Aktienquote lohnt sich für dich nur, wenn du auch im Tief investiert bleibst.",
   },
@@ -169,6 +178,8 @@ export const de = {
     simulating: "Simuliere …",
     result: "{status} · {ops}",
     examplesAria: "Beispielfragen",
+    moreExamples: "Weitere Beispiele",
+    fewerExamples: "Weniger Beispiele",
     examples: {
       jobLoss: "2028 für 6 Monate arbeitslos",
       delay: "Wohnungskauf um 2 Jahre verschieben",

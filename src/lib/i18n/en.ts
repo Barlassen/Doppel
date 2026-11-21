@@ -30,10 +30,18 @@ export const en = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Close",
+    details: "Details",
+    howCalculated: "How is this calculated?",
   },
 
   header: {
     profiles: "Demo profile",
+  },
+
+  layout: {
+    decisions: "Big decisions",
+    nextSteps: "What to do next",
+    habits: "Habits and timing",
   },
 
   profile: {
@@ -138,6 +146,7 @@ export const en = {
     pillar3aOff: "Pillar 3a off",
     standingOrder: "Standing order {amount:chf}/mo invested",
     taxLeft: "3a tax left on the table: {amount}/yr ({max:chf} at your {rate:pct} marginal rate).",
+    taxLeftShort: "Maxing 3a would save {amount:chf} tax/yr",
     growthWarning:
       "Growth means deeper dips — and you sold in the last one. Your twin keeps that habit: more equities only pay if you hold through the drawdown.",
   },
@@ -174,6 +183,8 @@ export const en = {
     simulating: "Simulating…",
     result: "{status} · {ops}",
     examplesAria: "Example what-ifs",
+    moreExamples: "More examples",
+    fewerExamples: "Fewer examples",
     examples: {
       jobLoss: "What if I lose my job for 6 months in 2028?",
       delay: "Delay the flat by 2 years",

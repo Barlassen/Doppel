@@ -32,10 +32,18 @@ export const tr = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Kapat",
+    details: "Ayrıntılar",
+    howCalculated: "Bu nasıl hesaplanıyor?",
   },
 
   header: {
     profiles: "Demo profil",
+  },
+
+  layout: {
+    decisions: "Büyük kararlar",
+    nextSteps: "Sıradaki adımlar",
+    habits: "Alışkanlıklar ve zamanlama",
   },
 
   profile: {
@@ -140,6 +148,7 @@ export const tr = {
     pillar3aOff: "3a kapalı",
     standingOrder: "Düzenli yatırım: {amount:chf}/ay",
     taxLeft: "3a (bireysel emeklilik) ile kaçırdığın vergi avantajı: yılda {amount} ({rate:pct} marjinal oranla, {max:chf} üzerinden).",
+    taxLeftShort: "3a'yı doldurursan yılda {amount:chf} vergi kazanırsın",
     growthWarning:
       "Büyüme, daha derin düşüşler demek — ve son düşüşte satmıştın. İkizin bu alışkanlığı koruyor: daha fazla hisse ancak düşüşte elde tutarsan kazandırır.",
   },
@@ -176,6 +185,8 @@ export const tr = {
     simulating: "Hesaplanıyor…",
     result: "{status} · {ops}",
     examplesAria: "Örnek senaryolar",
+    moreExamples: "Daha fazla örnek",
+    fewerExamples: "Daha az örnek",
     examples: {
       jobLoss: "2028'de 6 ay işsiz kalırsam?",
       delay: "Ev alımını 2 yıl ertelesem",

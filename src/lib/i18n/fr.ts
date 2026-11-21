@@ -34,10 +34,18 @@ export const fr = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Fermer",
+    details: "Détails",
+    howCalculated: "Comment est-ce calculé ?",
   },
 
   header: {
     profiles: "Profil démo",
+  },
+
+  layout: {
+    decisions: "Grandes décisions",
+    nextSteps: "Prochaines étapes",
+    habits: "Habitudes et moment d’agir",
   },
 
   profile: {
@@ -142,6 +150,7 @@ export const fr = {
     pillar3aOff: "Pilier 3a inactif",
     standingOrder: "Ordre permanent · {amount:chf}/mois placés",
     taxLeft: "Économie d’impôt possible avec le 3a : {amount}/an ({max:chf} versés, au taux marginal de {rate:pct}).",
+    taxLeftShort: "Un 3a complet vous ferait économiser {amount:chf} d’impôt par an",
     growthWarning:
       "Le profil croissance expose à des baisses plus marquées. Vous avez vendu lors de la dernière et votre jumeau tient compte de cette habitude. Une part d’actions plus élevée ne porte ses fruits que si vous gardez vos placements pendant la baisse.",
   },
@@ -178,6 +187,8 @@ export const fr = {
     simulating: "Simulation…",
     result: "{status} · {ops}",
     examplesAria: "Exemples de scénarios",
+    moreExamples: "Plus d’exemples",
+    fewerExamples: "Moins d’exemples",
     examples: {
       jobLoss: "Au chômage 6 mois en 2028 ?",
       delay: "Reporter l’achat de l’appartement de 2 ans",
