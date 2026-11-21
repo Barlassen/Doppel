@@ -1,3 +1,4 @@
+import { translate } from "../src/lib/i18n";
 /**
  * Doppel Multimodal Frugality Benchmark
  *
@@ -26,7 +27,6 @@ import { parseQrBill, qrBillToExtraction } from "@/lib/snap/qrBill";
 import { classifyDoc, heuristicExtract } from "@/lib/snap/heuristics";
 import type { DocKind, Extraction } from "@/lib/snap/types";
 import {
-  ENERGY_ASSUMPTIONS,
   NAIVE_MODEL,
   NAIVE_PRICE,
   SMALL_MODEL_PRICE,
@@ -1173,7 +1173,7 @@ Assumptions for scale projection: **${SNAPS_PER_USER_MONTH} snaps / user / month
 | Cost / 100k users / month (${SNAPS_PER_USER_MONTH} snaps/mo) | **${fmtUsd(monthly100kOurs)}/mo** | ${fmtUsd(monthly100kNaive)}/mo | **Saves ${fmtUsd(monthly100kNaive - monthly100kOurs)}/mo** |
 | Rough energy / 1,000 snaps *(estimate)* | ~${(avgOursWh * 1000).toFixed(1)} Wh | ~${(avgNaiveWh * 1000).toFixed(1)} Wh | ~${((1 - avgOursWh / avgNaiveWh) * 100).toFixed(0)}% lower |
 
-> **Energy note:** ${ENERGY_ASSUMPTIONS.note}
+> **Energy note:** ${translate("en", "inspector.energyNote")}
 
 ## 5. Honest observations & failure modes
 

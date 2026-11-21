@@ -7,13 +7,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import QRCode from "qrcode";
 
-const baseURL = "http://127.0.0.1:3302";
+const port = process.env.DOPPEL_SMOKE_PORT || "3302";
+const baseURL = `http://127.0.0.1:${port}`;
 const require = createRequire(import.meta.url);
 const payslipPath = process.env.DOPPEL_SMOKE_PAYSLIP || "public/samples/payslip.svg";
 const payslipAvailable = await access(payslipPath).then(() => true, () => false);
 
-assert.equal(await fetch(baseURL).then(() => true, () => false), false, "Port 3302 is already in use");
-const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "-p", "3302"], {
+assert.equal(await fetch(baseURL).then(() => true, () => false), false, `Port ${port} is already in use`);
+const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "-p", port], {
   env: { ...process.env, OPENROUTER_API_KEY: "", NEXT_TELEMETRY_DISABLED: "1" },
   stdio: ["ignore", "pipe", "pipe"],
   windowsHide: true,
@@ -43,27 +44,22 @@ async function assertNoOverflow(page) {
   assert.equal(viewport.scrollWidth, viewport.width, JSON.stringify(viewport));
 }
 
-async function visit(page, errors) {
-  const response = await page.goto(baseURL);
+async function visit(page) {
+  await page.goto(baseURL);
   await page.getByRole("button", { name: "Dictate your what-if" }).waitFor();
-  // The dashboard renders a measured simulation duration during SSR. Report
-  // that startup mismatch separately so scanner and worker errors still fail.
-  const timing = await page.evaluate((html) => {
-    const duration = (root) => [...root.querySelectorAll("main p")]
-      .find((paragraph) => paragraph.textContent.includes("futures simulated"))
-      ?.textContent.match(/simulated in\s+(\d+)\s+ms/)?.[1];
-    return { server: duration(new DOMParser().parseFromString(html, "text/html")), browser: duration(document) };
-  }, await response.text());
-  if (timing.server && timing.browser && timing.server !== timing.browser && errors[0]?.includes("Minified React error #418")) {
-    errors.shift();
-    console.log(`Dashboard SSR timing mismatch observed (server ${timing.server} ms, browser ${timing.browser} ms)`);
-  }
+}
+
+function trackHydration(page, errors) {
+  page.on("console", (message) => {
+    if (/hydrat|Minified React error #(418|423|425)/i.test(message.text())) errors.push(message.text());
+  });
 }
 
 function enableTestSpeech(context) {
   return context.addInitScript(() => {
     window.SpeechRecognition = class {
       start() {
+        window.testSpeechLanguage = this.lang;
         queueMicrotask(() => {
           this.onresult({ results: [[{ transcript: "Retire at 60" }]] });
           this.onend();
@@ -113,13 +109,23 @@ try {
   assert.equal(malformed.status, 400);
   assert.equal((await malformed.json()).error, "INVALID_FIELDS");
 
+  for (const lang of [undefined, "en", "de", "fr", "tr", "it"]) {
+    const narration = await fetch(`${baseURL}/api/twin`, {
+      method: "POST",
+      body: JSON.stringify({ task: "narrate", facts: { odds: 0.4 }, lang }),
+    });
+    assert.deepEqual(await narration.json(), lang === "it"
+      ? { ok: false, error: "INVALID_FIELDS", usageKnown: true }
+      : { ok: false, offline: true });
+  }
+
   const oversized = await fetch(`${baseURL}/api/twin`, { method: "POST", body: "x".repeat(3_500_001) });
   assert.equal(oversized.status, 413);
   assert.equal((await oversized.json()).error, "BODY_TOO_LARGE");
   console.log("Gateway offline response, image type validation and request byte cap passed");
 
   browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width: 320, height: 800 }, reducedMotion: "reduce", locale: "en-US" });
   await enableTestSpeech(context);
   const externalRequests = [];
   await context.route("**/*", async (route) => {
@@ -143,7 +149,8 @@ try {
     if (url.pathname === "/api/twin") gatewayCalls.push(request.postDataJSON());
   });
   page.on("pageerror", (error) => errors.push(error.message));
-  await visit(page, errors);
+  trackHydration(page, errors);
+  await visit(page);
   await page.getByRole("button", { name: "Dictate your what-if" }).click();
   await page.getByText("Review the transcript, then select Simulate.").waitFor();
   assert.equal(await page.getByRole("textbox", { name: "What-if for your twin" }).inputValue(), "Retire at 60");
@@ -268,13 +275,14 @@ try {
   await forced.card.getByRole("button", { name: "Discard" }).click();
   await page.evaluate(() => localStorage.removeItem("doppel:force-llm"));
 
-  const recovery = await browser.newContext();
+  const recovery = await browser.newContext({ locale: "en-US" });
   await enableTestSpeech(recovery);
   let abortWorker = true;
   await recovery.route("**/tesseract/runtime/worker.min.js", (route) => abortWorker ? route.abort() : route.continue());
   const recoveryPage = await recovery.newPage();
   recoveryPage.on("pageerror", (error) => errors.push(error.message));
-  await visit(recoveryPage, errors);
+  trackHydration(recoveryPage, errors);
+  await visit(recoveryPage);
   const failed = await scan(recoveryPage, "Receipt");
   assert.deepEqual([failed.tier, failed.route, failed.outcome], [2, "offline-heuristic", "failed"]);
   await failed.card.getByRole("button", { name: "Discard" }).click();
@@ -282,6 +290,56 @@ try {
   const recovered = await scan(recoveryPage, "Receipt");
   check(recovered, 1, "local-regex", "receipt", 87.45);
   console.log("OCR recovered on a second snap after a blocked worker request");
+
+  const localeCases = [
+    { name: "Deutsch", code: "de", tag: "de-CH", percent: "%", retire: "Mit 60 in Rente gehen" },
+    { name: "Français", code: "fr", tag: "fr-CH", percent: "\u202f%", retire: "Prendre ma retraite à 60 ans" },
+    { name: "Türkçe", code: "tr", tag: "tr-TR", percent: "%", retire: "60 yaşında emekli ol" },
+  ];
+  for (const { name, code, tag, percent, retire } of localeCases) {
+    const language = page.getByRole("button", { name });
+    await language.focus();
+    await language.press("Enter");
+    await page.waitForFunction((lang) => document.documentElement.lang === lang, tag);
+    assert.equal(await language.getAttribute("aria-pressed"), "true");
+    assert.equal(await page.evaluate(() => localStorage.getItem("doppel:locale")), code);
+    const headline = await page.locator("h1 .num").textContent();
+    assert.ok(code === "tr" ? headline.startsWith(percent) : headline.endsWith(percent), headline);
+
+    await page.getByRole("button", { name: "Dictate your what-if" }).click();
+    await page.getByText("Review the transcript, then select Simulate.").waitFor();
+    assert.equal(await page.evaluate(() => window.testSpeechLanguage), tag);
+
+    const callsBefore = gatewayCalls.length;
+    await page.getByRole("button", { name: retire, exact: true }).click();
+    await page.getByText(/Parsed locally · 0 tokens/).waitFor();
+    assert.equal(gatewayCalls.length, callsBefore);
+    await assertNoOverflow(page);
+  }
+
+  await page.getByTitle("Open the Frugal Pipeline Inspector").click();
+  const inspector = page.getByRole("dialog", { name: "Every token, accounted for." });
+  await inspector.getByRole("button", { name: /Snap · QR-bill/ }).click();
+  await inspector.getByText("QR scan · Full image", { exact: true }).waitFor();
+  await inspector.getByRole("button", { name: "Close Frugal Pipeline Inspector" }).click();
+
+  await page.getByRole("button", { name: "Explain my situation" }).click();
+  await page.getByText(/currently has a %/).waitFor();
+  assert.equal(gatewayCalls.at(-1).task, "narrate");
+  assert.equal(gatewayCalls.at(-1).lang, "tr");
+
+  const reloaded = await page.reload();
+  assert.match(await reloaded.text(), /<html lang="en"/);
+  await page.waitForFunction(() => document.documentElement.lang === "tr-TR");
+
+  const preferenceContext = await browser.newContext({ locale: "fr-CH" });
+  const preferencePage = await preferenceContext.newPage();
+  trackHydration(preferencePage, errors);
+  preferencePage.on("pageerror", (error) => errors.push(error.message));
+  await preferencePage.goto(baseURL);
+  await preferencePage.waitForFunction(() => document.documentElement.lang === "fr-CH");
+  await preferenceContext.close();
+  console.log("Locale switching, persistence, browser preference, speech, offline narration, and English SSR passed at 320px");
 
   assert.deepEqual(errors, []);
   assert.deepEqual(externalRequests, []);

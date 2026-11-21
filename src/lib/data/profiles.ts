@@ -1,4 +1,9 @@
 import type { Profile, Transaction } from "@/lib/finance/types";
+import { translate } from "@/lib/i18n";
+import type { Msg } from "@/lib/i18n/types";
+
+/** Built-in event: English `label` (data for the LLM prompt) + translatable `labelMsg` for the UI. */
+const labelled = (labelMsg: Msg) => ({ label: translate("en", labelMsg.key, labelMsg.params), labelMsg });
 
 /** Deterministic, realistic Swiss transaction history (Aug–Oct 2026). Fictional people. */
 function buildTransactions(scale: number, heavyPayday: boolean): Transaction[] {
@@ -41,7 +46,7 @@ export const PROFILES: Profile[] = [
     age: 31,
     city: "Zürich",
     canton: "ZH",
-    tagline: "Software engineer · wants a first home",
+    tagline: { key: "profile.lukas.tagline" },
     grossIncomeYear: 142_000,
     netIncomeMonth: 8_650,
     expensesMonth: 5_600,
@@ -55,9 +60,9 @@ export const PROFILES: Profile[] = [
     marginalTaxRate: 0.27,
     riskProfile: "balanced",
     retirementAge: 65,
-    goal: { label: "CHF 1.4M net worth by 50", target: 1_400_000, age: 50 },
+    goal: { label: { key: "profile.goal", params: { target: 1_400_000, age: 50 } }, target: 1_400_000, age: 50 },
     events: [
-      { id: "ev-house", type: "house", label: "Flat in Winterthur", month: 24, amount: 780_000, source: "profile" },
+      { id: "ev-house", type: "house", ...labelled({ key: "event.flatIn", params: { place: "Winterthur" } }), month: 24, amount: 780_000, source: "profile" },
     ],
     transactions: buildTransactions(1, true),
     history: { soldInDrawdown: true, drawdownSellPct: 0.6 },
@@ -68,7 +73,7 @@ export const PROFILES: Profile[] = [
     age: 44,
     city: "Genève",
     canton: "GE",
-    tagline: "Family of four · dreams of retiring at 58",
+    tagline: { key: "profile.elena.tagline" },
     grossIncomeYear: 186_000,
     netIncomeMonth: 11_800,
     expensesMonth: 9_400,
@@ -82,9 +87,9 @@ export const PROFILES: Profile[] = [
     marginalTaxRate: 0.33,
     riskProfile: "growth",
     retirementAge: 58,
-    goal: { label: "CHF 1.7M net worth by 58", target: 1_700_000, age: 58 },
+    goal: { label: { key: "profile.goal", params: { target: 1_700_000, age: 58 } }, target: 1_700_000, age: 58 },
     events: [
-      { id: "ev-uni", type: "expense", label: "University for Léa", month: 66, amount: 60_000, source: "profile" },
+      { id: "ev-uni", type: "expense", ...labelled({ key: "event.universityFor", params: { name: "Léa" } }), month: 66, amount: 60_000, source: "profile" },
     ],
     transactions: buildTransactions(1.45, false),
     history: { soldInDrawdown: false, drawdownSellPct: 0 },

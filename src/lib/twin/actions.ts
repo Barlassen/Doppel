@@ -2,7 +2,10 @@ import type { EventType, LifeEvent, RecurringExpense, RiskProfile, Scenario, Tra
 import { RISK_PROFILES } from "@/lib/finance/types";
 import { payslipToIncome } from "@/lib/finance/pension";
 import type { Extraction } from "@/lib/snap/types";
-import { groupCh } from "@/lib/format";
+import { categoryMsg, merchantText } from "@/lib/data/merchants";
+import { msg, type Locale, type Msg, type Text } from "@/lib/i18n/types";
+import { orderedParsers } from "./intents";
+import { eventLabel } from "./intents/shared";
 
 export type SetKey = "retirementAge" | "riskProfile" | "contributes3a" | "monthlyInvest" | "expenseDelta" | "optimize";
 
@@ -14,7 +17,7 @@ export type SetKey = "retirementAge" | "riskProfile" | "contributes3a" | "monthl
  *        negative = cut — applied on top of the current plan), optimize (bool: invest idle cash + max 3a)
  */
 export type Op =
-  | { op: "add"; type: EventType; label: string; month: number; amount: number; duration?: number }
+  | { op: "add"; type: EventType; label: string; labelMsg?: Msg; month: number; amount: number; duration?: number }
   | { op: "shift"; id: string; months: number }
   | { op: "remove"; id: string }
   | { op: "set"; key: SetKey; value: number | string | boolean };
@@ -52,6 +55,15 @@ const bool = (v: unknown): boolean | null =>
  * Invalid ops are dropped; valid ones are normalised (rounded months, coerced numbers/booleans).
  */
 export function validateOps(raw: unknown, events: LifeEvent[]): Op[] {
+  return normalizeOps(raw, events);
+}
+
+/** Validate built-in ops while retaining their trusted display labels. */
+export function validateLocalOps(ops: Op[], events: LifeEvent[]): Op[] {
+  return normalizeOps(ops, events, true);
+}
+
+function normalizeOps(raw: unknown, events: LifeEvent[], local = false): Op[] {
   if (!Array.isArray(raw)) return [];
   const ids = new Set(events.map((e) => e.id));
   const out: Op[] = [];
@@ -79,7 +91,8 @@ export function validateOps(raw: unknown, events: LifeEvent[]): Op[] {
       if (type === "raise" && (!within(amount, BOUNDS.raise) || amount === 0)) continue;
       if ((type === "expense" || type === "income") && !within(amount, BOUNDS.oneOff)) continue;
       const label = typeof o.label === "string" && o.label.trim() ? o.label.trim().slice(0, 60) : type;
-      out.push({ op: "add", type, label, month: Math.round(month!), amount: amount ?? 0, duration: duration ?? undefined });
+      const labelMsg = local ? (o as Extract<Op, { op: "add" }>).labelMsg : undefined;
+      out.push({ op: "add", type, label, ...(labelMsg && { labelMsg }), month: Math.round(month!), amount: amount ?? 0, duration: duration ?? undefined });
     } else if (o.op === "shift") {
       const months = num(o.months);
       if (typeof o.id !== "string" || !ids.has(o.id) || !within(months, BOUNDS.shift) || Math.round(months!) === 0) continue;
@@ -115,6 +128,7 @@ export function applyOps(events: LifeEvent[], ops: Op[], source: LifeEvent["sour
         id: newId(),
         type: o.type,
         label: o.label || o.type,
+        ...(o.labelMsg && { labelMsg: o.labelMsg }),
         month: Math.max(0, Math.round(o.month ?? 12)),
         amount: Math.max(o.type === "raise" ? -Infinity : 0, Number(o.amount) || 0),
         durationMonths: o.duration,
@@ -170,123 +184,32 @@ export function compactEvents(events: LifeEvent[]): string {
 // Only when it can't parse the sentence do we pay for an LLM call.
 // ---------------------------------------------------------------------------
 
-const NUM = String.raw`(\d+(?:[.,']\d+)*)\s*(k|mio|million|thousand|m)?\b`;
-
-function money(n: string, unit?: string): number {
-  const v = Number(n.replace(/['’]/g, "").replace(",", "."));
-  const u = (unit ?? "").toLowerCase();
-  if (u === "k" || u === "thousand") return v * 1000;
-  if (u === "m" || u === "mio" || u === "million") return v * 1_000_000;
-  return v;
+export function localParseCommand(text: string, events: LifeEvent[], now = new Date(), locale: Locale = "en"): Op[] | null {
+  const context = { text, events, now, house: events.find((event) => event.type === "house") };
+  for (const parser of orderedParsers(locale)) {
+    const valid = validateLocalOps(parser.parse(context), events);
+    if (valid.length > 0) return valid;
+  }
+  return null;
 }
 
-function monthFrom(text: string, nowYear: number, nowMonth: number): number | undefined {
-  const y = text.match(/\b(20[2-6]\d)\b/);
-  if (y) return Math.max(0, (Number(y[1]) - nowYear) * 12 + (6 - nowMonth));
-  const inYears = text.match(/in\s+(\d+)\s+years?/i);
-  if (inYears) return Number(inYears[1]) * 12;
-  const inMonths = text.match(/in\s+(\d+)\s+months?/i);
-  if (inMonths) return Number(inMonths[1]);
-  if (/next year/i.test(text)) return 12;
-  return undefined;
-}
-
-const PER_MONTH = String.raw`(?:a|per|each|every|\/|in\s+a)\s*month|monthly|\/\s*mo\b|p\.?\s?m\.?`;
-
-export function localParseCommand(text: string, events: LifeEvent[], now = new Date()): Op[] | null {
-  const t = text.toLowerCase().replace(/chf\s*/g, "").replace(/(\d)['’](\d)/g, "$1$2");
-  const nowYear = now.getFullYear();
-  const nowMonth = now.getMonth();
-  const when = monthFrom(t, nowYear, nowMonth);
-  const ops: Op[] = [];
-  const house = events.find((e) => e.type === "house");
-
-  // retire at 60 / retire early at 62
-  const retire = t.match(/retir\w*\s+(?:early\s+)?(?:at|by|when\s+i(?:'|’)?m)\s+(?:age\s+)?(\d{2})\b/);
-  if (retire) ops.push({ op: "set", key: "retirementAge", value: Number(retire[1]) });
-
-  // start investing 500 a month / invest 500 per month
-  const invest = t.match(new RegExp(String.raw`invest\w*\s+(?:an?\s+extra\s+)?${NUM}\s*(?:${PER_MONTH})`));
-  if (invest) ops.push({ op: "set", key: "monthlyInvest", value: money(invest[1], invest[2]) });
-  else if (/(invest|put)\s+(my\s+|the\s+)?(idle\s+)?cash\s+(to\s+work|in)|invest\s+(my\s+|the\s+)?idle/.test(t))
-    ops.push({ op: "set", key: "optimize", value: true });
-
-  // switch to growth / go conservative / more aggressive
-  const risk = t.match(/\b(switch|change|move|go|be|invest|rebalance|make\s+it|more)\b[^.]{0,25}?\b(conservative|defensive|safer|balanced|growth|aggressive)\b/);
-  if (risk) {
-    const w = risk[2];
-    const value: RiskProfile = w === "balanced" ? "balanced" : w === "growth" || w === "aggressive" ? "growth" : "conservative";
-    ops.push({ op: "set", key: "riskProfile", value });
-  }
-
-  // cut spending by 400 / spend 400 less / reduce expenses by 400
-  const cut =
-    t.match(new RegExp(String.raw`(?:cut|reduce|lower|trim|save)\s+(?:my\s+)?(?:spending|expenses|costs|budget)?\s*(?:by\s+)?${NUM}`)) ??
-    t.match(new RegExp(String.raw`spend\s+${NUM}\s+less`));
-  const more = t.match(new RegExp(String.raw`spend\s+${NUM}\s+more`));
-  if (cut) ops.push({ op: "set", key: "expenseDelta", value: -money(cut[1], cut[2]) });
-  else if (more) ops.push({ op: "set", key: "expenseDelta", value: money(more[1], more[2]) });
-
-  // max out 3a / start 3a / stop 3a
-  if (/\b3a\b/.test(t) || /pillar\s*3/.test(t)) {
-    if (/(stop|pause|quit|no longer)\b[^.]{0,20}(3a|pillar)/.test(t)) ops.push({ op: "set", key: "contributes3a", value: false });
-    else if (/(max|start|open|begin|pay\s+into|contribute|use)/.test(t)) ops.push({ op: "set", key: "contributes3a", value: true });
-  }
-
-  // delay / postpone the house
-  const delay = t.match(/(delay|postpone|push|wait)\D{0,30}?(\d+)\s*(years?|months?)/);
-  if (delay && house) {
-    const n = Number(delay[2]) * (delay[3].startsWith("year") ? 12 : 1);
-    ops.push({ op: "shift", id: house.id, months: n });
-  }
-
-  // buy a house/flat for X
-  const buy = t.match(new RegExp(String.raw`(buy|purchase)\b[^\d]{0,40}?${NUM}`));
-  if (buy && /(house|home|flat|apartment|condo)/.test(t)) {
-    const price = money(buy[2], buy[3]);
-    if (price > 50_000) {
-      const where = text.match(/\bin\s+([A-ZÄÖÜ][\wäöüé-]+)/);
-      ops.push({ op: "add", type: "house", label: `Home${where ? " in " + where[1] : ""}`, month: when ?? house?.month ?? 24, amount: price });
+/** Short descriptions for the command bar, rendered in the active locale. */
+export function describeOps(ops: Op[]): Msg[] {
+  return ops.map((o) => {
+    if (o.op === "add") return msg("ops.add", { label: o.labelMsg ?? o.label });
+    if (o.op === "shift") return msg("ops.shift", { months: o.months });
+    if (o.op === "remove") return msg("ops.remove");
+    switch (o.key) {
+      case "riskProfile":
+        return msg("ops.riskProfile", { value: msg(`risk.${o.value as RiskProfile}`) });
+      case "contributes3a":
+        return msg(o.value ? "ops.contributes3aOn" : "ops.contributes3aOff");
+      case "optimize":
+        return msg(o.value ? "ops.optimizeOn" : "ops.optimizeOff");
+      default:
+        return msg(`ops.${o.key}`, { value: Number(o.value) });
     }
-  }
-
-  // job loss
-  const job = t.match(/(lose|lost|losing)\s+(my\s+)?job|unemploy|laid off/);
-  if (job) {
-    const dur = t.match(/(\d+)\s*months?/);
-    ops.push({ op: "add", type: "jobloss", label: "Job loss", month: when ?? 12, amount: 0, duration: dur ? Number(dur[1]) : 6 });
-  }
-
-  // market crash
-  if (/crash|market\s+(drops?|falls?|tanks?)|recession/.test(t)) {
-    ops.push({ op: "add", type: "crash", label: "Market crash −30%", month: when ?? 12, amount: 0 });
-  }
-
-  // child
-  if (/\b(baby|child|kid)\b/.test(t)) {
-    ops.push({ op: "add", type: "child", label: "Baby", month: when ?? 18, amount: 1500, duration: 216 });
-  }
-
-  // raise
-  const raise = t.match(new RegExp(String.raw`(raise|promotion|salary increase)[^\d]{0,20}${NUM}`));
-  if (raise) {
-    ops.push({ op: "add", type: "raise", label: "Raise", month: when ?? 6, amount: money(raise[2], raise[3]) });
-  }
-
-  const valid = validateOps(ops, events);
-  return valid.length > 0 ? valid : null;
-}
-
-/** Short human description of ops, e.g. for the command bar. */
-export function describeOps(ops: Op[]): string {
-  return ops
-    .map((o) => {
-      if (o.op === "add") return `+ ${o.label}`;
-      if (o.op === "shift") return `shift ${o.months > 0 ? "+" : ""}${o.months} mo`;
-      if (o.op === "remove") return "remove event";
-      return `${o.key} → ${String(o.value)}`;
-    })
-    .join(" · ");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -294,16 +217,16 @@ export function describeOps(ops: Op[]): string {
 // ---------------------------------------------------------------------------
 
 export type TwinUpdate =
-  | { kind: "event"; ops: Op[]; summary: string }
-  | { kind: "transaction"; tx: Transaction; summary: string }
+  | { kind: "event"; ops: Op[]; summary: Msg }
+  | { kind: "transaction"; tx: Transaction; summary: Msg }
   /** A recurring bill (premium, subscription…) that is not yet in the budget → raises monthly expenses. */
-  | { kind: "recurring"; expense: RecurringExpense; tx: Transaction; summary: string }
+  | { kind: "recurring"; expense: RecurringExpense; tx: Transaction; summary: Msg }
   /**
    * Payslip. `netIncomeMonth` is take-home after income tax (12 months), derived from the payslip's
    * Nettolohn (before tax) with `payslipToIncome`; `grossIncomeYear` drives BVG and the bank test.
    */
-  | { kind: "income"; netIncomeMonth: number; grossIncomeYear: number; payslipNet: number; summary: string }
-  | { kind: "none"; summary: string };
+  | { kind: "income"; netIncomeMonth: number; grossIncomeYear: number; payslipNet: number; summary: Msg }
+  | { kind: "none"; summary: Msg };
 
 export interface UpdateContext {
   /** Profile transactions — used to detect bills that are already part of the budget. */
@@ -315,7 +238,6 @@ export interface UpdateContext {
   income?: { grossIncomeYear: number; netIncomeMonth: number };
 }
 
-const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
 
 const RECURRING_HINT = /pr[äa]mie|praemie|premium|prime|cotisation|monat|monthly|mensuel|abo\b|abonnement|subscription|leasing|miete|loyer|rent\b|rate\b|quartal|quarter|trimest|jahres|annual|annuel|yearly/i;
 
@@ -326,7 +248,7 @@ function monthlyFromBill(amount: number, text: string): number {
 }
 
 /** Is this monthly amount already in the budget (same category, recurring in the history, ±5%)? */
-function alreadyBudgeted(monthly: number, category: Transaction["category"], ctx: UpdateContext): string | null {
+function alreadyBudgeted(monthly: number, category: Transaction["category"], ctx: UpdateContext): Text | null {
   const inScenario = ctx.recurring?.find((r) => Math.abs(r.monthly - monthly) <= monthly * 0.05);
   if (inScenario) return inScenario.label;
   const byMerchant = new Map<string, { months: Set<string>; total: number }>();
@@ -339,7 +261,7 @@ function alreadyBudgeted(monthly: number, category: Transaction["category"], ctx
   }
   for (const [merchant, v] of byMerchant) {
     const avg = v.total / v.months.size;
-    if (v.months.size >= 2 && Math.abs(avg - monthly) <= monthly * 0.05) return `${merchant} (${chf(avg)}/mo)`;
+    if (v.months.size >= 2 && Math.abs(avg - monthly) <= monthly * 0.05) return msg("summary.duplicateOf", { merchant: merchantText(merchant), amount: avg });
   }
   return null;
 }
@@ -348,20 +270,23 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
   const amount = Number(e.amount) || 0;
   switch (e.kind) {
     case "listing": {
-      if (!amount) return { kind: "none", summary: "Listing found, but no price could be read." };
+      if (!amount) return { kind: "none", summary: msg("summary.listingNoPrice") };
       if (amount < BOUNDS.housePrice[0] || amount > BOUNDS.housePrice[1])
-        return { kind: "none", summary: `Listing price ${chf(amount)} looks implausible — not added.` };
+        return { kind: "none", summary: msg("summary.listingImplausible", { amount }) };
       const house = events.find((x) => x.type === "house");
-      const label = `${e.rooms ? e.rooms + "-room " : ""}home${e.location ? " in " + e.location : ""}`;
+      const label = e.rooms
+        ? e.location ? msg("event.roomsHomeIn", { rooms: e.rooms, place: e.location }) : msg("event.roomsHome", { rooms: e.rooms })
+        : e.location ? msg("event.listingHomeIn", { place: e.location }) : msg("event.listingHome");
       return {
         kind: "event",
-        ops: [{ op: "add", type: "house", label, month: house?.month ?? 24, amount }],
-        summary: `🏠 ${label} · ${chf(amount)} → placed on your timeline${house ? ` (replaces “${house.label}”)` : ""}`,
+        ops: [{ op: "add", type: "house", ...eventLabel(label), month: house?.month ?? 24, amount }],
+        summary: house ? msg("summary.listingReplaces", { label, amount, old: house.labelMsg ?? house.label })
+          : msg("summary.listingAdded", { label, amount }),
       };
     }
     case "receipt":
     case "bill": {
-      if (!amount) return { kind: "none", summary: "Couldn't read a total." };
+      if (!amount) return { kind: "none", summary: msg("summary.noTotal") };
       const cat = (["groceries", "dining", "transport", "shopping", "insurance", "bills", "travel"].includes(e.category ?? "")
         ? e.category
         : e.kind === "bill" ? "bills" : "shopping") as Transaction["category"];
@@ -369,47 +294,48 @@ export function extractionToUpdate(e: Extraction, events: LifeEvent[], now = new
       const text = `${e.message ?? ""} ${e.label ?? ""}`;
       if (e.kind === "bill" && (RECURRING_HINT.test(text) || cat === "insurance")) {
         const monthly = Math.round(monthlyFromBill(amount, text));
+        const merchant = e.merchant ?? msg("summary.bill");
         const dup = alreadyBudgeted(monthly, cat, ctx);
         if (dup) {
-          return { kind: "none", summary: `🧾 ${e.merchant ?? "Bill"} · ${chf(monthly)}/month · matches ${dup} → already in your budget, nothing changes` };
+          return { kind: "none", summary: msg("summary.billDuplicate", { merchant, monthly, match: dup }) };
         }
         return {
           kind: "recurring",
-          expense: { id: `rc-${Date.now().toString(36)}-${counter++}`, label: e.label || e.merchant || "Recurring bill", monthly, source: "snap" },
+          expense: { id: `rc-${Date.now().toString(36)}-${counter++}`, label: e.labelMsg ?? (e.label || e.merchant || msg("summary.recurringBill")), monthly, source: "snap" },
           tx,
-          summary: `🧾 ${e.merchant ?? "Bill"} · ${chf(monthly)}/month recurring → added to your monthly costs`,
+          summary: msg("summary.billRecurring", { merchant, monthly }),
         };
       }
       return {
         kind: "transaction",
         tx,
-        summary: `🧾 ${e.merchant ?? "Spend"} · ${chf(amount)} · ${cat} → counted in this month's spending`,
+        summary: msg("summary.receipt", { merchant: e.merchant ?? msg("summary.spend"), amount, category: categoryMsg(cat) }),
       };
     }
     case "payslip": {
-      if (!amount) return { kind: "none", summary: "Payslip found, but no net pay." };
-      if (amount < 1000 || amount > 60_000) return { kind: "none", summary: `Net pay ${chf(amount)} looks implausible — not used.` };
+      if (!amount) return { kind: "none", summary: msg("summary.payslipNoNet") };
+      if (amount < 1000 || amount > 60_000) return { kind: "none", summary: msg("summary.payslipImplausible", { amount }) };
       const inc = payslipToIncome(amount, ctx.marginalTaxRate ?? 0.25, ctx.income);
       return {
         kind: "income",
         payslipNet: amount,
         netIncomeMonth: inc.netIncomeMonth,
         grossIncomeYear: inc.grossIncomeYear,
-        summary: `💼 Nettolohn ${chf(amount)} ×13 → gross ≈ ${chf(inc.grossIncomeYear)}/yr, take-home after tax ≈ ${chf(inc.netIncomeMonth)}/month`,
+        summary: msg("summary.payslip", { net: amount, gross: inc.grossIncomeYear, takeHome: inc.netIncomeMonth }),
       };
     }
     case "note": {
-      if (!amount) return { kind: "none", summary: `✍️ “${e.label ?? "Note"}” — no amount found.` };
-      if (amount > BOUNDS.oneOff[1]) return { kind: "none", summary: `✍️ Amount ${chf(amount)} looks implausible — not added.` };
+      if (!amount) return { kind: "none", summary: msg("summary.noteNoAmount", { label: e.labelMsg ?? e.label ?? msg("summary.note") }) };
+      if (amount > BOUNDS.oneOff[1]) return { kind: "none", summary: msg("summary.noteImplausible", { amount }) };
       const month = e.year ? Math.min(BOUNDS.month[1], Math.max(0, (e.year - now.getFullYear()) * 12 + (6 - now.getMonth()))) : 24;
-      const label = e.label ?? "Goal from note";
+      const label = e.labelMsg ?? e.label ?? msg("event.goalFromNote");
       return {
         kind: "event",
-        ops: [{ op: "add", type: "expense", label, month, amount }],
-        summary: `✍️ ${label} · ${chf(amount)}${e.year ? " in " + e.year : ""} → added as a planned expense`,
+        ops: [{ op: "add", type: "expense", ...(typeof label === "string" ? { label } : eventLabel(label)), month, amount }],
+        summary: e.year ? msg("summary.noteAddedYear", { label, amount, year: e.year }) : msg("summary.noteAdded", { label, amount }),
       };
     }
     default:
-      return { kind: "none", summary: "Nothing financial found in this image." };
+      return { kind: "none", summary: msg("summary.nothing") };
   }
 }

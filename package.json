@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "i18n:check": "npx tsx scripts/i18n-check.ts",
     "lint": "eslint --ignore-pattern public/tesseract/runtime/**",
     "postinstall": "node scripts/copy-tesseract-assets.mjs",
     "smoke:browser": "node scripts/browser-smoke.mjs",

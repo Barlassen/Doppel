@@ -13,13 +13,13 @@ import {
   YAxis,
 } from "recharts";
 import type { SimResult } from "@/lib/finance/types";
-import { chf, chfShort } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 
 interface Props {
   real: SimResult;
   ideal: SimResult;
   goal: { target: number; age: number };
-  eventAges: { age: number; label: string }[];
+  eventAges: { age: number; id: string }[];
   /** Pinned Plan A, simulated with the same seed — drawn as a ghost median + faint band. */
   planA?: SimResult | null;
   /** Shades the retirement phase from this age. */
@@ -27,6 +27,7 @@ interface Props {
 }
 
 export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }: Props) {
+  const { t, fmt } = useI18n();
   const byAgeA = new Map(planA?.bands.map((b) => [b.age, b]) ?? []);
   const data = real.bands.map((b, i) => {
     const a = byAgeA.get(b.age);
@@ -50,26 +51,26 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-ink-2">
         <span className="flex items-center gap-2">
           <span className="inline-block h-[10px] w-5 rounded-sm" style={{ background: "var(--series-1)", opacity: 0.18 }} />
-          Real you · 10–90% range
+          {t("chart.legendRange")}
         </span>
         <span className="flex items-center gap-2">
           <span className="inline-block h-[2px] w-5" style={{ background: "var(--series-1)" }} />
-          Real you · median
+          {t("chart.legendReal")}
         </span>
         <span className="flex items-center gap-2">
           <span className="inline-block h-0 w-5 border-t-2 border-dashed" style={{ borderColor: "var(--series-2)" }} />
-          Disciplined you · median
+          {t("chart.legendIdeal")}
         </span>
         {planA && (
           <span className="flex items-center gap-2">
             <span className="inline-block h-0 w-5 border-t-2 border-dotted" style={{ borderColor: "var(--ink-3)" }} />
-            Plan A · median
+            {t("chart.legendPlanA")}
           </span>
         )}
         {retire !== undefined && (
           <span className="flex items-center gap-2">
             <span className="inline-block h-[10px] w-5 rounded-sm" style={{ background: "var(--ink-3)", opacity: 0.15 }} />
-            Retirement
+            {t("chart.legendRetirement")}
           </span>
         )}
       </div>
@@ -86,7 +87,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
               minTickGap={24}
             />
             <YAxis
-              tickFormatter={chfShort}
+              tickFormatter={fmt.chfShort}
               tickLine={false}
               axisLine={false}
               tick={{ fill: "var(--ink-3)", fontSize: 11 }}
@@ -100,12 +101,13 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
                 fill="var(--ink-3)"
                 fillOpacity={0.08}
                 stroke="none"
-                label={{ value: `Retired at ${retire}`, position: "insideTopRight", fill: "var(--ink-3)", fontSize: 11 }}
+                label={{ value: t("chart.retiredAt", { age: retire }), position: "insideTopRight", fill: "var(--ink-3)", fontSize: 11 }}
               />
             )}
             {planA && (
               <Area
                 dataKey="rangeA"
+                name={t("chart.legendPlanA")}
                 stroke="none"
                 fill="var(--ink-3)"
                 fillOpacity={0.08}
@@ -115,6 +117,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
             )}
             <Area
               dataKey="range"
+              name={t("chart.legendRange")}
               stroke="none"
               fill="var(--series-1)"
               fillOpacity={0.16}
@@ -125,15 +128,16 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
               y={goal.target}
               stroke="var(--ink-2)"
               strokeDasharray="2 4"
-              label={{ value: `Goal ${chfShort(goal.target)}`, position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
+              label={{ value: t("chart.goal", { target: goal.target }), position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
             />
             <ReferenceLine x={goal.age} stroke="var(--ink-3)" strokeDasharray="2 4" />
             {eventAges.map((e) => (
-              <ReferenceLine key={e.label + e.age} x={e.age} stroke="var(--line)" strokeWidth={6} strokeOpacity={0.6} />
+              <ReferenceLine key={e.id} x={e.age} stroke="var(--line)" strokeWidth={6} strokeOpacity={0.6} />
             ))}
             {planA && (
               <Line
                 dataKey="planA"
+                name={t("chart.legendPlanA")}
                 stroke="var(--ink-3)"
                 strokeWidth={2}
                 strokeDasharray="1 4"
@@ -145,6 +149,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
             )}
             <Line
               dataKey="ideal"
+              name={t("chart.legendIdeal")}
               stroke="var(--series-2)"
               strokeWidth={2}
               strokeDasharray="5 4"
@@ -154,6 +159,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
             />
             <Line
               dataKey="real"
+              name={t("chart.legendReal")}
               stroke="var(--series-1)"
               strokeWidth={2}
               dot={false}
@@ -173,18 +179,19 @@ interface TipProps {
 }
 
 function ConeTooltip({ active, payload }: TipProps) {
+  const { t, fmt } = useI18n();
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="card px-3 py-2 text-xs shadow-lg">
       <div className="mb-1 font-semibold text-ink">
-        Age {d.age} · {d.year}
+        {t("chart.tipAge", { age: d.age, year: d.year })}
       </div>
-      <Row color="var(--series-1)" label="Real you (median)" value={chf(d.real)} />
-      <Row color="var(--series-2)" label="Disciplined you" value={chf(d.ideal)} dashed />
-      {d.planA !== undefined && <Row color="var(--ink-3)" label="Plan A (median)" value={chf(d.planA)} dashed />}
+      <Row color="var(--series-1)" label={t("chart.tipReal")} value={fmt.chf(d.real)} />
+      <Row color="var(--series-2)" label={t("chart.tipIdeal")} value={fmt.chf(d.ideal)} dashed />
+      {d.planA !== undefined && <Row color="var(--ink-3)" label={t("chart.tipPlanA")} value={fmt.chf(d.planA)} dashed />}
       <div className="mt-1 text-ink-3">
-        Bad year–good year: {chfShort(d.p10)} – {chfShort(d.p90)}
+        {t("chart.tipRange", { p10: d.p10, p90: d.p90 })}
       </div>
     </div>
   );

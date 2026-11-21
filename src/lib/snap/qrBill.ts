@@ -1,3 +1,5 @@
+import { translateText } from "@/lib/i18n";
+import { msg } from "@/lib/i18n/types";
 import { isAmount, type Extraction } from "./types";
 
 /**
@@ -42,13 +44,14 @@ export function parseQrBill(raw: string): QrBill | null {
 
 export function qrBillToExtraction(b: QrBill): Extraction {
   const insurance = /kranken|versicherung|assurance|insurance/i.test(b.creditor.name + b.message);
+  const labelMsg = msg("summary.billFrom", { merchant: b.creditor.name });
   return {
     kind: "bill",
     amount: b.currency === "CHF" ? b.amount : undefined,
     merchant: b.creditor.name,
     location: b.creditor.town,
     category: insurance ? "insurance" : "bills",
-    label: b.message || `Bill from ${b.creditor.name}`,
+    ...(b.message ? { label: b.message } : { label: translateText("en", labelMsg), labelMsg }),
     iban: b.iban,
     message: b.message,
   };
