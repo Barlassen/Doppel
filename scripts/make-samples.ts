@@ -1,5 +1,5 @@
 /**
- * Generates the four demo images in public/samples (all fictional companies & people).
+ * Generates the five demo images in public/samples (all fictional companies & people).
  *   npx tsx scripts/make-samples.ts
  */
 import { writeFileSync } from "node:fs";
@@ -129,9 +129,83 @@ const note = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" v
   </g>
 </svg>`;
 
+// ---------- 5. Swiss Payslip / Lohnabrechnung (Tier 1) ----------
+// Exact math: Brutto 10'050.00 - AHV/IV/EO 5.30% (532.65) - ALV 1.10% (110.55)
+//             - NBU 0.80% (80.40) - BVG 8.00% on 8'455.00 (676.40) = Nettolohn 8'650.00
+const payslip = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280">
+  <rect width="960" height="1280" fill="#ffffff"/>
+  <rect x="0" y="0" width="960" height="12" fill="#1d3557"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#111111">
+    <text x="64" y="84" font-size="34" font-weight="bold" fill="#1d3557">Sihlberg Informatik AG</text>
+    <text x="64" y="118" font-size="20" fill="#555555">Hardturmstrasse 161, 8005 Zürich</text>
+    <text x="896" y="84" text-anchor="end" font-size="32" font-weight="bold">Lohnabrechnung</text>
+    <text x="896" y="118" text-anchor="end" font-size="22" fill="#444444">November 2026</text>
+
+    <line x1="64" y1="150" x2="896" y2="150" stroke="#d0d4dc" stroke-width="2"/>
+
+    <text x="64" y="198" font-size="18" font-weight="bold" fill="#555555">Mitarbeiter</text>
+    <text x="64" y="230" font-size="24" font-weight="bold">Lukas Brunner</text>
+    <text x="64" y="260" font-size="20" fill="#333333">Albisstrasse 12, 8038 Zürich</text>
+
+    <text x="540" y="198" font-size="18" font-weight="bold" fill="#555555">Abrechnungsdaten</text>
+    <text x="540" y="230" font-size="20">Periode: 01.11.2026 – 30.11.2026</text>
+    <text x="540" y="260" font-size="20">Personal-Nr.: 1042 · Pensum: 100%</text>
+    <text x="540" y="290" font-size="20">AHV-Nr.: 756.1234.5678.90</text>
+
+    <rect x="64" y="340" width="832" height="48" fill="#f1f3f6"/>
+    <text x="80" y="372" font-size="20" font-weight="bold">Lohnart</text>
+    <text x="540" y="372" text-anchor="end" font-size="20" font-weight="bold">Basis CHF</text>
+    <text x="680" y="372" text-anchor="end" font-size="20" font-weight="bold">Ansatz</text>
+    <text x="880" y="372" text-anchor="end" font-size="20" font-weight="bold">Betrag CHF</text>
+
+    <text x="80" y="438" font-size="24">Monatslohn</text>
+    <text x="540" y="438" text-anchor="end" font-size="24">10'050.00</text>
+    <text x="680" y="438" text-anchor="end" font-size="24">100.0 %</text>
+    <text x="880" y="438" text-anchor="end" font-size="24">10'050.00</text>
+
+    <line x1="64" y1="470" x2="896" y2="470" stroke="#c8ccd4" stroke-width="2"/>
+    <text x="80" y="516" font-size="26" font-weight="bold">Bruttolohn</text>
+    <text x="880" y="516" text-anchor="end" font-size="26" font-weight="bold">10'050.00</text>
+
+    <text x="80" y="592" font-size="20" font-weight="bold" fill="#555555">Sozialabzüge</text>
+
+    <text x="80" y="644" font-size="24">AHV / IV / EO</text>
+    <text x="540" y="644" text-anchor="end" font-size="24">10'050.00</text>
+    <text x="680" y="644" text-anchor="end" font-size="24">5.30 %</text>
+    <text x="880" y="644" text-anchor="end" font-size="24">-532.65</text>
+
+    <text x="80" y="698" font-size="24">ALV Arbeitslosenversicherung</text>
+    <text x="540" y="698" text-anchor="end" font-size="24">10'050.00</text>
+    <text x="680" y="698" text-anchor="end" font-size="24">1.10 %</text>
+    <text x="880" y="698" text-anchor="end" font-size="24">-110.55</text>
+
+    <text x="80" y="752" font-size="24">NBU Nichtberufsunfall</text>
+    <text x="540" y="752" text-anchor="end" font-size="24">10'050.00</text>
+    <text x="680" y="752" text-anchor="end" font-size="24">0.80 %</text>
+    <text x="880" y="752" text-anchor="end" font-size="24">-80.40</text>
+
+    <text x="80" y="806" font-size="24">BVG Pensionskasse</text>
+    <text x="540" y="806" text-anchor="end" font-size="24">8'455.00</text>
+    <text x="680" y="806" text-anchor="end" font-size="24">8.00 %</text>
+    <text x="880" y="806" text-anchor="end" font-size="24">-676.40</text>
+
+    <line x1="64" y1="842" x2="896" y2="842" stroke="#c8ccd4" stroke-width="2"/>
+    <text x="80" y="886" font-size="24" font-weight="bold">Total Abzüge</text>
+    <text x="880" y="886" text-anchor="end" font-size="24" font-weight="bold">-1'400.00</text>
+
+    <rect x="64" y="936" width="832" height="84" rx="8" fill="#edf4f0" stroke="#1d4f3b" stroke-width="2"/>
+    <text x="88" y="990" font-size="32" font-weight="bold" fill="#1d4f3b">Nettolohn / Auszahlung</text>
+    <text x="872" y="990" text-anchor="end" font-size="34" font-weight="bold" fill="#1d4f3b">CHF 8'650.00</text>
+
+    <text x="64" y="1090" font-size="20" fill="#444444">Auszahlung am 25.11.2026 auf Konto CH56 0483 5012 3456 7800 9</text>
+    <text x="64" y="1126" font-size="18" fill="#777777">Dieses Dokument wurde maschinell erstellt und ist ohne Unterschrift gültig.</text>
+  </g>
+</svg>`;
+
 qrBill().then(() => {
   writeFileSync(`${OUT}/listing.svg`, listing);
   writeFileSync(`${OUT}/receipt.svg`, receipt);
   writeFileSync(`${OUT}/note.svg`, note);
-  console.log("samples written, receipt total", total);
+  writeFileSync(`${OUT}/payslip.svg`, payslip);
+  console.log("samples written (qr-bill, listing, receipt, note, payslip); receipt total", total);
 });
