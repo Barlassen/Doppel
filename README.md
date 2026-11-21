@@ -51,13 +51,15 @@ The original live benchmark used 16 synthetic Swiss documents, including nine ph
 
 The original run used a Node mirror with a 75% local-regex threshold and tied its latency to the GPT-4o request. The current benchmark shares the receipt gate and OCR languages with the browser and times Doppel separately. Both runs use synthetic fixtures.
 
-The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from payday spending, and the CHF 940k listing failing the bank test at 38.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 131k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 1,493,741 − CHF 1,362,649 = CHF 131,092`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
+The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, borderline) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+
+The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from payday spending, and the CHF 940k listing failing the bank test at 66.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 24.7k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 458,214 − CHF 433,481 = CHF 24,733`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
 ## Scripts
 
 | Command | What it does | Needs |
 |---|---|---|
-| `npx tsx scripts/engine-check.ts` | Runs the finance engine on both demo profiles and the demo snaps | nothing |
+| `npx tsx scripts/engine-check.ts` | Runs the finance engine on the three accounts and the demo snaps | nothing |
 | `npm run i18n:check` | Checks the four dictionaries and the local what-if parsers | nothing |
 | `npm run smoke:browser` | Headless Chromium run of the real browser pipeline, no API key | `npm run build` |
 | `npx tsx scripts/pipeline-check.ts` | Same as `smoke:browser` | `npm run build` |
@@ -67,4 +69,4 @@ The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from pay
 
 All people, companies and documents in the demo are fictional.
 
-More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions).
+More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).

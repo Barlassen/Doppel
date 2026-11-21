@@ -173,7 +173,7 @@ function runHeuristicUnitChecks(): { passed: number; total: number } {
       name: "German payslip picks Nettolohn, not Bruttolohn or Total Abzüge",
       fn: () => {
         const ext = heuristicExtract(
-          "Sihlberg Informatik AG\nLohnabrechnung November 2026\nLukas Brunner\nBruttolohn 10'050.00\nAHV / IV / EO 5.30 % -532.65\nALV 1.10 % -110.55\nBVG -676.40\nTotal Abzüge -1'400.00\nNettolohn / Auszahlung CHF 8'650.00",
+          "Sihlberg Informatik AG\nLohnabrechnung November 2026\nBarlas Demir\nBruttolohn 10'050.00\nAHV / IV / EO 5.30 % -532.65\nALV 1.10 % -110.55\nBVG -676.40\nTotal Abzüge -1'400.00\nNettolohn / Auszahlung CHF 8'650.00",
         );
         assert.equal(ext.kind, "payslip");
         assert.equal(ext.amount, 8650);
@@ -378,8 +378,8 @@ const FRENCH_PAYSLIP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="960" 
     <text x="896" y="82" text-anchor="end" font-size="30" font-weight="bold">Bulletin de salaire</text>
     <text x="896" y="114" text-anchor="end" font-size="22" fill="#444444">Novembre 2026</text>
     <line x1="64" y1="146" x2="896" y2="146" stroke="#d0d4dc" stroke-width="2"/>
-    <text x="64" y="196" font-size="24" font-weight="bold">Elena Rochat</text>
-    <text x="64" y="226" font-size="20" fill="#333333">Avenue Champel 14, 1206 Genève</text>
+    <text x="64" y="196" font-size="24" font-weight="bold">Meriç Aksoy</text>
+    <text x="64" y="226" font-size="20" fill="#333333">Avenue de Morges 58, 1004 Lausanne</text>
     <text x="540" y="196" font-size="20">Période: 01.11.2026 – 30.11.2026</text>
     <text x="540" y="226" font-size="20">Taux d'activité: 100%</text>
 

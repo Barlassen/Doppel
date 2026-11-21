@@ -14,7 +14,7 @@ const payload = [
   "S", "Limmat Krankenkasse AG", "Seestrasse", "41", "8002", "Zürich", "CH",
   "", "", "", "", "", "", "",
   "412.00", "CHF",
-  "S", "Lukas Brunner", "Albisstrasse", "12", "8038", "Zürich", "CH",
+  "S", "Barlas Demir", "Badenerstrasse", "512", "8048", "Zürich", "CH",
   "NON", "",
   "Prämie Dezember 2026",
   "EPD",
@@ -37,8 +37,8 @@ async function qrBill() {
     <text x="20" y="122" font-size="14">Limmat Krankenkasse AG</text>
     <text x="20" y="140" font-size="14">Seestrasse 41, 8002 Zürich</text>
     <text x="20" y="182" font-size="13" font-weight="bold">Zahlbar durch</text>
-    <text x="20" y="202" font-size="14">Lukas Brunner</text>
-    <text x="20" y="220" font-size="14">Albisstrasse 12, 8038 Zürich</text>
+    <text x="20" y="202" font-size="14">Barlas Demir</text>
+    <text x="20" y="220" font-size="14">Badenerstrasse 512, 8048 Zürich</text>
     <text x="20" y="420" font-size="13" font-weight="bold">Währung   Betrag</text>
     <text x="20" y="440" font-size="14">CHF          412.00</text>
     <text x="272" y="44" font-size="22" font-weight="bold">Zahlteil</text>
@@ -51,8 +51,8 @@ async function qrBill() {
     <text x="520" y="182" font-size="13" font-weight="bold">Zusätzliche Informationen</text>
     <text x="520" y="202" font-size="14">Prämie Dezember 2026</text>
     <text x="520" y="244" font-size="13" font-weight="bold">Zahlbar durch</text>
-    <text x="520" y="264" font-size="14">Lukas Brunner</text>
-    <text x="520" y="282" font-size="14">Albisstrasse 12, 8038 Zürich</text>
+    <text x="520" y="264" font-size="14">Barlas Demir</text>
+    <text x="520" y="282" font-size="14">Badenerstrasse 512, 8048 Zürich</text>
   </g>
   <svg x="292" y="150" width="184" height="184" viewBox="${viewBox}" shape-rendering="crispEdges">${inner}</svg>
   ${cross}
@@ -194,8 +194,8 @@ const payslip = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="128
     <line x1="64" y1="150" x2="896" y2="150" stroke="#d0d4dc" stroke-width="2"/>
 
     <text x="64" y="198" font-size="18" font-weight="bold" fill="#555555">Mitarbeiter</text>
-    <text x="64" y="230" font-size="24" font-weight="bold">Lukas Brunner</text>
-    <text x="64" y="260" font-size="20" fill="#333333">Albisstrasse 12, 8038 Zürich</text>
+    <text x="64" y="230" font-size="24" font-weight="bold">Barlas Demir</text>
+    <text x="64" y="260" font-size="20" fill="#333333">Badenerstrasse 512, 8048 Zürich</text>
 
     <text x="540" y="198" font-size="18" font-weight="bold" fill="#555555">Abrechnungsdaten</text>
     <text x="540" y="230" font-size="20">Periode: 01.11.2026 – 30.11.2026</text>

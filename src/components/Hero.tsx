@@ -19,6 +19,7 @@ export function Hero({
   name,
   age,
   city,
+  cityLang,
   tagline,
   goal,
   odds,
@@ -34,6 +35,8 @@ export function Hero({
   name: string;
   age: number;
   city: string;
+  /** Language of the city name, so uppercase labels keep its own casing (Zürich, not ZÜRİCH). */
+  cityLang: string;
   tagline: Text;
   goal: Text;
   odds: number;
@@ -51,7 +54,7 @@ export function Hero({
   return (
     <div>
       <div className="label">
-        {rich("hero.who", { name: <span lang="de-CH">{name}</span>, age, city: <span lang="de-CH">{city}</span>, tagline })}
+        {rich("hero.who", { name: <span>{name}</span>, age, city: <span lang={cityLang}>{city}</span>, tagline })}
       </div>
       <h1 className="mt-1.5 font-serif text-4xl leading-tight sm:text-5xl">
         {t("hero.goal", { goal })}{" "}

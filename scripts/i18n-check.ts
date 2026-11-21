@@ -1,4 +1,4 @@
-import { PROFILES } from "../src/lib/data/profiles";
+import { PROFILE_WITH_HOME } from "../src/lib/data/profiles";
 import { DICTIONARIES, FORMATS, LOCALES, PLACEHOLDER, createFmt, type Locale } from "../src/lib/i18n";
 import { commandExamples, type EXAMPLE_IDS } from "../src/lib/i18n/examples";
 import { localParseCommand, validateLocalOps, type Op } from "../src/lib/twin/actions";
@@ -43,7 +43,8 @@ type ExpectedOp = Partial<Extract<Op, { op: "add" }>>
   | Partial<Extract<Op, { op: "shift" }>>;
 type IntentCase = [text: string, expected: ExpectedOp];
 const now = new Date(2026, 0, 15);
-const events = PROFILES[0].events;
+// House-delay chips need a planned home (Meriç's flat in Renens).
+const events = PROFILE_WITH_HOME.events;
 const july2028 = 30;
 const buy: ExpectedOp = { op: "add", type: "house", amount: 1_200_000, month: july2028 };
 const monthly = (value: number): ExpectedOp => ({ op: "set", key: "monthlyInvest", value });
@@ -143,7 +144,8 @@ const intentCases: Record<Locale, IntentCase[]> = {
     ["Ich will weniger Risiko eingehen", { op: "set", key: "riskProfile", value: "conservative" }],
     ["Kauf der Liegenschaft um ein Jahr verschieben", { op: "shift", id: "ev-house", months: 12 }],
     ["Den Hauskauf um ein halbes Jahr verschieben", delayMonths],
-    ["Hauskauf auf 2030 verschieben", { op: "shift", id: "ev-house", months: 30 }],
+    // The planned home is at month 60 (Jan 2031 from Jan 2026); mid-2032 is 18 months later.
+    ["Hauskauf auf 2032 verschieben", { op: "shift", id: "ev-house", months: 18 }],
     ["Wohnungskauf 2 Jahre früher", { op: "shift", id: "ev-house", months: -24 }],
     ["Stockwerkeigentum in Basel für CHF 1'200'000 kaufen im 2028", buy],
     ["Haus für eine Million kaufen im Jahr 2029", { op: "add", type: "house", amount: 1_000_000, month: 42 }],

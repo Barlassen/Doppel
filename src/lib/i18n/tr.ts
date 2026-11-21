@@ -37,7 +37,14 @@ export const tr = {
   },
 
   header: {
-    profiles: "Demo profil",
+    accounts: "Hesap",
+    switchAria: "Hesap değiştir (şu anki: {name})",
+    menu: "Hesaplar",
+    reset: "Orijinal verilere dön",
+    resetHint: "Bu hesabın taranan fişlerini ve senaryolarını siler.",
+    localChanges_one: "{count} yerel ekleme",
+    localChanges_other: "{count} yerel ekleme",
+    netWorth: "Net varlık {amount:chf}",
   },
 
   layout: {
@@ -47,9 +54,12 @@ export const tr = {
   },
 
   profile: {
-    lukas: { tagline: "Yazılım mühendisi · ilk evini almak istiyor" },
-    elena: { tagline: "Dört kişilik aile · 58 yaşında emekli olmayı planlıyor" },
+    barlas: { tagline: "Junior yazılımcı · düzenli talimatla yatırım yapıyor" },
+    meric: { tagline: "Pazarlama uzmanı · daire için birikim yapıyor" },
+    oktay: { tagline: "Lojistik koordinatörü · ne kazanırsa harcıyor" },
+    user: { tagline: "Kendi verilerin" },
     goal: "{age} yaşına kadar CHF {target:mio} mn net varlık",
+    goalK: "{age} yaşına kadar CHF {target:chfShort} net varlık",
   },
 
   merchant: {
@@ -82,6 +92,7 @@ export const tr = {
 
   event: {
     flatIn: "Daire ({place})",
+    tripTo: "Seyahat: {place}",
     universityFor: "{name} için üniversite",
     home: "Ev",
     listingHome: "Ev",
@@ -295,10 +306,33 @@ export const tr = {
     subsTitle_one: "{count} düzenli abonelik",
     subsTitle_other: "{count} düzenli abonelik",
     subsList: "{items}",
+    subsOverlap: "{items}. Bunların {count} tanesi birbiriyle çakışan yayın hizmetleri.",
     subsItem: "{merchant} {amount}",
     panicTitle: "Düşüşte satma eğilimi",
     panicDetail:
       "Son büyük düşüşte hisselerinin {sold:pct} kadarını sattın. İkizin bunu tekrar yapma ihtimalini {prob:pct} kabul ediyor — ve ancak piyasa eski zirvesine dönünce geri aldığını varsayıyor.",
+    panicDataTitle: "{when:ym} düşüşünde hisselerinin {sold:pct} kadarını sattın",
+    panicDataDetail:
+      "Piyasa zirvesinin {dd:pct} altındaydı. İkizin bunu tekrar yapma ihtimalini {prob:pct} kabul ediyor — ve ancak piyasa eski zirvesine dönünce geri aldığını varsayıyor.",
+    dipTitle: "{when:ym} düşüşünde almaya devam ettin",
+    dipDetail: "Piyasa zirvesinin {dd:pct} kadar altındayken {amount:chf} yatırdın ve hiç satmadın.",
+    chaseTitle: "Zirveye yakın alım: {instrument}",
+    chaseDetail:
+      "{when:ym} ayında hisse başı {price:chf} fiyatla {amount:chf} yatırdın; sonra fiyat {drop:pct} düştü. Tek bir popüler hisse, geniş bir fondan çok daha fazla dalgalanır.",
+    investRegularTitle: "Artan paranın {share:pct} kadarını yatırıyorsun",
+    investRegularDetail:
+      "Son {months} ayın her birinde alım yaptın, ortalama ayda ≈ {monthly:chf}. İkizin bu oranı koruyor.",
+    investSporadicTitle: "Düzensiz yatırım yapıyorsun",
+    investSporadicDetail:
+      "Son {months} ayın yalnızca {active} tanesinde alım yaptın; net ayda ≈ {monthly:chf}, artan paranın {share:pct} kadarı. Gerisi nakitte kalıyor.",
+    noInvestTitle: "Yatırım yapmıyorsun",
+    noInvestDetail:
+      "Son {months} ayda fon, hisse veya 3a (bireysel emeklilik) alımı yok: artan her şey ≈ %0 getiriyle hesapta duruyor.",
+    idleTitle: "{amount:chf} nakit boşta duruyor",
+    idleDetail:
+      "Bu tutar {months} aylık harcama tamponunun ({buffer:chf}) üstünde. Fiyatlar artarken ≈ %0 getiri sağlıyor.",
+    deliveryTitle: "Ayda {count:int} kez yemek siparişi",
+    deliveryDetail: "Sipariş verilen yerler: {items}.",
     tipPayday: "En kolay kazanç, maaş haftasındaki yeme-içme ve alışverişte.",
     tipCategory:
       "En büyük esnek kalemin: {category} (≈ {amount:chf}/ay). Sonraki kaldıraç, kira ve sigorta gibi sabit giderler.",

@@ -1,5 +1,6 @@
 import type { BehaviorParams, Profile, Transaction } from "./types";
-import { categoryMsg, merchantText } from "@/lib/data/merchants";
+import { IDLE_BUFFER_MONTHS, deriveInvestBehavior, ymNumber } from "./investBehavior";
+import { categoryMsg, merchantGroup, merchantText } from "@/lib/data/merchants";
 import type { Msg } from "@/lib/i18n/types";
 
 export interface BehaviorInsight {
@@ -31,7 +32,9 @@ const PAYDAY = 25;
 /**
  * Derives behaviour parameters from raw transactions + history. Pure, deterministic, 0 tokens.
  * The baseline uses the profile's transaction history only; snapped receipts (`extra`) feed the
- * "this month" figure so a single receipt cannot distort the 3-month pattern.
+ * "this month" figure so a single receipt cannot distort the multi-month pattern.
+ * `p.history`, `p.investShare` and `p.contributes3a` are themselves derived from `p.trades` for the built-in
+ * accounts (`withDerivedBehavior`); the trade insights below explain where they come from.
  */
 export function analyzeBehavior(p: Profile, extra: Transaction[] = []): BehaviorProfile {
   const tx = p.transactions;
@@ -100,21 +103,90 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
   }
   if (subscriptions.length > 0) {
     const sum = subscriptions.reduce((s, x) => s + x.monthly, 0);
+    const items = subscriptions.map((s): Msg => ({ key: "insight.subsItem", params: { merchant: merchantText(s.merchant), amount: s.monthly } }));
+    // Overlap: two or more video (or music) streaming services at the same time.
+    const groups = new Map<string, number>();
+    for (const s of subscriptions) {
+      const g = merchantGroup(s.merchant);
+      if (g === "videoStreaming" || g === "musicStreaming") groups.set(g, (groups.get(g) ?? 0) + 1);
+    }
+    const overlapping = [...groups.values()].filter((n) => n >= 2).reduce((s, n) => s + n, 0);
     insights.push({
       id: "subs",
       title: { key: "insight.subsTitle", params: { count: subscriptions.length } },
-      detail: {
-        key: "insight.subsList",
-        params: { items: subscriptions.map((s): Msg => ({ key: "insight.subsItem", params: { merchant: merchantText(s.merchant), amount: s.monthly } })) },
-      },
+      detail: overlapping
+        ? { key: "insight.subsOverlap", params: { items, count: overlapping } }
+        : { key: "insight.subsList", params: { items } },
       monthlyChf: sum,
     });
   }
-  if (p.history.soldInDrawdown) {
+
+  // Food delivery: four or more orders a month.
+  const delivery = tx.filter((t) => merchantGroup(t.merchant) === "delivery");
+  const deliveryPerMonth = delivery.length / historyMonths;
+  if (deliveryPerMonth >= 4) {
     insights.push({
-      id: "panic",
-      title: { key: "insight.panicTitle" },
-      detail: { key: "insight.panicDetail", params: { sold: p.history.drawdownSellPct, prob: panicSellProb } },
+      id: "delivery",
+      title: { key: "insight.deliveryTitle", params: { count: Math.round(deliveryPerMonth) } },
+      detail: { key: "insight.deliveryDetail", params: { items: [...new Set(delivery.map((t) => t.merchant))].sort() } },
+      monthlyChf: Math.round(delivery.reduce((s, t) => s + t.amount, 0) / historyMonths),
+    });
+  }
+
+  // Investing, from the trades (same derivation that sets investShare / contributes3a / history).
+  const inv = p.trades.length ? deriveInvestBehavior(p) : null;
+  if (p.history.soldInDrawdown) {
+    insights.push(
+      inv?.sell && inv.drawdownSellPct === p.history.drawdownSellPct
+        ? {
+            id: "panic",
+            title: { key: "insight.panicDataTitle", params: { sold: inv.drawdownSellPct, when: ymNumber(inv.sell.month) } },
+            detail: { key: "insight.panicDataDetail", params: { dd: inv.sell.drawdown, prob: panicSellProb } },
+          }
+        : {
+            id: "panic",
+            title: { key: "insight.panicTitle" },
+            detail: { key: "insight.panicDetail", params: { sold: p.history.drawdownSellPct, prob: panicSellProb } },
+          },
+    );
+  }
+  if (inv?.dip) {
+    insights.push({
+      id: "dip",
+      title: { key: "insight.dipTitle", params: { when: ymNumber(inv.dip.month) } },
+      detail: { key: "insight.dipDetail", params: { amount: Math.round(inv.dip.amount), dd: inv.dip.drawdown } },
+    });
+  }
+  if (inv?.chase) {
+    const c = inv.chase;
+    insights.push({
+      id: "chase",
+      title: { key: "insight.chaseTitle", params: { instrument: c.instrument } },
+      detail: { key: "insight.chaseDetail", params: { amount: Math.round(c.amount), when: ymNumber(c.month), price: c.price, drop: c.drop } },
+    });
+  }
+  if (inv && inv.buyMonths > 0) {
+    const regular = inv.buyMonths >= inv.months;
+    insights.push({
+      id: "invest",
+      title: regular ? { key: "insight.investRegularTitle", params: { share: p.investShare } } : { key: "insight.investSporadicTitle" },
+      detail: regular
+        ? { key: "insight.investRegularDetail", params: { months: inv.months, monthly: Math.round(inv.brokerNetMonth) } }
+        : {
+            key: "insight.investSporadicDetail",
+            params: { active: inv.buyMonths, months: inv.months, monthly: Math.round(inv.brokerNetMonth), share: p.investShare },
+          },
+    });
+  } else if (!p.trades.length && p.portfolio === 0 && p.pillar3a === 0) {
+    insights.push({ id: "noInvest", title: { key: "insight.noInvestTitle" }, detail: { key: "insight.noInvestDetail", params: { months: historyMonths } } });
+  }
+  const buffer = IDLE_BUFFER_MONTHS * p.expensesMonth;
+  const idle = Math.floor((p.cash - buffer) / 100) * 100;
+  if (inv && idle >= 1000) {
+    insights.push({
+      id: "idle",
+      title: { key: "insight.idleTitle", params: { amount: idle } },
+      detail: { key: "insight.idleDetail", params: { months: IDLE_BUFFER_MONTHS, buffer: Math.round(buffer) } },
     });
   }
 

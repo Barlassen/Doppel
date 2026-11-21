@@ -30,7 +30,14 @@ export const de = {
   },
 
   header: {
-    profiles: "Demoprofil",
+    accounts: "Konto",
+    switchAria: "Konto wechseln (aktuell: {name})",
+    menu: "Konten",
+    reset: "Originaldaten wiederherstellen",
+    resetHint: "Entfernt die gescannten Belege und Was-wäre-wenn-Änderungen dieses Kontos.",
+    localChanges_one: "{count} lokale Ergänzung",
+    localChanges_other: "{count} lokale Ergänzungen",
+    netWorth: "Nettovermögen {amount:chf}",
   },
 
   layout: {
@@ -40,9 +47,12 @@ export const de = {
   },
 
   profile: {
-    lukas: { tagline: "Softwareentwickler · erstes Eigenheim als Ziel" },
-    elena: { tagline: "Familie zu viert · plant die Pension mit 58" },
+    barlas: { tagline: "Junior-Entwickler · investiert per Dauerauftrag" },
+    meric: { tagline: "Marketingspezialistin · spart auf eine Wohnung" },
+    oktay: { tagline: "Logistikkoordinator · gibt aus, was reinkommt" },
+    user: { tagline: "Eigene Daten" },
     goal: "CHF {target:mio} Mio. Nettovermögen bis {age}",
+    goalK: "CHF {target:chfShort} Nettovermögen bis {age}",
   },
 
   merchant: {
@@ -75,6 +85,7 @@ export const de = {
 
   event: {
     flatIn: "Wohnung in {place}",
+    tripTo: "Reise nach {place}",
     universityFor: "Studium für {name}",
     home: "Eigenheim",
     listingHome: "Eigenheim",
@@ -288,10 +299,34 @@ export const de = {
     subsTitle_one: "{count} laufendes Abo",
     subsTitle_other: "{count} laufende Abos",
     subsList: "{items}",
+    subsOverlap: "{items}. {count} davon sind Streamingdienste, die sich überschneiden.",
     subsItem: "{merchant} {amount}",
     panicTitle: "Verkäufe bei Kursrückgängen",
     panicDetail:
       "Beim letzten Einbruch hast du {sold:pct} deiner Aktien verkauft. Doppel rechnet mit einer Wiederholung in {prob:pct} der Fälle. Du steigst dabei erst wieder ein, wenn der Markt sein früheres Hoch erreicht hat.",
+    panicDataTitle: "{sold:pct} der Aktien im Einbruch {when:ym} verkauft",
+    panicDataDetail:
+      "Der Markt lag {dd:pct} unter seinem Hoch. Doppel rechnet mit einer Wiederholung in {prob:pct} der Fälle. Du steigst dabei erst wieder ein, wenn der Markt sein früheres Hoch erreicht hat.",
+    dipTitle: "Im Einbruch {when:ym} weiter gekauft",
+    dipDetail:
+      "{amount:chf} investiert, als der Markt bis zu {dd:pct} unter seinem Hoch lag, und nichts verkauft.",
+    chaseTitle: "{instrument} nahe am Höchststand gekauft",
+    chaseDetail:
+      "{amount:chf} im {when:ym} zu {price:chf} pro Aktie; später notierte sie {drop:pct} tiefer. Eine einzelne gehypte Aktie schwankt viel stärker als ein breiter Fonds.",
+    investRegularTitle: "Investiert {share:pct} des Überschusses",
+    investRegularDetail:
+      "In jedem der letzten {months} Monate gekauft, im Schnitt rund {monthly:chf} pro Monat. Doppel rechnet mit dieser Quote.",
+    investSporadicTitle: "Investiert unregelmässig",
+    investSporadicDetail:
+      "Nur in {active} der letzten {months} Monate gekauft; netto rund {monthly:chf} pro Monat, {share:pct} des Überschusses. Der Rest bleibt auf dem Konto.",
+    noInvestTitle: "Investiert nicht",
+    noInvestDetail:
+      "In den letzten {months} Monaten keine Käufe von Fonds, Aktien oder Säule 3a: Was übrig bleibt, liegt zu rund 0% auf dem Konto.",
+    idleTitle: "{amount:chf} Bargeld liegen brach",
+    idleDetail:
+      "So viel liegt über einem Puffer von {months} Monatsausgaben ({buffer:chf}). Es bringt rund 0%, während die Preise steigen.",
+    deliveryTitle: "Essenslieferungen {count:int}× pro Monat",
+    deliveryDetail: "Bestellt bei {items}.",
     tipPayday: "Am einfachsten sparst du beim Auswärtsessen und Einkaufen in der Woche nach dem Zahltag.",
     tipCategory:
       "Dein grösster variabler Posten ist «{category}» (rund {amount:chf} pro Monat). Danach lohnt sich ein Blick auf Fixkosten wie Miete und Versicherungen.",

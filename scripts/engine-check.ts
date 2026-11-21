@@ -1,7 +1,8 @@
 /** Sanity run of the deterministic engine: `npx tsx scripts/engine-check.ts` */
-import { PROFILES } from "@/lib/data/profiles";
+import { PROFILES, PROFILE_WITH_HOME } from "@/lib/data/profiles";
 import { simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
+import { deriveInvestBehavior, monthlySpend } from "@/lib/finance/investBehavior";
 import { solveGoal, type Recipe } from "@/lib/finance/goalSolver";
 import { checkAffordability } from "@/lib/finance/swissRules";
 import { baseScenario, costOfWaiting, effectiveProfile, habitCosts, simInputFor } from "@/lib/finance/scenario";
@@ -41,6 +42,30 @@ function applyRecipe(s: Scenario, r: Recipe): Scenario {
   return a.kind === "combo" ? { ...shifted, expenseDelta: a.expenseDelta } : shifted;
 }
 
+const netWorth = (p: Profile) => p.cash + p.portfolio + p.pillar2 + p.pillar3a;
+
+/** Who the account is and what its data says (balances, derived behaviour inputs). */
+function persona(p: Profile) {
+  const b = analyzeBehavior(p);
+  const inv = deriveInvestBehavior(p);
+  const spend = monthlySpend(p.transactions);
+  console.log(`\n##### ${p.name}, ${p.age}, ${p.city} (${p.canton}) · ${english(p.tagline)}`);
+  console.log(
+    `  income gross ${k(p.grossIncomeYear)}/yr · take-home ${k(p.netIncomeMonth)}/mo · marginal tax ${pc(p.marginalTaxRate)} · spending ${k(p.expensesMonth)}/mo (rent ${k(p.rentMonth)}) · risk ${p.riskProfile} · retire ${p.retirementAge}`,
+  );
+  console.log(
+    `  balances cash ${k(p.cash)} · portfolio ${k(p.portfolio)} · pillar 2 ${k(p.pillar2)} · pillar 3a ${k(p.pillar3a)} → net worth ${k(netWorth(p))}`,
+  );
+  console.log(`  goal: ${english(p.goal.label)} · events: ${p.events.map((e) => `${e.label} (m${e.month}, ${k(e.amount)})`).join(", ") || "none"}`);
+  console.log(
+    `  data: ${p.transactions.length} transactions over ${spend.months} months, ${p.trades.length} trades → investShare ${pc(p.investShare)} · 3a ${p.contributes3a ? "yes" : "no"} · sold in drawdown ${p.history.soldInDrawdown ? pc(p.history.drawdownSellPct) : "no"}${inv.dip ? ` · bought the dip ${k(inv.dip.amount)}` : ""}${inv.chase ? ` · chased ${inv.chase.instrument} (−${pc(inv.chase.drop)})` : ""}`,
+  );
+  console.log(
+    `  spending habits: payday spike ×${b.paydaySpike.toFixed(2)} · discretionary ${pc(b.discretionaryShare)} · ${b.subscriptions.length} subscriptions (${k(b.subscriptions.reduce((s, x) => s + x.monthly, 0))}/mo)`,
+  );
+  console.log(`  insights: ${b.insights.map((i) => english(i.title)).join(" | ")}`);
+}
+
 function report(p: Profile, s: Scenario, title: string) {
   const { b, ideal, real } = headline(p, s);
   console.log(`\n=== ${title} ===`);
@@ -69,38 +94,52 @@ function report(p: Profile, s: Scenario, title: string) {
     console.log(`    • ${english(rec.title)} → ${rec.reaches ? "" : "improves to "}${pc(rec.newProb)} · applied headline ${pc(after)} ${after === rec.newProb ? "✓ consistent" : "✗ MISMATCH"}`);
   }
   if (sol.recipes.length === 0) console.log(`    (no recipes${sol.baseProb >= 0.8 ? " — on track" : ""})`);
-  return { real, b };
+  return { real, ideal, b, sol };
 }
 
-const [lukas, elena] = PROFILES;
+const [barlas] = PROFILES;
+const home = PROFILE_WITH_HOME;
+const summary: string[] = [];
 
-for (const p of PROFILES) report(p, baseScenario(p), `${p.name} — base`);
+for (const p of PROFILES) {
+  persona(p);
+  const { real, ideal, b, sol } = report(p, baseScenario(p), `${p.name} — base`);
+  const top = sol.recipes[0];
+  summary.push(
+    `| ${p.name} | ${p.age} | ${p.city} | ${k(netWorth(p))} | ${pc(p.investShare)} | ${p.history.soldInDrawdown ? pc(p.history.drawdownSellPct) : "–"} | ${pc(b.discretionaryShare)} | ${b.subscriptions.length} | ×${b.paydaySpike.toFixed(2)} | ${pc(real.successProb)} / ${pc(ideal.successProb)} | ${pc(real.crunchProb)} | ${top ? `${english(top.title)} → ${pc(top.newProb)}` : "none (on track)"} |`,
+  );
+}
 
-// --- 940k Zürich listing snap (sample) for Lukas ---
+console.log("\n=== Persona summary ===");
+console.log("| Account | Age | City | Net worth | investShare | Sold in drawdown | Discretionary | Subs | Payday spike | Goal odds real / disciplined | Crunch | Top recipe |");
+console.log("|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|");
+for (const row of summary) console.log(row);
+
+// --- 940k Zürich listing snap (sample) for the account with a planned home ---
 {
-  const s0 = baseScenario(lukas);
-  const before = headline(lukas, s0).real.successProb;
+  const s0 = baseScenario(home);
+  const before = headline(home, s0).real.successProb;
   const u = extractionToUpdate({ kind: "listing", amount: 940_000, rooms: 4.5, location: "Zürich" }, s0.events);
   if (u.kind !== "event") throw new Error("listing should be an event");
   const s1 = applyScenarioOps(s0, validateOps(u.ops, s0.events), "snap");
   console.log(`\n${english(u.summary)}`);
-  const { real } = report(lukas, s1, "Lukas — after snapping the 940k Zürich listing");
+  const { real } = report(home, s1, `${home.name} — after snapping the 940k Zürich listing`);
   console.log(`  odds ${pc(before)} → ${pc(real.successProb)}`);
 }
 
-// --- payslip 10,300 (Nettolohn, before tax) for Lukas ---
+// --- sample payslip (Nettolohn CHF 8,650, before tax) for the first account ---
 {
-  const s0 = baseScenario(lukas);
-  const before = headline(lukas, s0).real.successProb;
-  const u = extractionToUpdate({ kind: "payslip", amount: 10_300 }, s0.events, new Date(), {
-    marginalTaxRate: lukas.marginalTaxRate,
-    income: { grossIncomeYear: lukas.grossIncomeYear, netIncomeMonth: lukas.netIncomeMonth },
+  const s0 = baseScenario(barlas);
+  const before = headline(barlas, s0).real.successProb;
+  const u = extractionToUpdate({ kind: "payslip", amount: 8_650 }, s0.events, new Date(), {
+    marginalTaxRate: barlas.marginalTaxRate,
+    income: { grossIncomeYear: barlas.grossIncomeYear, netIncomeMonth: barlas.netIncomeMonth },
   });
   if (u.kind !== "income") throw new Error("payslip should be income");
   const s1: Scenario = { ...s0, income: { grossIncomeYear: u.grossIncomeYear, netIncomeMonth: u.netIncomeMonth, label: "payslip" } };
-  const after = headline(lukas, s1).real.successProb;
-  console.log(`\n=== Payslip snap, Nettolohn CHF 10,300 (Lukas) ===\n  ${english(u.summary)}`);
-  console.log(`  profile before: gross ${k(lukas.grossIncomeYear)}/yr, take-home ${k(lukas.netIncomeMonth)}/mo → after: gross ${k(u.grossIncomeYear)}/yr, take-home ${k(u.netIncomeMonth)}/mo`);
+  const after = headline(barlas, s1).real.successProb;
+  console.log(`\n=== Payslip snap, Nettolohn CHF 8,650 (${barlas.name}) ===\n  ${english(u.summary)}`);
+  console.log(`  profile before: gross ${k(barlas.grossIncomeYear)}/yr, take-home ${k(barlas.netIncomeMonth)}/mo → after: gross ${k(u.grossIncomeYear)}/yr, take-home ${k(u.netIncomeMonth)}/mo`);
   console.log(`  odds ${pc(before)} → ${pc(after)}`);
 }
 
@@ -118,18 +157,20 @@ for (const p of PROFILES) {
   console.log(`\n=== QR-bill premium snap (${p.name}) ===\n  ${english(u.summary)}\n  odds ${pc(before)} → ${pc(headline(p, s1).real.successProb)}`);
 }
 
-// --- Elena: what if she retires later? ---
-{
-  const s0 = baseScenario(elena);
-  for (const age of [58, 60, 62, 65]) {
+// --- Retirement age what-ifs ---
+for (const p of PROFILES) {
+  const s0 = baseScenario(p);
+  const parts: string[] = [];
+  for (const age of [60, 63, 65]) {
     const s = applyScenarioOps(s0, validateOps([{ op: "set", key: "retirementAge", value: age }], s0.events));
-    const { real } = headline(elena, s);
-    console.log(`  Elena retire at ${age}: goal ${pc(real.successProb)} · lasts to 90 ${pc(real.retirement!.lastsTo90Prob)} · P10 depletion ${real.retirement!.depletionAgeP10 ?? ">90"}`);
+    const { real } = headline(p, s);
+    parts.push(`${age}: goal ${pc(real.successProb)}, lasts to 90 ${pc(real.retirement!.lastsTo90Prob)}, P10 depletion ${real.retirement!.depletionAgeP10 ?? ">90"}`);
   }
+  console.log(`  ${p.name} retire at ${parts.join(" · ")}`);
 }
 
 // --- local intent parser (0 tokens) ---
-console.log("\n=== Local parser ===");
+console.log(`\n=== Local parser (events of ${home.name}) ===`);
 for (const t of [
   "retire at 60",
   "start investing 500 a month",
@@ -146,7 +187,7 @@ for (const t of [
   "buy a flat in Bern for 1.2m",
   "buy a castle for 50m",
 ]) {
-  console.log(`  “${t}” → ${JSON.stringify(localParseCommand(t, lukas.events), (key, value) => key === "labelMsg" ? undefined : value)}`);
+  console.log(`  “${t}” → ${JSON.stringify(localParseCommand(t, home.events), (key, value) => key === "labelMsg" ? undefined : value)}`);
 }
 console.log(
   `  validateOps rejects junk: ${JSON.stringify(
@@ -158,7 +199,7 @@ console.log(
         { op: "shift", id: "nope", months: 6 },
         { op: "set", key: "monthlyInvest", value: "500" },
       ],
-      lukas.events,
+      home.events,
     ),
   )}`,
 );

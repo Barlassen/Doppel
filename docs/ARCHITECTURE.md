@@ -29,7 +29,8 @@ src/
     api/twin/route.ts        → the only route that calls a model (OpenRouter):
                                extract_text | extract_image | command | narrate | naive_compare
   components/
-    DoppelApp.tsx            → state, wiring, ledger
+    DoppelApp.tsx            → state, wiring, ledger, one session per account
+    AccountSwitcher.tsx      → header account menu (initials, name, net worth, reset)
     ConeChart.tsx            → p10–p90 cone + medians (real, disciplined, Plan A), Recharts
     SnapPanel.tsx            → drop / camera / samples → runSnap() → review form
     CommandBar.tsx           → text + browser speech recognition
@@ -46,6 +47,7 @@ src/
       pension.ts             → AHV, BVG credits and conversion
       swissRules.ts          → tragbarkeit(), checkAffordability(), maxAffordablePrice(), 3a
       behavioralEngine.ts    → analyzeBehavior() from transactions + history
+      investBehavior.ts      → investShare, 3a and drawdown selling derived from trades (illustrative index)
       goalSolver.ts          → solveGoal() → recipes
       scenario.ts            → Scenario overrides, habit costs, cost of waiting
     snap/
@@ -60,12 +62,13 @@ src/
     i18n/                    → EN/DE/FR/TR dictionaries, number/date formatters, React provider
     frugal/tokens.ts         → naive baselines (actual image size, GPT-4o tile formula), energy assumptions
     frugal/ledger.ts         → ledger entries + totals() with the exclusion rule
-    data/profiles.ts         → Lukas (ZH) and Elena (GE), fictional, 3 months of transactions
+    data/profiles.ts         → Barlas (ZH), Meriç (VD), Oktay (BS), fictional; data/history.ts seeds 5 months of transactions
+    accounts/                → accounts store: active account, local additions, API for imports (docs/ACCOUNTS.md)
 scripts/
   make-samples.ts            → the 7 sample documents in public/samples/
   copy-tesseract-assets.mjs  → postinstall copy of Tesseract worker + WASM loaders into public/tesseract/runtime/
   benchmark.ts               → heuristic checks + 19-document benchmark with receipt accuracy → docs/BENCHMARK.md
-  engine-check.ts            → finance engine on both profiles and the demo snaps
+  engine-check.ts            → finance engine on the three accounts and the demo snaps
   i18n-check.ts              → dictionary completeness, placeholder parity, and 0-token intent checks
   browser-smoke.mjs          → headless Chromium run of the real pipeline without a key (pipeline-check.ts calls it)
   e2e-live.mjs               → stage demo with real OpenRouter calls
@@ -115,6 +118,8 @@ The Node benchmark shares the receipt gate and OCR languages with the app. It do
 * Payday spike: discretionary spend per day in the payday window vs the rest of the month → share of surplus that
   leaks, shown in CHF/month.
 * Subscriptions: same merchant in ≥ 2 months.
+* Investing inputs: `investShare`, `contributes3a` and the drawdown selling below are derived from the account's
+  trades (`investBehavior.ts`), not set by hand.
 * Panic selling: with a selling history, a > 15% drawdown triggers selling `drawdownSellPct` of the portfolio,
   bought back only when the market regains its previous peak (at least 6 months). Separate RNG stream, so both twins
   see the same markets.
