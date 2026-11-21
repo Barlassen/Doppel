@@ -1,12 +1,14 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { commandExamples } from "@/lib/i18n/examples";
 import { SPEECH_LANGS, msg, type Msg } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 const MAX_COMMAND_LENGTH = 300;
+/** Example chips shown before "More examples". */
+const VISIBLE_EXAMPLES = 3;
 interface SpeechRec {
   lang: string;
   interimResults: boolean;
@@ -28,6 +30,8 @@ export function CommandBar({ onSubmit, busy, message }: { onSubmit: (t: string) 
   const [listening, setListening] = useState(false);
   const [canListen, setCanListen] = useState(false);
   const [speechMessage, setSpeechMessage] = useState<Msg>();
+  const [allExamples, setAllExamples] = useState(false);
+  const examplesId = useId();
   const rec = useRef<SpeechRec | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -130,8 +134,8 @@ export function CommandBar({ onSubmit, busy, message }: { onSubmit: (t: string) 
           {t(busy ? "cmd.simulating" : "cmd.simulate")}
         </button>
       </form>
-      <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t("cmd.examplesAria")}>
-        {commandExamples(locale).map(({ id, text: example }) => (
+      <div id={examplesId} className="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t("cmd.examplesAria")}>
+        {commandExamples(locale).slice(0, allExamples ? undefined : VISIBLE_EXAMPLES).map(({ id, text: example }) => (
           <button
             type="button"
             key={id}
@@ -145,6 +149,15 @@ export function CommandBar({ onSubmit, busy, message }: { onSubmit: (t: string) 
             {example}
           </button>
         ))}
+        <button
+          type="button"
+          aria-expanded={allExamples}
+          aria-controls={examplesId}
+          onClick={() => setAllExamples((v) => !v)}
+          className="rounded-full px-2 py-1 text-xs font-medium text-ink-2 underline-offset-2 hover:text-ink hover:underline"
+        >
+          {t(allExamples ? "cmd.fewerExamples" : "cmd.moreExamples")}
+        </button>
       </div>
       <div role="status" className="text-xs text-ink-2">
         {(speechMessage || message) && <p className="mt-2">{tm(speechMessage ?? message)}</p>}

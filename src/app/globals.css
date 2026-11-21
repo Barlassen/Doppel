@@ -83,7 +83,7 @@ body {
 }
 
 /* Let dashboard grid tracks shrink to the available width on narrow screens. */
-main > .grid > * {
+main .grid > * {
   min-width: 0;
 }
 
@@ -91,6 +91,39 @@ main > .grid > * {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
+}
+
+/* <details> disclosure with a CSS chevron (see components/ui.tsx). */
+.disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 4px;
+  padding: 2px 0;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: -2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.disclosure[open] > summary::before {
+  margin-top: -4px;
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .disclosure > summary::before {
+    transition: none;
+  }
 }
 
 .label {

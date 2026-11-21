@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { DOC_KINDS, MAX_AMOUNT, isAmount, type DocKind, type Extraction, type SnapResult } from "@/lib/snap/types";
 import { TierChip } from "./Inspector";
+import { CardHeader } from "./ui";
 
 import { msg, type Msg, type Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -89,12 +90,9 @@ export function SnapPanel({ onResult, items, forceLlm }: {
 
   const disabled = busy || !!review;
   return (
-    <section className="card min-w-0 p-4 sm:p-5">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2">
-        <div className="label">{t("snap.title")}</div>
-        <span className="text-[11px] text-ink-3">{t("snap.subtitle")}</span>
-      </div>
-      <p className="mb-3 text-sm text-ink-2">{t("snap.intro")}</p>
+    <section className="card min-w-0 p-5 sm:p-6">
+      <CardHeader title={t("snap.title")} className="mb-1" />
+      <p className="mb-4 text-sm text-ink-2">{t("snap.intro")}</p>
 
       <button
         type="button"
@@ -113,18 +111,18 @@ export function SnapPanel({ onResult, items, forceLlm }: {
           if (file) void handle(file, file.name);
         }}
         onClick={() => { if (!active.current) uploadInput.current?.click(); }}
-        className={`flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 py-5 text-center transition disabled:opacity-60 ${
+        className={`flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 py-4 text-center transition disabled:opacity-60 ${
           drag ? "border-s1 bg-s1/5" : "border-line enabled:hover:border-ink-3"
         }`}
       >
-        <span className="text-2xl" aria-hidden="true">📷</span>
+        <span className="text-xl" aria-hidden="true">📷</span>
         <span className="mt-1 text-sm font-medium">{t("snap.drop")}</span>
       </button>
       <input ref={uploadInput} type="file" accept="image/*" className="hidden" onChange={pick} />
       <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-3">{t("snap.maxSize")}</p>
+        <p className="text-xs text-ink-2">{t("common.separator", { first: t("snap.maxSize"), second: t("snap.subtitle") })}</p>
         <button type="button" disabled={disabled}
           onClick={() => { if (!active.current) cameraInput.current?.click(); }}
           className="rounded-full border border-line px-3 py-1.5 text-xs font-medium enabled:hover:border-ink-3 disabled:opacity-50">
@@ -135,7 +133,7 @@ export function SnapPanel({ onResult, items, forceLlm }: {
         {progress && <p className="mt-2">{tm(progress)}</p>}
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+      <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5">
         {SAMPLES.map((s) => (
           <button type="button" key={s.id} disabled={disabled} title={t(`snap.samples.${s.id}Hint`)} aria-label={t(`snap.samples.${s.id}`)}
             onClick={() => void handle(s.file, msg(`snap.samples.${s.id}`))}
@@ -161,7 +159,7 @@ export function SnapPanel({ onResult, items, forceLlm }: {
             <li key={it.id} className="rounded-lg bg-surface-2 px-3 py-2 text-sm">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <TierChip tier={it.result.tier} route={it.result.route} />
-                <span className="num text-[11px] text-ink-3">
+                <span className="num text-[11px] text-ink-2">
                   {t("common.separator", {
                     first: it.result.usageKnown ? msg("common.tokens", { count: it.result.usage.promptTokens + it.result.usage.completionTokens }) : msg("snap.usageUnavailable"),
                     second: msg("common.ms", { value: Math.round(it.result.steps.reduce((sum, step) => sum + step.ms, 0)) }),
