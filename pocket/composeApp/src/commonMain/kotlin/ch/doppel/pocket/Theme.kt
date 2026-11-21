@@ -39,7 +39,20 @@ private val dark = darkColorScheme(
     outlineVariant = Color(0xFF405047),
 )
 
+internal enum class ThemeMode(val label: String) {
+    SYSTEM("pocket.system"), LIGHT("pocket.light"), DARK("pocket.dark")
+}
+
 @Composable
-internal fun PocketTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) dark else light, content = content)
+internal expect fun PlatformSystemBars(dark: Boolean)
+
+@Composable
+internal fun PocketTheme(mode: ThemeMode, content: @Composable () -> Unit) {
+    val useDark = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    PlatformSystemBars(useDark)
+    MaterialTheme(colorScheme = if (useDark) dark else light, content = content)
 }

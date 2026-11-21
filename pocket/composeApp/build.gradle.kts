@@ -49,3 +49,7 @@ compose.desktop {
         mainClass = "ch.doppel.pocket.MainKt"
     }
 }
+
+compose.resources {
+    packageOfResClass = "ch.doppel.pocket.resources"
+}
