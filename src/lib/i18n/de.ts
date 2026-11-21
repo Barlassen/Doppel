@@ -33,7 +33,7 @@ export const de = {
 
   profile: {
     lukas: { tagline: "Softwareentwickler · erstes Eigenheim als Ziel" },
-    elena: { tagline: "Familie zu viert · möchte mit 58 in Pension" },
+    elena: { tagline: "Familie zu viert · plant die Pension mit 58" },
     goal: "CHF {target:mio} Mio. Nettovermögen bis {age}",
   },
 
@@ -132,9 +132,9 @@ export const de = {
     pillar3aOn: "3a voll",
     pillar3aOff: "3a aus",
     standingOrder: "Anlegen per Dauerauftrag · {amount:chf}/Mt.",
-    taxLeft: "💡 Mit voller 3a-Einzahlung sparst du {amount} Steuern pro Jahr ({max:chf} Einzahlung bei {rate:pct} Grenzsteuersatz).",
+    taxLeft: "Mit voller 3a-Einzahlung sparst du {amount} Steuern pro Jahr ({max:chf} Einzahlung bei {rate:pct} Grenzsteuersatz).",
     growthWarning:
-      "⚠️ Mehr Aktien können stärker an Wert verlieren. Beim letzten Rückgang hast du verkauft, und Doppel rechnet damit, dass es wieder passieren kann. Die höhere Aktienquote lohnt sich für dich nur, wenn du auch im Tief investiert bleibst.",
+      "Mehr Aktien können stärker an Wert verlieren. Beim letzten Rückgang hast du verkauft, und Doppel rechnet damit, dass es wieder passieren kann. Die höhere Aktienquote lohnt sich für dich nur, wenn du auch im Tief investiert bleibst.",
   },
 
   waiting: {
@@ -148,7 +148,7 @@ export const de = {
   },
 
   plan: {
-    pin: "📌 Als Plan A merken",
+    pin: "Als Plan A merken",
     pinTitle: "Merke dir den aktuellen Plan und vergleiche jede Änderung damit",
     label: "Plan A{marker} · {label}",
     atGoal: " · mit {age}: ",
@@ -242,7 +242,7 @@ export const de = {
     refresh: "Aktualisieren",
     explain: "Lage erklären",
     loading: "Zahlen werden geprüft …",
-    hint: "Das Modell bekommt nur die fertigen Zahlen (~150 Token). Es erklärt sie. Die Berechnung übernimmt Doppel.",
+    hint: "Sendet deinen Namen, dein Alter, deinen Wohnort und die Ergebnisse der Berechnung an ein Sprachmodell. Es erklärt sie, rechnet aber nie selbst. Den Verbrauch siehst du im Verbrauchscheck.",
   },
 
   narr: {
@@ -260,7 +260,7 @@ export const de = {
     habitLeakage: "Spontankäufe rund um den Zahltag",
     habitPanic: "Panikverkäufe",
     approxPerMonth: "≈ {amount:chf}/Mt.",
-    none: "Keine teuren Gewohnheiten erkannt. 👏",
+    none: "Keine teuren Gewohnheiten erkannt.",
     snapped: "Diesen Monat vs. {months}-Mt.-Schnitt",
     snappedWith_one: "Diesen Monat ({count} Beleg) vs. {months}-Mt.-Schnitt",
     snappedWith_other: "Diesen Monat ({count} Belege) vs. {months}-Mt.-Schnitt",
@@ -455,8 +455,8 @@ export const de = {
   summary: {
     listingNoPrice: "Inserat erkannt, aber kein Kaufpreis lesbar.",
     listingImplausible: "Der Kaufpreis von {amount:chf} wirkt unplausibel. Doppel hat das Inserat verworfen.",
-    listingAdded: "🏠 {label} · {amount:chf} → in deinem Zeitplan erfasst",
-    listingReplaces: "🏠 {label} · {amount:chf} → ersetzt «{old}» in deinem Zeitplan",
+    listingAdded: "{label} · {amount:chf} → in deinem Zeitplan erfasst",
+    listingReplaces: "{label} · {amount:chf} → ersetzt «{old}» in deinem Zeitplan",
     noTotal: "Kein Gesamtbetrag lesbar.",
     bill: "Rechnung",
     billFrom: "Rechnung von {merchant}",
@@ -464,18 +464,18 @@ export const de = {
     listingFallback: "Eigenheim aus Inserat",
     spend: "Ausgabe",
     recurringBill: "Wiederkehrende Rechnung",
-    billDuplicate: "🧾 {merchant} · {monthly:chf}/Mt. · bereits als {match} im Budget erfasst",
-    billRecurring: "🧾 {merchant} · {monthly:chf}/Mt. → zu deinen Fixkosten hinzugefügt",
+    billDuplicate: "{merchant} · {monthly:chf}/Mt. · bereits als {match} im Budget erfasst",
+    billRecurring: "{merchant} · {monthly:chf}/Mt. → zu deinen Fixkosten hinzugefügt",
     duplicateOf: "{merchant} ({amount:chf}/Mt.)",
-    receipt: "🧾 {merchant} · {amount:chf} · {category} → zu den Ausgaben dieses Monats hinzugefügt",
+    receipt: "{merchant} · {amount:chf} · {category} → zu den Ausgaben dieses Monats hinzugefügt",
     payslipNoNet: "Lohnabrechnung erkannt, aber kein Nettolohn lesbar.",
     payslipImplausible: "Der Nettolohn von {amount:chf} wirkt unplausibel. Doppel hat den Betrag verworfen.",
-    payslip: "💼 Nettolohn {net:chf} × 13 → brutto ca. {gross:chf}/Jahr, nach Steuern ca. {takeHome:chf}/Mt.",
+    payslip: "Nettolohn {net:chf} × 13 → brutto ca. {gross:chf}/Jahr, nach Steuern ca. {takeHome:chf}/Mt.",
     note: "Notiz",
-    noteNoAmount: "✍️ «{label}» · Kein Betrag gefunden.",
-    noteImplausible: "✍️ Der Betrag von {amount:chf} wirkt unplausibel. Doppel hat die Notiz verworfen.",
-    noteAdded: "✍️ {label} · {amount:chf} → als geplante Ausgabe erfasst",
-    noteAddedYear: "✍️ {label} · {amount:chf} im Jahr {year} → als geplante Ausgabe erfasst",
+    noteNoAmount: "«{label}» · Kein Betrag gefunden.",
+    noteImplausible: "Der Betrag von {amount:chf} wirkt unplausibel. Doppel hat die Notiz verworfen.",
+    noteAdded: "{label} · {amount:chf} → als geplante Ausgabe erfasst",
+    noteAddedYear: "{label} · {amount:chf} im Jahr {year} → als geplante Ausgabe erfasst",
     nothing: "Doppel hat auf diesem Bild keine Finanzdaten gefunden.",
   },
 
@@ -537,7 +537,7 @@ export const de = {
 
   inspector: {
     kicker: "Verbrauchscheck",
-    title: "So sparst du Token",
+    title: "Tokenverbrauch und Kosten",
     closeAria: "Verbrauchscheck schliessen",
     oursMeasured: "Doppel · gemessen",
     calls_one: "{count} Aufruf",
@@ -559,7 +559,7 @@ export const de = {
     tier1Title: "Tier 1 · Lokale Texterkennung",
     tier1Text: "Graustufen, mehr Kontrast und Tesseract. Klare Belege wertet Doppel lokal mit Suchmustern aus (0 Token). Bei unklarem Text hilft ein kleines Sprachmodell.",
     tier2Title: "Tier 2 · Graustufen-JPEG mit 512 px",
-    tier2Text: "Liegt die Erkennungssicherheit unter 65%, erhält ein kleines Bildmodell ein Graustufenbild von rund 20 KB.",
+    tier2Text: "Liegt die Erkennungssicherheit unter 65% oder schlägt die Texterkennung fehl, erhält ein kleines Bildmodell ein Graustufenbild von rund 20 KB.",
     measuredCalls: "Gemessene Aufrufe ({count})",
     baselineNote: "Der Vergleich rechnet mit der tatsächlichen Bildgrösse und höchstens 2’400 Zeichen Finanzdaten pro Frage oder Einschätzung.",
     emptyAll: "Scanne einen Beleg oder stell eine Was-wäre-wenn-Frage. Hier siehst du für jeden Aufruf den Weg, die gesendeten Bytes und den Inhalt.",
@@ -595,7 +595,7 @@ export const de = {
     stateLive: "live gemessen",
     stateEstimated: "geschätzt",
     liveCheck: "Livevergleich",
-    liveCheckText: "Sende das Originalbild direkt an GPT-4o und vergleiche den tatsächlichen Tokenverbrauch, die Kosten und die Genauigkeit.",
+    liveCheckText: "Sende das Bild als JPEG (längste Seite höchstens 2048 px) direkt an GPT-4o und vergleiche den tatsächlichen Tokenverbrauch, die Kosten und die Genauigkeit.",
     running: "GPT-4o läuft …",
     rerun: "GPT-4o erneut testen",
     run: "GPT-4o direkt testen",

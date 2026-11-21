@@ -42,7 +42,7 @@ export const fr = {
 
   profile: {
     lukas: { tagline: "Ingénieur logiciel · vise un premier achat" },
-    elena: { tagline: "Famille de quatre · rêve d’une retraite à 58 ans" },
+    elena: { tagline: "Famille de quatre · prévoit une retraite à 58 ans" },
     goal: "CHF {target:mio} M de fortune nette à {age} ans",
   },
 
@@ -141,9 +141,9 @@ export const fr = {
     pillar3aOn: "3a au maximum",
     pillar3aOff: "Pilier 3a inactif",
     standingOrder: "Ordre permanent · {amount:chf}/mois placés",
-    taxLeft: "💡 Économie d’impôt possible avec le 3a : {amount}/an ({max:chf} versés, au taux marginal de {rate:pct}).",
+    taxLeft: "Économie d’impôt possible avec le 3a : {amount}/an ({max:chf} versés, au taux marginal de {rate:pct}).",
     growthWarning:
-      "⚠️ Le profil croissance expose à des baisses plus marquées. Vous avez vendu lors de la dernière et votre jumeau tient compte de cette habitude. Une part d’actions plus élevée ne porte ses fruits que si vous gardez vos placements pendant la baisse.",
+      "Le profil croissance expose à des baisses plus marquées. Vous avez vendu lors de la dernière et votre jumeau tient compte de cette habitude. Une part d’actions plus élevée ne porte ses fruits que si vous gardez vos placements pendant la baisse.",
   },
 
   waiting: {
@@ -157,7 +157,7 @@ export const fr = {
   },
 
   plan: {
-    pin: "📌 Épingler comme Plan A",
+    pin: "Épingler comme Plan A",
     pinTitle: "Enregistrer le plan actuel pour mesurer l’effet de chaque changement",
     label: "Plan A{marker} : {label}",
     atGoal: " · à {age} ans : ",
@@ -251,7 +251,7 @@ export const fr = {
     refresh: "Actualiser",
     explain: "Analyser",
     loading: "Analyse des chiffres…",
-    hint: "Le modèle reçoit uniquement les résultats, en un seul appel (~150 tokens). Il les explique sans faire de calculs.",
+    hint: "Envoie votre nom, votre âge, votre ville et les résultats du moteur à un modèle de langage. Il les explique sans jamais calculer. L’utilisation figure dans l’inspecteur.",
   },
 
   narr: {
@@ -269,7 +269,7 @@ export const fr = {
     habitLeakage: "Dépenses après la paie et achats impulsifs",
     habitPanic: "Ventes de panique",
     approxPerMonth: "≈ {amount:chf}/mois",
-    none: "Aucune habitude coûteuse détectée. 👏",
+    none: "Aucune habitude coûteuse détectée.",
     snapped: "Dépenses non essentielles du mois · moy. sur {months} mois",
     snappedWith_one: "Dépenses non essentielles ({count} ticket ce mois) · moy. sur {months} mois",
     snappedWith_other: "Dépenses non essentielles ({count} tickets ce mois) · moy. sur {months} mois",
@@ -464,8 +464,8 @@ export const fr = {
   summary: {
     listingNoPrice: "Annonce détectée, mais aucun prix n’a pu être lu.",
     listingImplausible: "Le prix de l’annonce ({amount:chf}) semble invraisemblable — non ajouté.",
-    listingAdded: "🏠 {label} · {amount:chf} → ajout à votre chronologie",
-    listingReplaces: "🏠 {label} · {amount:chf} → ajout à votre chronologie (remplace « {old} »)",
+    listingAdded: "{label} · {amount:chf} → ajout à votre chronologie",
+    listingReplaces: "{label} · {amount:chf} → ajout à votre chronologie (remplace « {old} »)",
     noTotal: "Impossible de lire un montant total.",
     bill: "Facture",
     billFrom: "Facture · {merchant}",
@@ -473,18 +473,18 @@ export const fr = {
     listingFallback: "Logement de l’annonce",
     spend: "Dépense",
     recurringBill: "Facture récurrente",
-    billDuplicate: "🧾 {merchant} · {monthly:chf}/mois · correspond à {match} → déjà dans votre budget, rien ne change",
-    billRecurring: "🧾 {merchant} · {monthly:chf}/mois → ajout à vos charges mensuelles",
+    billDuplicate: "{merchant} · {monthly:chf}/mois · correspond à {match} → déjà dans votre budget, rien ne change",
+    billRecurring: "{merchant} · {monthly:chf}/mois → ajout à vos charges mensuelles",
     duplicateOf: "{merchant} ({amount:chf}/mois)",
-    receipt: "🧾 {merchant} · {amount:chf} · {category} → ajout aux dépenses du mois",
+    receipt: "{merchant} · {amount:chf} · {category} → ajout aux dépenses du mois",
     payslipNoNet: "Fiche de salaire détectée, mais sans salaire net.",
     payslipImplausible: "Le salaire net ({amount:chf}) semble invraisemblable — non utilisé.",
-    payslip: "💼 Salaire net {net:chf} ×13 → brut ≈ {gross:chf}/an, revenu net après impôts ≈ {takeHome:chf}/mois",
+    payslip: "Salaire net {net:chf} ×13 → brut ≈ {gross:chf}/an, revenu net après impôts ≈ {takeHome:chf}/mois",
     note: "Note",
-    noteNoAmount: "✍️ « {label} » — aucun montant trouvé.",
-    noteImplausible: "✍️ Le montant {amount:chf} semble invraisemblable — non ajouté.",
-    noteAdded: "✍️ {label} · {amount:chf} → ajout comme dépense prévue",
-    noteAddedYear: "✍️ {label} · {amount:chf} en {year} → ajout comme dépense prévue",
+    noteNoAmount: "« {label} » — aucun montant trouvé.",
+    noteImplausible: "Le montant {amount:chf} semble invraisemblable — non ajouté.",
+    noteAdded: "{label} · {amount:chf} → ajout comme dépense prévue",
+    noteAddedYear: "{label} · {amount:chf} en {year} → ajout comme dépense prévue",
     nothing: "Aucun élément financier détecté dans cette image.",
   },
 
@@ -546,7 +546,7 @@ export const fr = {
 
   inspector: {
     kicker: "Inspecteur du pipeline frugal",
-    title: "Chaque token est compté.",
+    title: "Utilisation et coût des tokens",
     closeAria: "Fermer l’inspecteur du pipeline frugal",
     oursMeasured: "Doppel · mesuré",
     calls_one: "{count} appel",
@@ -568,7 +568,7 @@ export const fr = {
     tier1Title: "Tier 1 · OCR local → texte",
     tier1Text: "Niveaux de gris + contraste + Tesseract. Les documents nets sont traités par regex locale (0 tok) ; les textes ambigus vont à un petit LLM.",
     tier2Title: "Tier 2 · JPEG gris 512px",
-    tier2Text: "Uniquement si la confiance OCR < 65 % : une image en niveaux de gris de ~20 Ko est envoyée à un petit VLM.",
+    tier2Text: "Uniquement si la confiance OCR < 65 % ou si l’OCR échoue : une image en niveaux de gris de ~20 Ko est envoyée à un petit VLM.",
     measuredCalls: "Appels mesurés ({count})",
     baselineNote: "La référence utilise les dimensions d’origine de l’image. Pour les scénarios et les synthèses, les données du jumeau sont limitées à 2’400 caractères.",
     emptyAll: "Scannez un document ou testez un scénario — chaque appel apparaît ici avec sa route, les octets envoyés et sa charge utile.",
@@ -604,7 +604,7 @@ export const fr = {
     stateLive: "mesuré en direct",
     stateEstimated: "estimé",
     liveCheck: "Comparaison en direct",
-    liveCheckText: "L’image originale est envoyée directement à GPT-4o pour comparer le nombre de tokens utilisés, le coût et la précision.",
+    liveCheckText: "L’image est envoyée directement à GPT-4o en JPEG (2048 px au plus sur le grand côté) pour comparer le nombre de tokens utilisés, le coût et la précision.",
     running: "Exécution de GPT-4o…",
     rerun: "Relancer GPT-4o naïf",
     run: "Tester la méthode naïve (GPT-4o)",
