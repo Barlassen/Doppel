@@ -1,3 +1,5 @@
+import type { Msg, Text } from "@/lib/i18n/types";
+
 export type RiskProfile = "conservative" | "balanced" | "growth";
 
 export const RISK_PROFILES: RiskProfile[] = ["conservative", "balanced", "growth"];
@@ -14,7 +16,10 @@ export type EventType =
 export interface LifeEvent {
   id: string;
   type: EventType;
+  /** Plain label: data for the LLM prompt and scripts (English for built-in events, as typed for LLM ones). */
   label: string;
+  /** Translatable label for the UI, when the event was created by Doppel itself (profile, parser, snap). */
+  labelMsg?: Msg;
   /** Months from today when the event starts. */
   month: number;
   /** CHF. House: purchase price. Expense/income: one-off amount. Raise: +gross/yr. Child: monthly cost. */
@@ -51,7 +56,7 @@ export interface Transaction {
 export const GOAL_DEFINITION = "net worth incl. pillar 2, pillar 3a & home equity, today's CHF";
 
 export interface Goal {
-  label: string;
+  label: Msg;
   /** Net-worth target (see GOAL_DEFINITION), CHF in today's money. */
   target: number;
   /** Age at which the goal should be reached. */
@@ -64,7 +69,7 @@ export interface Profile {
   age: number;
   city: string;
   canton: string;
-  tagline: string;
+  tagline: Msg;
   grossIncomeYear: number;
   /** Monthly take-home pay after social deductions AND income tax (12 equal months). */
   netIncomeMonth: number;
@@ -105,7 +110,7 @@ export interface BehaviorParams {
 /** A recurring cost added to the twin (e.g. from a snapped QR-bill premium). */
 export interface RecurringExpense {
   id: string;
-  label: string;
+  label: Text;
   monthly: number;
   source?: LifeEvent["source"];
 }
@@ -126,7 +131,7 @@ export interface Scenario {
   contributes3a?: boolean;
   retirementAge?: number;
   /** Income read from a payslip (overrides the profile). */
-  income?: { grossIncomeYear: number; netIncomeMonth: number; label: string } | null;
+  income?: { grossIncomeYear: number; netIncomeMonth: number; label: Text } | null;
   recurring: RecurringExpense[];
   /** Snapped receipts — feed the "this month" figure of the behavioural twin. */
   extraTx: Transaction[];

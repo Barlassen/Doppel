@@ -1,5 +1,6 @@
 import { simulate } from "./monteCarlo";
 import type { BehaviorParams, Profile, Scenario, SimInput } from "./types";
+import type { Msg } from "@/lib/i18n/types";
 
 /** Seed and path count of the headline odds. Everything that is compared to the headline uses these. */
 export const HEADLINE = { seed: 42, paths: 1000 } as const;
@@ -56,7 +57,7 @@ export function habitCosts(input: SimInput): HabitCosts | null {
 }
 
 export interface WaitingCost {
-  label: string;
+  label: Msg;
   startMonth: number;
   prob: number;
 }
@@ -69,9 +70,9 @@ export function costOfWaiting(input: SimInput): WaitingCost[] | null {
   if (input.optimizeIdleCash) return null;
   const run = (patch: Partial<SimInput>) => simulate({ ...input, ...HEADLINE, horizon: "goal", ...patch }).successProb;
   return [
-    { label: "Now", startMonth: 0, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 0 }) },
-    { label: "In 2 years", startMonth: 24, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 24 }) },
-    { label: "In 5 years", startMonth: 60, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 60 }) },
-    { label: "Never", startMonth: -1, prob: run({}) },
+    { label: { key: "waiting.now" }, startMonth: 0, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 0 }) },
+    { label: { key: "waiting.inYears", params: { count: 2 } }, startMonth: 24, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 24 }) },
+    { label: { key: "waiting.inYears", params: { count: 5 } }, startMonth: 60, prob: run({ optimizeIdleCash: true, optimizeFromMonth: 60 }) },
+    { label: { key: "waiting.never" }, startMonth: -1, prob: run({}) },
   ];
 }

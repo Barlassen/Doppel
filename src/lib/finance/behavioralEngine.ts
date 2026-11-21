@@ -1,10 +1,11 @@
 import type { BehaviorParams, Profile, Transaction } from "./types";
-import { groupCh } from "@/lib/format";
+import { categoryMsg, merchantText } from "@/lib/data/merchants";
+import type { Msg } from "@/lib/i18n/types";
 
 export interface BehaviorInsight {
   id: string;
-  title: string;
-  detail: string;
+  title: Msg;
+  detail: Msg;
   monthlyChf?: number;
 }
 
@@ -21,7 +22,7 @@ export interface BehaviorProfile {
   /** Snapped receipts vs. the 3-month baseline of discretionary spending. */
   thisMonth: { discretionary: number; total: number; count: number; baseline: number };
   /** One concrete place to find savings, derived from the transactions (used by the solver). */
-  spendTip: string;
+  spendTip: Msg;
 }
 
 const DISCRETIONARY = new Set<Transaction["category"]>(["dining", "shopping", "travel", "subscriptions"]);
@@ -84,16 +85,16 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
     const extraMonthly = Math.round(((after / afterDays - before / beforeDays) * afterDays) / historyMonths);
     insights.push({
       id: "payday",
-      title: `Payday spike ×${paydaySpike.toFixed(1)}`,
-      detail: `In the week after payday you spend ${paydaySpike.toFixed(1)}× more per day on dining & shopping.`,
+      title: { key: "insight.paydayTitle", params: { x: paydaySpike } },
+      detail: { key: "insight.paydayDetail", params: { x: paydaySpike } },
       monthlyChf: extraMonthly,
     });
   }
   if (leakageChfMonth > 0) {
     insights.push({
       id: "leak",
-      title: `${Math.round(leakageRate * 100)}% of your surplus leaks`,
-      detail: `Of the ≈ CHF ${groupCh(surplus)} left each month, about this much is spent unplanned instead of saved.`,
+      title: { key: "insight.leakTitle", params: { rate: leakageRate } },
+      detail: { key: "insight.leakDetail", params: { surplus } },
       monthlyChf: leakageChfMonth,
     });
   }
@@ -101,16 +102,19 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
     const sum = subscriptions.reduce((s, x) => s + x.monthly, 0);
     insights.push({
       id: "subs",
-      title: `${subscriptions.length} recurring subscriptions`,
-      detail: subscriptions.map((s) => `${s.merchant} ${s.monthly}`).join(" · "),
+      title: { key: "insight.subsTitle", params: { count: subscriptions.length } },
+      detail: {
+        key: "insight.subsList",
+        params: { items: subscriptions.map((s): Msg => ({ key: "insight.subsItem", params: { merchant: merchantText(s.merchant), amount: s.monthly } })) },
+      },
       monthlyChf: sum,
     });
   }
   if (p.history.soldInDrawdown) {
     insights.push({
       id: "panic",
-      title: "Sells in drawdowns",
-      detail: `Last big dip you sold ${Math.round(p.history.drawdownSellPct * 100)}% of your equities. Your twin assumes a ${Math.round(panicSellProb * 100)}% chance you do it again — and that you only buy back once the market is back at its old high.`,
+      title: { key: "insight.panicTitle" },
+      detail: { key: "insight.panicDetail", params: { sold: p.history.drawdownSellPct, prob: panicSellProb } },
     });
   }
 
@@ -124,15 +128,18 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
   };
 
   // Where would a spending cut come from? Payday spike first, then the biggest flexible category.
-  let spendTip: string;
-  if (paydaySpike > 1.25) spendTip = "Your payday-week dining & shopping is the easiest place to find it.";
+  let spendTip: Msg;
+  if (paydaySpike > 1.25) spendTip = { key: "insight.tipPayday" };
   else {
     const byCat = new Map<string, number>();
     for (const t of tx) if (DISCRETIONARY.has(t.category)) byCat.set(t.category, (byCat.get(t.category) ?? 0) + t.amount);
     const top = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
     spendTip = top
-      ? `Your biggest flexible line is ${top[0]} (≈ CHF ${groupCh(Math.round(top[1] / historyMonths))}/month); fixed costs like rent and insurance are the next lever.`
-      : "Look at fixed costs first: rent, insurance and transport.";
+      ? {
+          key: "insight.tipCategory",
+          params: { category: categoryMsg(top[0] as Transaction["category"]), amount: Math.round(top[1] / historyMonths) },
+        }
+      : { key: "insight.tipFixed" };
   }
 
   return { params, paydaySpike, subscriptions, discretionaryShare, insights, leakageChfMonth, historyMonths, thisMonth, spendTip };

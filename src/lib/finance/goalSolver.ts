@@ -2,12 +2,12 @@ import { simulate } from "./monteCarlo";
 import { HEADLINE } from "./scenario";
 import { BUFFER_MONTHS, PILLAR_3A_MAX } from "./swissRules";
 import type { SimInput, SimResult } from "./types";
-import { groupCh } from "@/lib/format";
+import type { Msg } from "@/lib/i18n/types";
 
 export interface Recipe {
   id: "spend" | "invest" | "timing" | "combo";
-  title: string;
-  detail: string;
+  title: Msg;
+  detail: Msg;
   /** Goal odds after applying the recipe — scored exactly like the headline (seed 42, 1,000 paths). */
   newProb: number;
   /** True when newProb ≥ 80%. Otherwise the UI must say "improves to X%", not "fixes". */
@@ -37,7 +37,7 @@ const SEARCH = { paths: 300, seed: 7 } as const;
  * winning recipe is then re-scored on the headline's 1,000 paths and seed, so "Apply" lands on
  * exactly the advertised number.
  */
-export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): SolverResult {
+export function solveGoal(base: SimInput, opts: { spendTip?: Msg } = {}): SolverResult {
   const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   const search = (patch: Partial<SimInput>): SimResult => simulate({ ...base, ...patch, ...SEARCH, horizon: "goal" });
   const score = (patch: Partial<SimInput>): SimResult => simulate({ ...base, ...patch, ...HEADLINE, horizon: "goal" });
@@ -76,8 +76,10 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
   if (spend) {
     recipes.push({
       id: "spend",
-      title: `Spend CHF ${groupCh(spend.cut)} less per month`,
-      detail: `≈ CHF ${Math.round(spend.cut / 30)} a day. ${opts.spendTip ?? ""}`.trim(),
+      title: { key: "recipe.spendTitle", params: { amount: spend.cut } },
+      detail: opts.spendTip
+        ? { key: "recipe.spendDetail", params: { daily: Math.round(spend.cut / 30), tip: opts.spendTip } }
+        : { key: "recipe.spendDetailNoTip", params: { daily: Math.round(spend.cut / 30) } },
       newProb: spend.prob,
       reaches: spend.prob >= TARGET,
       apply: { kind: "expenseDelta", value: ed0 - spend.cut },
@@ -91,8 +93,10 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
     const taxSaving = p.contributes3a ? 0 : Math.round(PILLAR_3A_MAX * p.marginalTaxRate);
     recipes.push({
       id: "invest",
-      title: `Invest CHF ${Math.round(idle / 1000)}k idle cash${taxSaving ? " + max out 3a" : ""}`,
-      detail: `Keep a ${BUFFER_MONTHS}-month buffer, invest the rest and every month's surplus${taxSaving ? `; 3a saves ~CHF ${groupCh(taxSaving)} tax per year` : ""}.`,
+      title: { key: taxSaving ? "recipe.investTitle3a" : "recipe.investTitle", params: { k: Math.round(idle / 1000) } },
+      detail: taxSaving
+        ? { key: "recipe.investDetail3a", params: { months: BUFFER_MONTHS, tax: taxSaving } }
+        : { key: "recipe.investDetail", params: { months: BUFFER_MONTHS } },
       newProb: prob,
       reaches: prob >= TARGET,
       apply: { kind: "optimize" },
@@ -107,11 +111,11 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
       if ((search({ events: shifted(d) }).house?.boughtProb ?? 0) < TARGET) continue;
       const r = score({ events: shifted(d) });
       if ((r.house?.boughtProb ?? 0) < TARGET) continue;
-      const passPct = Math.round((r.house?.boughtProb ?? 0) * 100);
+      const pass = r.house?.boughtProb ?? 0;
       recipes.push({
         id: "timing",
-        title: `Buy the home ${d} months later`,
-        detail: `By then your savings and salary pass the bank's affordability test for ${house.label} in ${passPct}% of futures.`,
+        title: { key: "recipe.timingTitle", params: { months: d } },
+        detail: { key: "recipe.timingDetail", params: { home: house.labelMsg ?? house.label, pass } },
         newProb: r.successProb,
         reaches: r.successProb >= TARGET,
         apply: { kind: "delay", eventId: house.id, months: d },
@@ -122,8 +126,8 @@ export function solveGoal(base: SimInput, opts: { spendTip?: string } = {}): Sol
         if (combo) {
           recipes.push({
             id: "combo",
-            title: `Buy ${d} months later + spend CHF ${groupCh(combo.cut)} less`,
-            detail: `The delay gets you through the bank test (${passPct}% of futures); the cut closes the rest of the gap to your goal.`,
+            title: { key: "recipe.comboTitle", params: { months: d, amount: combo.cut } },
+            detail: { key: "recipe.comboDetail", params: { pass } },
             newProb: combo.prob,
             reaches: combo.prob >= TARGET,
             apply: { kind: "combo", eventId: house.id, months: d, expenseDelta: ed0 - combo.cut },
