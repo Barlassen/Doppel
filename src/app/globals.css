@@ -82,6 +82,11 @@ body {
   font-feature-settings: "tnum" 1, "cv11" 1;
 }
 
+/* Let dashboard grid tracks shrink to the available width on narrow screens. */
+main > .grid > * {
+  min-width: 0;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -100,10 +105,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
 .pulse-soft {
   animation: pulse-soft 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-soft {
+    animation: none;
+  }
 }

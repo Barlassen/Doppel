@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint --ignore-pattern public/tesseract/runtime/**",
+    "postinstall": "node scripts/copy-tesseract-assets.mjs",
+    "smoke:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {
     "jsqr": "^1.4.0",
@@ -14,7 +16,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "recharts": "^3.11.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -25,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.29",
+    "playwright": "1.65.1",
     "qrcode": "^1.5.4",
     "tailwindcss": "^4",
     "typescript": "^5"

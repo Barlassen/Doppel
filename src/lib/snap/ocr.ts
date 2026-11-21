@@ -1,14 +1,69 @@
 "use client";
 
-import type { Worker } from "tesseract.js";
+import type { LoggerMessage, RecognizeOptions, Worker } from "tesseract.js";
 
+const INIT_MS = 12_000;
+const RECOGNIZE_MS = 8_000;
 let workerPromise: Promise<Worker> | null = null;
+let queue = Promise.resolve();
+let report: ((message: string) => void) | undefined;
 
-/** Lazily creates one Tesseract worker (eng+deu) and keeps it warm for the whole session. */
-export function getOcrWorker(): Promise<Worker> {
-  if (!workerPromise) {
-    workerPromise = import("tesseract.js").then(({ createWorker }) => createWorker(["eng", "deu"]));
+async function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(message)), ms)));
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+function getOcrWorker(): Promise<Worker> {
+  if (workerPromise) return workerPromise;
+
+  let abandoned = false;
+  let loading = 0;
+  report?.("Loading OCR 0%…");
+  const ranges: Record<string, [number, number]> = {
+    "loading tesseract core": [0, 25],
+    "initializing tesseract": [25, 35],
+    "loading language traineddata": [35, 85],
+    "initializing api": [85, 100],
+  };
+  const logger = ({ status, progress }: LoggerMessage) => {
+    if (abandoned) return;
+    if (status === "recognizing text") {
+      report?.(`Reading text ${Math.round(progress * 100)}%…`);
+      return;
+    }
+    const range = ranges[status];
+    if (range) {
+      loading = Math.max(loading, Math.round(range[0] + progress * (range[1] - range[0])));
+      report?.(`Loading OCR ${loading}%…`);
+    }
+  };
+
+  let initError: (reason: Error) => void;
+  const initFailed = new Promise<never>((_, reject) => { initError = reject; });
+  const starting = import("tesseract.js").then(async ({ createWorker, OEM }) => {
+    if (abandoned) throw new Error("OCR initialization canceled");
+    const worker = await createWorker(["eng", "deu", "fra"], OEM.LSTM_ONLY, {
+      workerPath: "/tesseract/runtime/worker.min.js",
+      corePath: "/tesseract/runtime",
+      langPath: "/tesseract",
+      workerBlobURL: false,
+      cachePath: "doppel-tessdata-fast-4.1.0",
+      logger,
+      errorHandler: () => initError(new Error("OCR assets or initialization failed")),
+    });
+    if (abandoned) await worker.terminate();
+    return worker;
+  });
+  workerPromise = withDeadline(Promise.race([starting, initFailed]), INIT_MS, "OCR initialization timed out").catch((error) => {
+    abandoned = true;
+    workerPromise = null;
+    throw error;
+  });
   return workerPromise;
 }
 
@@ -22,10 +77,37 @@ export interface OcrResult {
 }
 
 const NOISE = /^[\W_]{0,3}$/;
+const AMOUNT_CUE = /\b(?:chf[\s:]*\d|\d+\s*k\b)|\b(?:nettolohn|net pay|salaire net|total|summe|kaufpreis)\b[^\n]*\d/i;
 
-export async function runOcr(canvas: HTMLCanvasElement): Promise<OcrResult> {
-  const worker = await getOcrWorker();
-  const { data } = await worker.recognize(canvas, {}, { text: true, blocks: true });
+export function runOcr(canvas: HTMLCanvasElement, progress?: (message: string) => void, sparse = false): Promise<OcrResult> {
+  const work = queue.then(async () => {
+    report = progress;
+    try {
+      const worker = await getOcrWorker();
+      report?.("Reading text 0%…");
+      try {
+        // The worker accepts Tesseract variables here, which its TS declaration omits.
+        const options: Partial<RecognizeOptions> & { tessedit_pageseg_mode?: string } = sparse ? { tessedit_pageseg_mode: "11" } : {};
+        const { data } = await withDeadline(
+          worker.recognize(canvas, options, { text: true, blocks: true }),
+          RECOGNIZE_MS,
+          "OCR recognition timed out",
+        );
+        return compactOcr(data);
+      } catch (error) {
+        workerPromise = null;
+        await worker.terminate();
+        throw error;
+      }
+    } finally {
+      report = undefined;
+    }
+  });
+  queue = work.then(() => undefined, () => undefined);
+  return work;
+}
+
+function compactOcr(data: Awaited<ReturnType<Worker["recognize"]>>["data"]): OcrResult {
   const lines: { text: string; confidence: number }[] = [];
   for (const b of data.blocks ?? []) {
     for (const p of b.paragraphs) {
@@ -42,7 +124,9 @@ export async function runOcr(canvas: HTMLCanvasElement): Promise<OcrResult> {
     seen.add(key);
     kept.push(t);
   }
-  let compact = kept.slice(0, 24).join("\n");
-  if (compact.length > 600) compact = compact.slice(0, 600);
-  return { confidence: data.confidence, rawText: data.text, compact, keptLines: kept.length, totalLines: lines.length };
+  const compact = kept.slice(0, 24).join("\n").slice(0, 600);
+  // A page average can hide a poorly read amount among clear headings and footers.
+  const confidence = lines.reduce((min, line) =>
+    AMOUNT_CUE.test(line.text) ? Math.min(min, line.confidence) : min, Math.max(0, data.confidence));
+  return { confidence, rawText: data.text, compact, keptLines: compact ? compact.split("\n").length : 0, totalLines: lines.length };
 }

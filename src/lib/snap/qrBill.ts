@@ -1,4 +1,4 @@
-import type { Extraction } from "./types";
+import { isAmount, type Extraction } from "./types";
 
 /**
  * Parses a Swiss QR-bill payload (SIX Implementation Guidelines v2.x).
@@ -19,7 +19,7 @@ export interface QrBill {
 
 export function parseQrBill(raw: string): QrBill | null {
   const l = raw.replace(/\r\n/g, "\n").split("\n");
-  if (l[0] !== "SPC" || !l[1]?.startsWith("02")) return null;
+  if (l[0] !== "SPC" || !/^02\d{2}$/.test(l[1] ?? "") || l[2] !== "1" || l[30] !== "EPD") return null;
   const structured = l[4] === "S";
   const amount = l[18] ? Number(l[18]) : undefined;
   return {
@@ -30,7 +30,7 @@ export function parseQrBill(raw: string): QrBill | null {
       town: structured ? l[9] ?? "" : l[7] ?? "",
       country: l[10] ?? "",
     },
-    amount: Number.isFinite(amount) ? amount : undefined,
+    amount: isAmount(amount) ? amount : undefined,
     currency: l[19] ?? "CHF",
     debtorName: l[21] || undefined,
     referenceType: l[27] ?? "NON",
@@ -44,7 +44,7 @@ export function qrBillToExtraction(b: QrBill): Extraction {
   const insurance = /kranken|versicherung|assurance|insurance/i.test(b.creditor.name + b.message);
   return {
     kind: "bill",
-    amount: b.amount,
+    amount: b.currency === "CHF" ? b.amount : undefined,
     merchant: b.creditor.name,
     location: b.creditor.town,
     category: insurance ? "insurance" : "bills",
