@@ -2,6 +2,7 @@ import { isLocale, type Locale } from "@/lib/i18n/types";
 import { NextResponse } from "next/server";
 import { DOC_KINDS, isAmount, type DocKind } from "@/lib/snap/types";
 import { validateFloorPlanExtraction } from "@/lib/snap/vision/floorplan";
+import { RECEIPT_MODEL_FIELDS, RECEIPT_MODEL_PROMPT, RECEIPT_OUTPUT_TOKENS, RECEIPT_TEXT_LIMIT, validatedReceiptExtraction } from "@/lib/snap/receipt";
 
 const TEXT_MODEL = process.env.DOPPEL_TEXT_MODEL || "google/gemini-2.5-flash-lite";
 const VISION_MODEL = process.env.DOPPEL_VISION_MODEL || "google/gemini-2.5-flash-lite";
@@ -41,7 +42,7 @@ let inFlight = 0;
 
 type JsonObject = Record<string, unknown>;
 type Task =
-  | { task: "extract_text"; text: string }
+  | { task: "extract_text"; text: string; receipt: boolean }
   | { task: "extract_image" | "extract_floorplan" | "naive_compare"; image: string; imageBytes: number }
   | { task: "command"; text: string; now: string; events: string }
   | { task: "narrate"; facts: JsonObject; lang: Locale };
@@ -121,7 +122,8 @@ function parseTask(input: unknown): Task {
   const { task, text, image, now, events, facts } = input;
   switch (task) {
     case "extract_text":
-      if (textInRange(text, 800)) return { task, text };
+      if (input.receipt !== undefined && typeof input.receipt !== "boolean") break;
+      if (textInRange(text, input.receipt === true ? RECEIPT_TEXT_LIMIT : 800)) return { task, text, receipt: input.receipt === true };
       break;
     case "extract_image":
     case "extract_floorplan":
@@ -178,6 +180,10 @@ function providerRequest(body: Task, redactImage = false) {
   let content: string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
   switch (body.task) {
     case "extract_text":
+      if (body.receipt) {
+        system = RECEIPT_MODEL_PROMPT;
+        maxTokens = RECEIPT_OUTPUT_TOKENS;
+      }
       content = delimited("document", body.text);
       break;
     case "extract_image":
@@ -191,6 +197,9 @@ function providerRequest(body: Task, redactImage = false) {
       } else if (body.task === "extract_floorplan") {
         maxTokens = 320;
         system = FLOORPLAN_SYS;
+      } else {
+        maxTokens = RECEIPT_OUTPUT_TOKENS;
+        system += " " + RECEIPT_MODEL_FIELDS;
       }
       content = [
         { type: "text", text: naive ? "Extract every financial detail as JSON." : "Extract JSON." },
@@ -388,7 +397,8 @@ export async function POST(req: Request) {
           if (body.task === "command") data = validatedOps(json);
           else if (body.task === "naive_compare") data = json;
           else if (body.task === "extract_floorplan") data = validateFloorPlanExtraction(json);
-          else data = validatedExtraction(json);
+          else if (json.kind === "receipt") data = validatedReceiptExtraction(json);
+          else if (body.task !== "extract_text" || !body.receipt) data = validatedExtraction(json);
         }
       }
     }

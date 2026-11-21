@@ -1,8 +1,9 @@
 ﻿import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { access } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import QRCode from "qrcode";
@@ -18,6 +19,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 const require = createRequire(import.meta.url);
 const payslipPath = process.env.DOPPEL_SMOKE_PAYSLIP || "public/samples/payslip.svg";
 const payslipAvailable = await access(payslipPath).then(() => true, () => false);
+const receiptScreenshots = process.env.DOPPEL_RECEIPT_SCREENSHOTS;
 
 assert.equal(await fetch(baseURL).then(() => true, () => false), false, `Port ${port} is already in use`);
 const server = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "-p", port], {
@@ -85,11 +87,34 @@ async function scan(page, sample) {
     route: await card.getAttribute("data-route"),
     outcome: await card.getAttribute("data-outcome"),
     kind: await card.getByLabel("Document type").inputValue(),
-    amount: await card.getByLabel("Amount (CHF)").inputValue(),
+    amount: await card.getByLabel(/^(Amount|Total) \(CHF\)$/).inputValue(),
     confidence: await card.getByText(/^OCR \d/).textContent({ timeout: 1000 }).catch(() => null),
   };
   console.log(sample, JSON.stringify(result));
   return { card, ...result };
+}
+
+async function uploadReceipt(page, locale) {
+  const L = (key, params) => translate(locale, key, params);
+  const filePicker = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: L("snap.uploadAria") }).click();
+  await (await filePicker).setFiles("public/samples/receipt-market.svg");
+  const review = page.getByRole("form", { name: L("review.formAria") });
+  await review.waitFor({ timeout: 45_000 });
+  return review;
+}
+
+async function captureReceiptReview(page, review, locale) {
+  if (!receiptScreenshots) return;
+  await mkdir(receiptScreenshots, { recursive: true });
+  const original = page.viewportSize();
+  for (const { width, height } of [{ width: 320, height: 800 }, { width: 1280, height: 900 }]) {
+    await page.setViewportSize({ width, height });
+    await review.evaluate((form) => form.scrollIntoView({ block: "start" }));
+    await assertNoOverflow(page);
+    await page.screenshot({ path: join(receiptScreenshots, "receipt-" + locale + "-" + width + "x" + height + ".png"), animations: "disabled" });
+  }
+  if (original) await page.setViewportSize(original);
 }
 
 function check(result, tier, route, kind, amount) {
@@ -214,7 +239,37 @@ try {
 
   const receipt = await scan(page, "Receipt");
   check(receipt, 1, "local-regex", "receipt", 87.45);
+  assert.equal(await receipt.card.getByLabel(/^Item \d+ name$/).count(), 13);
   await receipt.card.getByRole("button", { name: "Discard" }).click();
+
+  const market = await uploadReceipt(page, "en");
+  assert.equal(await market.getAttribute("data-route"), "local-regex");
+  assert.equal(await market.getByLabel(/^Item \d+ name$/).count(), 6);
+  assert.equal(await market.getByLabel("Item 1 name").inputValue(), "Vollmilch");
+  assert.equal(await market.getByLabel("Item 6 amount (CHF)").inputValue(), "-2");
+  assert.equal(await market.getByLabel("Total (CHF)").inputValue(), "47.3");
+  await market.getByText("Items CHF 47.30 · Total CHF 47.30").waitFor();
+  await captureReceiptReview(page, market, "en");
+  await market.getByLabel("Item 1 amount (CHF)").fill("4.90");
+  await market.getByText(DICTIONARIES.en.receipt.mismatch).waitFor();
+  await market.getByLabel("Item 1 amount (CHF)").fill("3.90");
+  await market.getByRole("button", { name: "Remove item 6" }).click();
+  await market.getByRole("button", { name: "Add item" }).click();
+  await market.getByLabel("Item 6 name").fill("Corrected discount");
+  await market.getByLabel("Item 6 amount (CHF)").fill("-2.00");
+  await market.getByLabel("Category").selectOption("shopping");
+  await market.getByText("Items CHF 47.30 · Total CHF 47.30").waitFor();
+  await market.getByRole("button", { name: "Add to twin" }).click();
+  const itemSummary = page.getByText("6 items · CHF 47.30", { exact: true });
+  await itemSummary.click();
+  await page.getByText("Corrected discount", { exact: true }).waitFor();
+  await page.getByTitle(DICTIONARIES.en.badge.title).click();
+  const receiptInspector = page.getByRole("dialog", { name: DICTIONARIES.en.inspector.title });
+  await receiptInspector.getByText("6 items · CHF 47.30", { exact: true }).click();
+  await receiptInspector.getByText("Corrected discount", { exact: true }).waitFor();
+  await receiptInspector.getByRole("button", { name: DICTIONARIES.en.inspector.closeAria }).click();
+  console.log("Receipt upload, item edits, sum warning, confirmation and Inspector details passed");
+
   const listing = await scan(page, "Listing");
   check(listing, 1, "local-regex", "listing", 940_000);
   await listing.card.getByRole("button", { name: "Discard" }).click();
@@ -276,9 +331,22 @@ try {
 
   await page.evaluate(() => localStorage.setItem("doppel:force-llm", "1"));
   const forced = await scan(page, "Receipt");
-  check(forced, 1, "offline-heuristic", "receipt", 87.45);
+  check(forced, 2, "offline-heuristic", "receipt", 87.45);
   assert.equal(gatewayCalls.at(-1).task, "extract_text");
+  assert.equal(gatewayCalls.at(-1).receipt, true);
+  assert.equal(typeof gatewayCalls.at(-1).image, "undefined");
   await forced.card.getByRole("button", { name: "Discard" }).click();
+  await page.route("**/api/twin", (route) => route.fulfill({
+    json: {
+      ok: true,
+      data: { kind: "receipt", merchant: "Alpina Markt", amount: 87.45, currency: "CHF", items: [{ name: "Vollmilch", amount: 1.65 }] },
+      usage: { promptTokens: 120, completionTokens: 40, costUsd: 0.000028, model: "Test model" },
+    },
+  }), { times: 1 });
+  const unbalanced = await scan(page, "Receipt");
+  assert.deepEqual([unbalanced.tier, unbalanced.route, unbalanced.outcome, unbalanced.amount], [2, "text-llm", "partial", "87.45"]);
+  await unbalanced.card.getByText(DICTIONARIES.en.receipt.mismatch).waitFor();
+  await unbalanced.card.getByRole("button", { name: "Discard" }).click();
   await page.evaluate(() => localStorage.removeItem("doppel:force-llm"));
 
   const recovery = await browser.newContext({ locale: "en-US" });
@@ -317,6 +385,12 @@ try {
     await page.getByText(L("speech.review")).waitFor();
     assert.equal(await page.evaluate(() => window.testSpeechLanguage), tag);
 
+    // Only the first examples show by default; expand once (the toggle then reads "Fewer examples").
+    const moreExamples = page.getByRole("button", { name: L("cmd.moreExamples"), exact: true });
+    if (await moreExamples.count()) {
+      await moreExamples.click();
+      assert.equal(await page.getByRole("button", { name: L("cmd.fewerExamples"), exact: true }).getAttribute("aria-expanded"), "true");
+    }
     const callsBefore = gatewayCalls.length;
     await page.getByRole("button", { name: L("cmd.examples.retire"), exact: true }).click();
     await page.getByText(new RegExp(escapeRegExp(L("cmd.parsedLocally")))).waitFor();
@@ -326,6 +400,15 @@ try {
 
   // The last case leaves Turkish active.
   const T = (key, params) => translate("tr", key, params);
+  if (receiptScreenshots) {
+    const turkish = await browser.newContext({ locale: "tr-TR", viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+    const turkishPage = await turkish.newPage();
+    await turkishPage.goto(baseURL);
+    const turkishReceipt = await uploadReceipt(turkishPage, "tr");
+    await turkishReceipt.getByText(T("receipt.sum", { sum: "CHF 47.30", total: "CHF 47.30" })).waitFor();
+    await captureReceiptReview(turkishPage, turkishReceipt, "tr");
+    await turkish.close();
+  }
   await page.getByTitle(T("badge.title")).click();
   const inspector = page.getByRole("dialog", { name: T("inspector.title") });
   await inspector.getByRole("button", { name: new RegExp(escapeRegExp(T("ledger.snap", { name: { key: "snap.samples.qr" } }))) }).click();

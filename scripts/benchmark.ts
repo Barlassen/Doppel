@@ -3,10 +3,9 @@ import { translate } from "../src/lib/i18n";
  * Doppel Multimodal Frugality Benchmark
  *
  * 1. Runs deterministic unit checks on src/lib/snap/heuristics.ts (DE/FR/EN + OCR noise).
- * 2. Deterministically generates a 16-document evaluation set (5 clean originals + 2 clean FR
- *    + 9 photo-like degraded JPG variants in public/samples/bench/, 315 KB total).
+ * 2. Reads clean originals and reproducible phone-photo variants in public/samples/bench/.
  * 3. Runs the Node mirror of Doppel's cascade (multi-scale jsQR → grayscale/contrast + Tesseract
- *    eng+deu → local-regex fast path → Tier 1 text LLM → Tier 2 512px gray JPEG VLM).
+ *    eng+deu+fra → local-regex fast path → compact text model or 512px grayscale vision).
  *    If OPENROUTER_API_KEY is set (env or .env.local), executes live OpenRouter API calls for
  *    escalated tiers and the naive GPT-4o baseline; otherwise reports measured local/offline
  *    execution alongside explicitly labelled LLM estimates.
@@ -18,13 +17,19 @@ import { translate } from "../src/lib/i18n";
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import jsQR from "jsqr";
 import { createWorker, type Worker } from "tesseract.js";
 import { parseQrBill, qrBillToExtraction } from "@/lib/snap/qrBill";
 import { classifyDoc, heuristicExtract } from "@/lib/snap/heuristics";
+import { compactOcr } from "@/lib/snap/ocr";
+import {
+  canAcceptLocalReceipt, hasReadableReceiptItems, receiptModelText, receiptSum,
+  RECEIPT_MODEL_FIELDS, RECEIPT_MODEL_PROMPT, RECEIPT_OUTPUT_TOKENS, validatedReceiptExtraction,
+} from "@/lib/snap/receipt";
+import type { ReceiptItem } from "@/lib/finance/types";
+import { extractionToUpdate } from "@/lib/twin/actions";
 import type { DocKind, Extraction } from "@/lib/snap/types";
 import {
   NAIVE_MODEL,
@@ -38,7 +43,6 @@ import {
 const BENCH_DIR = "public/samples/bench";
 const OCR_CONFIDENCE_THRESHOLD = 65;
 const LOCAL_REGEX_CONFIDENCE_THRESHOLD = 75;
-const NOISE_LINE = /^[\W_]{0,3}$/;
 
 const EXTRACT_SYS =
   'Swiss finance doc → JSON. Keys: kind(listing|receipt|bill|payslip|note|other), amount(CHF number: listing price, receipt total, net pay, or note target), merchant, date(YYYY-MM-DD), location(town), rooms, category(groceries|dining|transport|shopping|bills|insurance|travel|other), label(≤5 words), year. Omit unknown keys.';
@@ -64,6 +68,61 @@ function loadApiKey(): string | undefined {
 // ---------------------------------------------------------------------------
 function runHeuristicUnitChecks(): { passed: number; total: number } {
   const cases: { name: string; fn: () => void }[] = [
+    {
+      name: "Swiss supermarket quantities, signed discounts, card and tax summary",
+      fn: () => {
+        const receipt = heuristicExtract("Falkenried Markt\n21.11.2026\nVollmilch\n2x 1.95 3.90 A\nWaschmittel 12.50B\nAktion Waschmittel 2.00-\nSumme CHF 14.40\nKarte 14.40\nMWST 2.6% 0.40\nRundung 0.05");
+        assert.equal(receipt.currency, "CHF");
+        assert.equal(receipt.date, "2026-11-21");
+        assert.deepEqual(receipt.items?.map(({ name, amount, qty, unitPrice, category }) => [name, amount, qty, unitPrice, category]), [
+          ["Vollmilch", 3.9, 2, 1.95, "groceries"],
+          ["Waschmittel", 12.5, undefined, undefined, "shopping"],
+          ["Aktion Waschmittel", -2, undefined, undefined, undefined],
+        ]);
+        assert.deepEqual(receiptSum(receipt.items ?? [], receipt.amount), { amount: 14.4, matches: true });
+        assert.ok(canAcceptLocalReceipt(receipt, 60));
+        const update = extractionToUpdate(receipt, []);
+        assert.equal(update.kind, "transaction");
+        if (update.kind === "transaction") assert.deepEqual(update.tx.items, receipt.items);
+        const qtyOnly = heuristicExtract("Falkenried Markt\nRuchbrot 3.20\nVollmilch 2x 1.95\nTotal CHF 7.10");
+        assert.deepEqual(qtyOnly.items?.map(({ name, amount }) => [name, amount]), [["Ruchbrot", 3.2], ["Vollmilch", 3.9]]);
+      },
+    },
+    {
+      name: "Italian restaurant comma decimals, cover and tip",
+      fn: () => {
+        const receipt = heuristicExtract("Osteria del Ghiro\nScontrino\nRisotto 12,50\nCoperto 2,00\nMancia 1,00\nTotale 15,50\nContanti 20,00\nResto 4,50\nIVA 8,1% 1,16");
+        assert.equal(receipt.category, "dining");
+        assert.deepEqual(receipt.items?.map((item) => item.amount), [12.5, 2, 1]);
+        assert.ok(receiptSum(receipt.items ?? [], receipt.amount).matches);
+      },
+    },
+    {
+      name: "Department store grouped amount and receipt discrepancy routing",
+      fn: () => {
+        const receipt = heuristicExtract("North Quay Department Store\nLamp 1'234.50\nMug 10.00\nMug 10.00\nTotal\n1'260.00 CHF");
+        assert.equal(receipt.category, "shopping");
+        assert.deepEqual(receipt.items?.map((item) => item.amount), [1234.5, 10, 10]);
+        assert.deepEqual(receiptSum(receipt.items ?? [], receipt.amount), { amount: 1254.5, matches: false });
+        assert.ok(hasReadableReceiptItems(receipt));
+        assert.equal(canAcceptLocalReceipt(receipt, 79), false);
+        assert.equal(canAcceptLocalReceipt(receipt, 80), true);
+        assert.equal(receiptSum([{ amount: 47.25 }], 47.30).matches, true);
+        assert.equal(receiptSum([{ amount: 47.24 }], 47.30).matches, false);
+      },
+    },
+    {
+      name: "Model receipt validation rejects malformed amounts and payment rows",
+      fn: () => {
+        const raw = { kind: "receipt", currency: "CHF", date: "2026-11-21", amount: 12.50 };
+        const valid = validatedReceiptExtraction({ ...raw, items: [{ name: "Pain", amount: 12.50 }, { name: "Remise", amount: -0.5 }] });
+        assert.equal(receiptSum(valid?.items ?? [], valid?.amount).matches, false);
+        assert.equal(validatedReceiptExtraction({ ...raw, amount: "12.50" }), undefined);
+        assert.equal(validatedReceiptExtraction({ ...raw, items: [{ name: "Pain", amount: 12.505 }] }), undefined);
+        assert.equal(validatedReceiptExtraction({ ...raw, items: [{ name: "Carte", amount: 12.50 }] }), undefined);
+        assert.equal(validatedReceiptExtraction({ ...raw, date: "2026-02-30" }), undefined);
+      },
+    },
     {
       name: "German listing (rooms, price, location)",
       fn: () => {
@@ -255,6 +314,8 @@ interface DegradeOpts {
 }
 
 async function degradeToPhoto(src: string | Buffer, outPath: string, o: DegradeOpts): Promise<void> {
+  // Keep committed fixtures stable across platforms with different font rasterizers.
+  if (existsSync(outPath)) return;
   const bg = o.bg ?? { r: 224, g: 217, b: 204, alpha: 1 };
   // Render source to flat RGB PNG first
   let pipe = sharp(src)
@@ -389,20 +450,34 @@ interface BenchDoc {
   id: string;
   file: string;
   variant: "clean" | "photo";
-  groundTruth: { kind: DocKind; amount: number; year?: number };
+  groundTruth: { kind: DocKind; amount: number; year?: number; items?: Pick<ReceiptItem, "name" | "amount">[] };
   notes: string;
 }
+
+const truthItems = (rows: [string, number][]) => rows.map(([name, amount]) => ({ name, amount }));
+const longReceiptItems = truthItems([
+  ["Vollmilch 1L", 1.65], ["Brot Ruchmehl", 3.20], ["Gruyère AOP 250g", 6.95], ["Äpfel Gala 1kg", 4.40],
+  ["Pasta Spaghetti", 2.10], ["Tomaten Pelati", 1.95], ["Olivenöl extra", 9.80], ["Poulet Brust", 14.90],
+  ["Kaffee Bohnen 500g", 11.50], ["Joghurt Nature", 3.60], ["Wein Pinot Noir", 16.90], ["Schokolade 100g", 2.30],
+  ["Waschmittel", 8.20],
+]);
+const marketItems = truthItems([
+  ["Vollmilch", 3.90], ["Ruchbrot", 3.20], ["Gruyère AOP", 8.50], ["Waschmittel", 22.95], ["Äpfel Gala", 10.75], ["Aktion Waschmittel", -2],
+]);
+const cafeItems = truthItems([
+  ["Café crème", 8.40], ["Tarte aux poires", 7.50], ["Croque maison", 12.50], ["Couvert", 2], ["Pourboire", 2],
+]);
 
 async function generateBenchDataset(): Promise<BenchDoc[]> {
   mkdirSync(BENCH_DIR, { recursive: true });
 
   // Clean synthetic French docs rendered to crisp JPEG
-  await sharp(Buffer.from(FRENCH_LISTING_SVG))
+  if (!existsSync(`${BENCH_DIR}/listing-fr.jpg`)) await sharp(Buffer.from(FRENCH_LISTING_SVG))
     .flatten({ background: "#fff" })
     .jpeg({ quality: 88, mozjpeg: true })
     .toFile(`${BENCH_DIR}/listing-fr.jpg`);
 
-  await sharp(Buffer.from(FRENCH_PAYSLIP_SVG))
+  if (!existsSync(`${BENCH_DIR}/payslip-fr.jpg`)) await sharp(Buffer.from(FRENCH_PAYSLIP_SVG))
     .flatten({ background: "#fff" })
     .jpeg({ quality: 88, mozjpeg: true })
     .toFile(`${BENCH_DIR}/payslip-fr.jpg`);
@@ -516,10 +591,17 @@ async function generateBenchDataset(): Promise<BenchDoc[]> {
     seed: 109,
   });
 
+  await degradeToPhoto("public/samples/receipt-cafe.svg", `${BENCH_DIR}/receipt-cafe-photo.jpg`, {
+    rotate: -3.4, skewX: 0.026, skewY: -0.017, width: 550, blur: 0.55,
+    quality: 46, warmth: 0.23, noiseAlpha: 21, seed: 110,
+  });
+
   return [
     { id: "qr-bill-clean", file: "public/samples/qr-bill.svg", variant: "clean", groundTruth: { kind: "bill", amount: 412 }, notes: "Bundled Swiss QR-bill" },
     { id: "listing-clean", file: "public/samples/listing.svg", variant: "clean", groundTruth: { kind: "listing", amount: 940000 }, notes: "Bundled DE listing" },
-    { id: "receipt-clean", file: "public/samples/receipt.svg", variant: "clean", groundTruth: { kind: "receipt", amount: 87.45 }, notes: "Bundled DE receipt" },
+    { id: "receipt-clean", file: "public/samples/receipt.svg", variant: "clean", groundTruth: { kind: "receipt", amount: 87.45, items: longReceiptItems }, notes: "Long DE receipt" },
+    { id: "receipt-market-clean", file: "public/samples/receipt-market.svg", variant: "clean", groundTruth: { kind: "receipt", amount: 47.3, items: marketItems }, notes: "DE supermarket, quantity and discount" },
+    { id: "receipt-cafe-clean", file: "public/samples/receipt-cafe.svg", variant: "clean", groundTruth: { kind: "receipt", amount: 32.4, items: cafeItems }, notes: "FR café, comma decimals, cover and tip" },
     { id: "payslip-clean", file: "public/samples/payslip.svg", variant: "clean", groundTruth: { kind: "payslip", amount: 8650 }, notes: "Bundled DE payslip" },
     { id: "note-clean", file: "public/samples/note.svg", variant: "clean", groundTruth: { kind: "note", amount: 25000, year: 2028 }, notes: "Bundled handwritten note" },
     { id: "listing-fr-clean", file: `${BENCH_DIR}/listing-fr.jpg`, variant: "clean", groundTruth: { kind: "listing", amount: 795000 }, notes: "FR listing (Lausanne)" },
@@ -527,11 +609,14 @@ async function generateBenchDataset(): Promise<BenchDoc[]> {
     { id: "qr-bill-photo-tilt", file: `${BENCH_DIR}/qr-bill-photo-tilt.jpg`, variant: "photo", groundTruth: { kind: "bill", amount: 412 }, notes: "Rot +3.2°, skew, warm light, q55" },
     { id: "qr-bill-photo-lowres", file: `${BENCH_DIR}/qr-bill-photo-lowres.jpg`, variant: "photo", groundTruth: { kind: "bill", amount: 412 }, notes: "Rot -4.6°, skew, blur 0.45, 880px, q45" },
     { id: "listing-photo-glare", file: `${BENCH_DIR}/listing-photo-glare.jpg`, variant: "photo", groundTruth: { kind: "listing", amount: 940000 }, notes: "Rot +2.8°, glare, grain, 900px, q50" },
-    { id: "receipt-photo-desk", file: `${BENCH_DIR}/receipt-photo-desk.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 87.45 }, notes: "Rot -3.6°, skew, blur 0.4, 620px, q48" },
-    { id: "receipt-photo-dim", file: `${BENCH_DIR}/receipt-photo-dim.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 87.45 }, notes: "Rot +5.4°, blur 0.95, dim+noise, 480px, q40" },
+    { id: "receipt-photo-desk", file: `${BENCH_DIR}/receipt-photo-desk.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 87.45, items: longReceiptItems }, notes: "Rot -3.6°, skew, blur 0.4, 620px, q48" },
+    { id: "receipt-photo-dim", file: `${BENCH_DIR}/receipt-photo-dim.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 87.45, items: longReceiptItems }, notes: "Rot +5.4°, blur 0.95, dim+noise, 480px, q40" },
     { id: "payslip-photo-fold", file: `${BENCH_DIR}/payslip-photo-fold.jpg`, variant: "photo", groundTruth: { kind: "payslip", amount: 8650 }, notes: "Rot -2.6°, skew, warm light, 900px, q52" },
     { id: "note-photo-desk", file: `${BENCH_DIR}/note-photo-desk.jpg`, variant: "photo", groundTruth: { kind: "note", amount: 25000, year: 2028 }, notes: "Rot +4.2°, blur 0.65, grain, 760px, q44" },
-    { id: "receipt-fr-photo", file: `${BENCH_DIR}/receipt-fr-photo.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 42.8 }, notes: "FR receipt, rot -3.2°, warm light, q50" },
+    { id: "receipt-fr-photo", file: `${BENCH_DIR}/receipt-fr-photo.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 42.8, items: truthItems([
+      ["Pain au levain", 6.80], ["Croissants beurre", 9.60], ["Café crème", 10.40], ["Tarte aux poires", 16],
+    ]) }, notes: "FR receipt, rot -3.2°, warm light, q50" },
+    { id: "receipt-cafe-photo", file: `${BENCH_DIR}/receipt-cafe-photo.jpg`, variant: "photo", groundTruth: { kind: "receipt", amount: 32.4, items: cafeItems }, notes: "FR café, rot -3.4°, blur 0.55, 550px, q46" },
     { id: "note-typed-photo", file: `${BENCH_DIR}/note-typed-photo.jpg`, variant: "photo", groundTruth: { kind: "note", amount: 18500, year: 2028 }, notes: "Typed budget note, rot +2.4°, warm light, q52" },
   ];
 }
@@ -664,7 +749,7 @@ async function callOpenRouter(
     // Some small VLMs wrap the object in an array: unwrap the first element (the app's gateway does the same).
     const raw = (Array.isArray(json) ? json[0] : json) as Record<string, unknown>;
     const amt = typeof raw.amount === "string" ? Number(raw.amount.replace(/[^\d.]/g, "")) : Number(raw.amount);
-    parsed = {
+    parsed = raw.kind === "receipt" && model !== NAIVE_MODEL ? validatedReceiptExtraction(raw) : {
       ...(raw as unknown as Extraction),
       amount: Number.isFinite(amt) && amt > 0 ? amt : undefined,
     };
@@ -716,7 +801,6 @@ interface DocResult {
 }
 
 async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<DocResult> {
-  const tStart = performance.now();
   const rawFile = readFileSync(doc.file);
   const flatPng = await sharp(rawFile).flatten({ background: "#fff" }).png().toBuffer();
   const meta = await sharp(flatPng).metadata();
@@ -755,6 +839,7 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     }
   }
 
+  const tStart = performance.now();
   // ---------- Tier 0: multi-scale jsQR ----------
   const bill = await tryMultiScaleQr(flatPng);
   if (bill) {
@@ -790,29 +875,15 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     .toBuffer();
 
   const { data } = await worker.recognize(ocrImg, {}, { text: true, blocks: true });
-  const lines: { text: string; confidence: number }[] = [];
-  for (const b of data.blocks ?? []) {
-    for (const p of b.paragraphs) {
-      for (const l of p.lines) lines.push({ text: l.text.trim(), confidence: l.confidence });
-    }
-  }
-  const seen = new Set<string>();
-  const kept: string[] = [];
-  for (const l of lines) {
-    const t = l.text.replace(/\s+/g, " ").trim();
-    if (l.confidence < 45 || NOISE_LINE.test(t) || t.length < 3) continue;
-    const key = t.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    kept.push(t);
-  }
-  let compact = kept.slice(0, 24).join("\n");
-  if (compact.length > 600) compact = compact.slice(0, 600);
-  const ocrConf = data.confidence;
+  const ocr = compactOcr(data);
+  const rawExt = heuristicExtract(ocr.rawText);
+  const receipt = rawExt.kind === "receipt";
+  const compact = receipt ? receiptModelText(ocr.rawText) : ocr.compact;
+  const localExt = receipt ? rawExt : heuristicExtract(compact);
+  const ocrConf = receipt ? ocr.confidence : data.confidence;
 
-  if (ocrConf >= OCR_CONFIDENCE_THRESHOLD && compact.length >= 20) {
-    const localExt = heuristicExtract(compact);
-    if (canResolveLocally(localExt, ocrConf)) {
+  if ((ocrConf >= OCR_CONFIDENCE_THRESHOLD && compact.length >= 20) || hasReadableReceiptItems(localExt)) {
+    if (receipt ? canAcceptLocalReceipt(localExt, ocrConf) : canResolveLocally(localExt, ocrConf)) {
       return {
         doc,
         width,
@@ -837,16 +908,18 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
       };
     }
 
-    // Escalate to Tier 1 text LLM
+    const textPrompt = receipt ? RECEIPT_MODEL_PROMPT : EXTRACT_SYS;
+    const textInput = receipt ? "<document>\n" + JSON.stringify(compact).replaceAll("<", "\\u003c") + "\n</document>" : compact;
+    // The receipt cascade calls the text model only after local OCR and regex.
     if (apiKey) {
       const lr = await callOpenRouter(
         apiKey,
         process.env.DOPPEL_TEXT_MODEL ?? SMALL_MODEL_PRICE.model,
         [
-          { role: "system", content: EXTRACT_SYS },
-          { role: "user", content: compact.slice(0, 800) },
+          { role: "system", content: textPrompt },
+          { role: "user", content: textInput },
         ],
-        120,
+        receipt ? RECEIPT_OUTPUT_TOKENS : 120,
       );
       if (lr.ok && lr.data) {
         const tok = lr.promptTokens + lr.completionTokens;
@@ -858,7 +931,7 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
           doc,
           width,
           height,
-          tier: 1,
+          tier: receipt ? 2 : 1,
           route: "text-llm",
           cascadeRoute: "text-llm",
           ocrConf,
@@ -880,14 +953,14 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     }
 
     // Offline fallback: record actual offline heuristic extraction + explicitly labelled text-LLM cost estimate
-    const estIn = estimateTextTokens(EXTRACT_SYS) + estimateTextTokens(compact) + 12;
-    const estOut = 65;
+    const estIn = estimateTextTokens(textPrompt) + estimateTextTokens(textInput) + 12;
+    const estOut = receipt ? 80 + (localExt.items?.length ?? 0) * 22 : 65;
     const estCost = (estIn * SMALL_MODEL_PRICE.input + estOut * SMALL_MODEL_PRICE.output) / 1e6;
     return {
       doc,
       width,
       height,
-      tier: 1,
+      tier: receipt ? 2 : 1,
       route: "offline-heuristic",
       cascadeRoute: "text-llm",
       ocrConf,
@@ -921,10 +994,10 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
       apiKey,
       process.env.DOPPEL_VISION_MODEL ?? SMALL_MODEL_PRICE.model,
       [
-        { role: "system", content: EXTRACT_SYS },
+        { role: "system", content: EXTRACT_SYS + " " + RECEIPT_MODEL_FIELDS },
         { role: "user", content: [{ type: "text", text: "Extract JSON." }, { type: "image_url", image_url: { url: dataUrl } }] },
       ],
-      160,
+      RECEIPT_OUTPUT_TOKENS,
     );
     if (vr.ok && vr.data) {
       const tok = vr.promptTokens + vr.completionTokens;
@@ -959,10 +1032,9 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
   }
 
   // Offline fallback for Tier 2: run heuristic on raw OCR text (honest offline result) + estimated Gemini Flash-Lite 512px cost
-  const fallbackExt = heuristicExtract(data.text);
-  // Gemini 2.5 Flash-Lite uses 258 image tokens for a ≤512px image + ~90 system tokens + ~70 output tokens.
-  const estIn = 258 + estimateTextTokens(EXTRACT_SYS) + 12;
-  const estOut = 70;
+  const fallbackExt = rawExt;
+  const estIn = 258 + estimateTextTokens(EXTRACT_SYS + " " + RECEIPT_MODEL_FIELDS) + 12;
+  const estOut = doc.groundTruth.items ? 80 + doc.groundTruth.items.length * 22 : 70;
   const estCost = (estIn * SMALL_MODEL_PRICE.input + estOut * SMALL_MODEL_PRICE.output) / 1e6;
   return {
     doc,
@@ -1005,6 +1077,26 @@ function fmtChf(n?: number): string {
   return Number.isInteger(n) ? n.toLocaleString("en-US") : n.toFixed(2);
 }
 
+function scoreItems(extracted: Extraction, expected: NonNullable<BenchDoc["groundTruth"]["items"]>) {
+  const normalize = (name: string) => name.normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const actual = extracted.items ?? [];
+  const names = actual.map((item) => normalize(item.name));
+  const pricedNames = actual.map((item) => normalize(item.name) + ":" + Math.round(item.amount * 100));
+  const matches = (pool: string[], key: string) => {
+    const index = pool.indexOf(key);
+    if (index < 0) return 0;
+    pool.splice(index, 1);
+    return 1;
+  };
+  return {
+    expected: expected.length,
+    found: actual.length,
+    named: expected.reduce((sum, item) => sum + matches(names, normalize(item.name)), 0),
+    priced: expected.reduce((sum, item) => sum + matches(pricedNames, normalize(item.name) + ":" + Math.round(item.amount * 100)), 0),
+    balanced: receiptSum(actual, extracted.amount).matches,
+  };
+}
+
 async function main() {
   const unit = runHeuristicUnitChecks();
   const apiKey = loadApiKey();
@@ -1018,12 +1110,12 @@ async function main() {
   // Compute total size of committed bench images
   const benchFiles = docs.filter((d) => d.file.startsWith(BENCH_DIR)).map((d) => d.file);
   const benchBytes = benchFiles.reduce((s, f) => s + statSync(f).size, 0);
-  console.log(`Generated ${benchFiles.length} benchmark images in ${BENCH_DIR}/ (${(benchBytes / 1024).toFixed(0)} KB total).`);
+  console.log(`Using ${benchFiles.length} benchmark images in ${BENCH_DIR}/ (${(benchBytes / 1024).toFixed(0)} KB total).`);
 
-  // Keep Tesseract traineddata cache in os.tmpdir() so repo root stays clean
-  const cacheDir = path.join(os.tmpdir(), "doppel-tess-cache");
-  mkdirSync(cacheDir, { recursive: true });
-  const worker = await createWorker(["eng", "deu"], undefined, { cachePath: cacheDir });
+  const worker = await createWorker(["eng", "deu", "fra"], undefined, {
+    cacheMethod: "none",
+    langPath: path.resolve("public/tesseract"),
+  });
 
   const results: DocResult[] = [];
   for (const doc of docs) {
@@ -1056,7 +1148,8 @@ async function main() {
   const tiers: { label: string; filter: (r: DocResult) => boolean }[] = [
     { label: "Tier 0 · QR-bill (local)", filter: (r) => r.cascadeRoute === "qr" },
     { label: "Tier 1 · Local regex (local)", filter: (r) => r.cascadeRoute === "local-regex" },
-    { label: "Tier 1 · Text LLM (compact OCR)", filter: (r) => r.cascadeRoute === "text-llm" },
+    { label: "Tier 2 · Text model (receipt OCR)", filter: (r) => r.cascadeRoute === "text-llm" && r.tier === 2 },
+    { label: "Tier 1 · Text model (other OCR)", filter: (r) => r.cascadeRoute === "text-llm" && r.tier === 1 },
     { label: "Tier 2 · Vision LLM (512px gray JPEG)", filter: (r) => r.cascadeRoute === "vision-llm" },
   ];
 
@@ -1077,6 +1170,17 @@ async function main() {
   const totalLocalAccOk = zeroTokDocs.filter((r) => r.amountOk).length;
   const totalMeasuredAccOk = results.filter((r) => r.amountOk).length;
   const cloudEscalated = results.filter((r) => r.cascadeRoute === "text-llm" || r.cascadeRoute === "vision-llm");
+  const receipts = results.flatMap((r) => r.doc.groundTruth.items ? [{ r, score: scoreItems(r.extracted, r.doc.groundTruth.items) }] : []);
+  const expectedItems = receipts.reduce((sum, { score }) => sum + score.expected, 0);
+  const namedItems = receipts.reduce((sum, { score }) => sum + score.named, 0);
+  const pricedItems = receipts.reduce((sum, { score }) => sum + score.priced, 0);
+  const balancedReceipts = receipts.filter(({ score }) => score.balanced).length;
+  const receiptLocal = receipts.filter(({ r }) => r.cascadeRoute === "local-regex").length;
+  const receiptText = receipts.filter(({ r }) => r.cascadeRoute === "text-llm").length;
+  const receiptVision = receipts.filter(({ r }) => r.cascadeRoute === "vision-llm").length;
+  const receiptRows = receipts.map(({ r, score }) =>
+    `| ${r.doc.id} | T${r.tier} · ${r.cascadeRoute} | ${score.found} / ${score.expected} | ${score.named} | ${score.priced} | ${score.balanced ? "Pass" : "Fail"} |`,
+  ).join("\n");
 
   // Build Markdown document from actual measurements
   const perDocRows = results
@@ -1101,7 +1205,7 @@ async function main() {
             : "No";
       const ocrDisp = r.ocrConf != null ? `${Math.round(r.ocrConf)}%` : "—";
       const sizeDisp =
-        r.cascadeRoute === "qr" || r.cascadeRoute === "local-regex"
+        r.route === "offline-heuristic" || r.cascadeRoute === "qr" || r.cascadeRoute === "local-regex"
           ? "0 B"
           : r.visionBytes
             ? `${Math.round(r.visionBytes / 1024)} KB JPEG`
@@ -1130,7 +1234,7 @@ async function main() {
   const runDate = new Date().toISOString().slice(0, 10);
   const basisSummary = apiKey
     ? "All cloud tiers and GPT-4o naive comparisons were **measured live** via OpenRouter."
-    : "No `OPENROUTER_API_KEY` was set during this run. Tier 0 (`qr`) and Tier 1 (`local-regex`) are **measured locally** (exact 0 tokens, real latency, real accuracy). Docs that escalate to `text-llm` or `vision-llm` report their **actual offline heuristic result** for transparency and use **explicitly labelled cost/token estimates** (`google/gemini-2.5-flash-lite` at $0.10/$0.40 per 1M; `openai/gpt-4o` high-detail via OpenAI's tile formula on actual image dimensions at $2.50/$10 per 1M). Re-run `OPENROUTER_API_KEY=... npx tsx scripts/benchmark.ts` to replace estimates with live API measurements.";
+    : "No `OPENROUTER_API_KEY` was set. All results and timings are from local OCR or offline fallbacks. The run sent 0 bytes to a provider and used 0 provider tokens. Cloud token and cost columns estimate what a live run would use. Tier 2 text, Tier 2 vision and GPT-4o accuracy require a live run.";
 
   const md = `# Doppel — Multimodal Frugality Benchmark
 
@@ -1140,14 +1244,14 @@ Generated directly by [\`scripts/benchmark.ts\`](../scripts/benchmark.ts) on **$
 
 ## 1. Evaluation set (${n} documents)
 
-* **5 clean originals** in \`public/samples/\`: Swiss QR-bill, DE property listing, DE supermarket receipt, DE payslip (\`Lohnabrechnung\`), handwritten sabbatical note.
+* **7 clean originals** in \`public/samples/\` include three itemised receipts covering a supermarket, a café and a longer basket.
 * **2 clean French Swiss documents** in \`public/samples/bench/\`: Lausanne property listing (\`3.5 pièces\`) and Geneva payslip (\`Bulletin de salaire\`).
 * **${docs.filter((d) => d.variant === "photo").length} phone-photo degraded JPGs** in \`public/samples/bench/\` (${(benchBytes / 1024).toFixed(0)} KB total across all ${benchFiles.length} committed JPEGs): generated deterministically with \`sharp\` using rotation (±2.4° to ±5.4°), affine skew, optical blur (0.35–0.95 px), warm indoor lighting gradients, pixel grain, lower resolutions (480–1080 px), and JPEG quality 40–55.
-* **Heuristic unit suite:** ${unit.passed}/${unit.total} deterministic DE/FR/EN & OCR-noise assertions passed.
+* **Heuristic unit suite** passed ${unit.passed}/${unit.total} deterministic checks, including German, French, English and Italian receipt layouts.
 
 ## 2. Per-document results
 
-| Document | Type | Orig px | Tier · Route | OCR conf | Left device | Extracted / GT (CHF) | Amount OK? | Latency | Doppel tok | Doppel $ | Naive GPT-4o tok |
+| Document | Type | Orig px | Tier · Route | OCR conf | Sent to model | Extracted / GT (CHF) | Amount OK? | Latency | Doppel tok | Doppel $ | Naive GPT-4o tok |
 |---|---|---|---|---:|---:|---:|---|---:|---:|---:|---:|
 ${perDocRows}
 
@@ -1175,18 +1279,21 @@ Assumptions for scale projection: **${SNAPS_PER_USER_MONTH} snaps / user / month
 
 > **Energy note:** ${translate("en", "inspector.energyNote")}
 
-## 5. Observations and limits
+## 5. Receipt line items
 
-1. **QR decoding and low-res fallback:** \`qr-bill-clean\` and \`qr-bill-photo-tilt\` decode at Tier 0 (\`jsQR\`, 0 tokens, 0 bytes sent). \`qr-bill-photo-lowres\` (895×509, blur 0.45, JPEG quality 45) fails QR decoding and scores 38% OCR confidence, so it falls through to Tier 2 (\`vision-llm\`, 11 KB JPEG, 451 tokens) and still extracts CHF 412.
-2. **Printed documents at Tier 1:** 9 of 16 documents clear the 75% OCR confidence threshold and resolve locally via \`heuristics.ts\` at 0 tokens, including French documents and \`Nettolohn\` vs \`Bruttolohn\` disambiguation. \`note-typed-photo\` clears OCR (86%) without matching a local regex rule, sending 170 characters to the small text model (244 tokens).
-3. **Handwriting and dim photos at Tier 2:** cursive handwriting (\`note-clean\`, \`note-photo-desk\`) and the dim, blurred receipt (\`receipt-photo-dim\`) score 28–34% OCR confidence and escalate a 512px grayscale JPEG (13–17 KB, 402–447 tokens) to the small vision model.
-4. **Limits of this benchmark:**
-   * **Node mirror vs browser pipeline:** \`scripts/benchmark.ts\` runs a Node copy of the cascade (\`eng+deu\` Tesseract, page-average \`data.confidence\`, 75% \`local-regex\` threshold). The browser app (\`src/lib/snap/pipeline.ts\`, \`src/lib/snap/ocr.ts\`) loads \`eng+deu+fra\`, computes confidence as \`min(pageConfidence, amountLineConfidence)\`, and requires 80% confidence plus a supporting field for \`local-regex\`. Under the app's 80% threshold, at least \`receipt-photo-desk\` (79%) and \`receipt-fr-photo\` (75%) would escalate to \`text-llm\`.
-   * **Latency column includes the GPT-4o baseline call:** In \`runDoc()\`, the per-document timer (\`tStart\`) starts before the live \`callOpenRouter(..., NAIVE_MODEL, ...)\` call. Every \`Latency\` cell in Section 2 and the \`${Math.round(avgMs)} ms\` average in Section 4 include both the GPT-4o request and the Doppel cascade, so this run does not provide a standalone cascade latency measurement.
-   * **Synthetic dataset:** All 16 documents are synthetic SVGs and \`sharp\`-degraded JPEGs generated in this repository, not real user photos.
-   * **Accuracy tolerance:** an amount counts as correct within the larger of CHF 0.05 or 0.5% of ground truth (\`amountCorrect()\` in \`scripts/benchmark.ts\`). Only the amount is scored, not the other fields.
-   * **Raw responses:** this report stores provider token counts and costs, not the raw provider responses.
-   * **Baseline prompt vs in-app live check:** ${apiKey ? "Naive GPT-4o tokens and accuracy here were measured live at each document's actual resolution with \`NAIVE_SYS\` (250 max output tokens)." : "Naive GPT-4o tokens are calculated from each document's actual dimensions using OpenAI's 512² tile formula (+160 prompt tokens, +120 output tokens, $2.50/$10 per 1M)."} Inside the app's Inspector, the **"Run the naive way (GPT-4o)"** button uses a longer extraction prompt (\`max_tokens: 400\`), so its live token count is higher than the ${Math.round(avgNaiveTok)}-token average above.
+| Receipt | Cascade route | Rows extracted / expected | Names matched | Names and cents matched | Item sum |
+|---|---|---:|---:|---:|---|
+${receiptRows}
+
+Across ${receipts.length} receipts, ${namedItems}/${expectedItems} item names and ${pricedItems}/${expectedItems} name-and-amount pairs matched. ${balancedReceipts}/${receipts.length} extracted baskets reconciled. Routing chose Tier 1 for ${receiptLocal}, Tier 2 text for ${receiptText} and Tier 2 vision for ${receiptVision}. ${apiKey ? "The table includes live model output when available." : "Escalated rows show the offline result available to review."}
+
+Names match one to one after normalizing punctuation, spaces and accents. The amount must agree to the cent. Reconciliation compares the signed item sum with the extracted printed total within CHF 0.05. Overall document amount accuracy uses the larger of CHF 0.05 or 0.5% of the ground truth.
+
+## 6. Previous run and limits
+
+* The previous 16-document live run read all 16 totals within tolerance and resolved 11/16 locally. Its four receipt scans returned totals and had no line-item output. It measured 123 average Doppel tokens and 966 GPT-4o tokens per document, with $0.02 and $2.61 per 1,000 documents respectively. This run adds three images and uses a different OCR setup. Its cloud figures are estimates when no key is set.
+* The Node benchmark shares the receipt parser, receipt confidence and reconciliation gates with the app and uses the bundled Tesseract languages. Node and browser image cleanup and font rasterization can differ. The Node mirror retains its 75% local gate for other document types. The timing column measures the Doppel cascade separately from GPT-4o.
+* The images are synthetic fixtures with simulated phone-photo degradation. The browser smoke suite checks the production review for clean line-item scans and exercises text escalation offline.
 `;
 
   writeFileSync("docs/BENCHMARK.md", md);

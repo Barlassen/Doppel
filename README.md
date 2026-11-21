@@ -4,7 +4,7 @@
 
 A Swiss personal-finance twin you feed with photos. Built at LauzHack 2026 for the UBS "AI Financial Twin" track and the AXA "Frugal use of Multimodal AI" track.
 
-You snap a QR-bill, a receipt, a payslip, a property listing or a handwritten note. Doppel reads it, shows you what it read, and after you confirm, adds it to a simulation of your finances: 1,000 Monte Carlo paths with monthly steps to age 90, run in the browser.
+You can upload a photo of a shop receipt, review the total and items, and add the purchase as one transaction. Doppel also scans QR-bills, payslips, property listings and handwritten notes. Confirmed scans feed a simulation of your finances with 1,000 Monte Carlo paths run in the browser.
 
 Two rules shaped the code:
 
@@ -34,11 +34,13 @@ photo ─► Tier 0  jsQR on the Swiss QR-bill            0 tokens, nothing sent
       ─► engine  Monte Carlo, Swiss affordability test, pension, behaviour model, goal solver
 ```
 
+For receipts, Tier 1 reads the complete OCR text and checks the signed item sum against the printed total. A basket within CHF 0.05 or read at high OCR confidence can go straight to review. Otherwise Tier 2 uses the small text model when OCR is readable and the 512px image when OCR fails. Review shows discrepancies for either route.
+
 Code: `src/lib/snap/pipeline.ts` (cascade), `src/lib/finance/` (engine), `src/lib/twin/actions.ts` (what-if ops and their validation), `src/app/api/twin/route.ts` (the only route that calls a model, via OpenRouter, default `google/gemini-2.5-flash-lite`). Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Evidence
 
-From the live benchmark run in [docs/BENCHMARK.md](docs/BENCHMARK.md) (16 synthetic Swiss documents, 9 of them degraded to look like phone photos):
+The original live benchmark used 16 synthetic Swiss documents, including nine phone-photo variants. The current offline report also measures receipt item accuracy and routing. [Benchmark results](docs/BENCHMARK.md)
 
 | | Doppel cascade | Whole image to GPT-4o |
 |---|---:|---:|
@@ -47,12 +49,7 @@ From the live benchmark run in [docs/BENCHMARK.md](docs/BENCHMARK.md) (16 synthe
 | Tokens per document | 123 | 966 |
 | Cost per 1,000 documents | $0.02 | $2.61 |
 
-Limits of that run, also listed in BENCHMARK.md:
-
-- The benchmark runs a Node copy of the cascade, not the browser code. The copy uses Tesseract `eng+deu`, page-average OCR confidence, and a 75% local-regex threshold; the app adds `fra`, takes the minimum of page confidence and amount-line confidence, and requires 80% plus a second field. The two local receipts recorded at 75% and 79% OCR confidence do not meet the app's gate on those scores. Because the OCR setup also differs, the app's local share needs its own measurement.
-- The Doppel latency column includes the GPT-4o baseline call, because the timer starts before it. We have no clean latency comparison yet.
-- The documents are synthetic and were made by us.
-- The report stores token counts and costs, not the raw provider responses.
+The original run used a Node mirror with a 75% local-regex threshold and tied its latency to the GPT-4o request. The current benchmark shares the receipt gate and OCR languages with the browser and times Doppel separately. Both runs use synthetic fixtures.
 
 The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from payday spending, and the CHF 940k listing failing the bank test at 38.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 131k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 1,493,741 − CHF 1,362,649 = CHF 131,092`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
@@ -64,9 +61,9 @@ The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from pay
 | `npm run i18n:check` | Checks the four dictionaries and the local what-if parsers | nothing |
 | `npm run smoke:browser` | Headless Chromium run of the real browser pipeline, no API key | `npm run build` |
 | `npx tsx scripts/pipeline-check.ts` | Same as `smoke:browser` | `npm run build` |
-| `npx tsx scripts/benchmark.ts` | Heuristic unit checks, regenerates the degraded photos, runs the 16-document benchmark, rewrites docs/BENCHMARK.md | key for live numbers |
+| `npx tsx scripts/benchmark.ts` | Heuristic checks, 19-document benchmark with receipt item accuracy, and report generation | key for live model numbers |
 | `npm run e2e:live` | Walks the stage demo with real OpenRouter calls (about $0.01) | build + key |
-| `npx tsx scripts/make-samples.ts` | Regenerates the 5 sample documents in `public/samples/` | nothing |
+| `npx tsx scripts/make-samples.ts` | Regenerates the 7 sample documents in `public/samples/` | nothing |
 
 All people, companies and documents in the demo are fictional.
 

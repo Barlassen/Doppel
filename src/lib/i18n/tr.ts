@@ -32,15 +32,23 @@ export const tr = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Kapat",
+    details: "Ayrıntılar",
+    howCalculated: "Bu nasıl hesaplanıyor?",
   },
 
   header: {
     profiles: "Demo profil",
   },
 
+  layout: {
+    decisions: "Büyük kararlar",
+    nextSteps: "Sıradaki adımlar",
+    habits: "Alışkanlıklar ve zamanlama",
+  },
+
   profile: {
     lukas: { tagline: "Yazılım mühendisi · ilk evini almak istiyor" },
-    elena: { tagline: "Dört kişilik aile · 58 yaşında emekli olmayı hayal ediyor" },
+    elena: { tagline: "Dört kişilik aile · 58 yaşında emekli olmayı planlıyor" },
     goal: "{age} yaşına kadar CHF {target:mio} mn net varlık",
   },
 
@@ -139,9 +147,10 @@ export const tr = {
     pillar3aOn: "3a tavanda",
     pillar3aOff: "3a kapalı",
     standingOrder: "Düzenli yatırım: {amount:chf}/ay",
-    taxLeft: "💡 3a (bireysel emeklilik) ile kaçırdığın vergi avantajı: yılda {amount} ({rate:pct} marjinal oranla, {max:chf} üzerinden).",
+    taxLeft: "3a (bireysel emeklilik) ile kaçırdığın vergi avantajı: yılda {amount} ({rate:pct} marjinal oranla, {max:chf} üzerinden).",
+    taxLeftShort: "3a'yı doldurursan yılda {amount:chf} vergi kazanırsın",
     growthWarning:
-      "⚠️ Büyüme, daha derin düşüşler demek — ve son düşüşte satmıştın. İkizin bu alışkanlığı koruyor: daha fazla hisse ancak düşüşte elde tutarsan kazandırır.",
+      "Büyüme, daha derin düşüşler demek — ve son düşüşte satmıştın. İkizin bu alışkanlığı koruyor: daha fazla hisse ancak düşüşte elde tutarsan kazandırır.",
   },
 
   waiting: {
@@ -155,7 +164,7 @@ export const tr = {
   },
 
   plan: {
-    pin: "📌 A planı yap",
+    pin: "A planı yap",
     pinTitle: "Mevcut planı kaydet ve her değişikliği onunla karşılaştır",
     label: "A planı{marker}: {label}",
     atGoal: " · {age} yaşında: ",
@@ -176,6 +185,8 @@ export const tr = {
     simulating: "Hesaplanıyor…",
     result: "{status} · {ops}",
     examplesAria: "Örnek senaryolar",
+    moreExamples: "Daha fazla örnek",
+    fewerExamples: "Daha az örnek",
     examples: {
       jobLoss: "2028'de 6 ay işsiz kalırsam?",
       delay: "Ev alımını 2 yıl ertelesem",
@@ -249,7 +260,7 @@ export const tr = {
     refresh: "Yenile",
     explain: "Durumumu açıkla",
     loading: "Rakamlar okunuyor…",
-    hint: "Yalnızca nihai rakamlarla tek kısa çağrı (~150 token). Model açıklar; asla hesap yapmaz.",
+    hint: "Adını, yaşını, şehrini ve motorun sonuçlarını bir dil modeline gönderir. Model bunları açıklar, asla hesap yapmaz. Kullanımı denetçide görebilirsin.",
   },
 
   narr: {
@@ -267,7 +278,7 @@ export const tr = {
     habitLeakage: "Maaş günü ve anlık harcama",
     habitPanic: "Panik satışı",
     approxPerMonth: "≈ {amount:chf}/ay",
-    none: "Maliyetli bir alışkanlık görünmüyor. 👏",
+    none: "Maliyetli bir alışkanlık görünmüyor.",
     snapped: "Bu ayki taramalar · {months} ay ortalaması",
     snappedWith_one: "Bu ayki taramalar ({count} fiş) · {months} ay ortalaması",
     snappedWith_other: "Bu ayki taramalar ({count} fiş) · {months} ay ortalaması",
@@ -367,9 +378,9 @@ export const tr = {
   snap: {
     title: "Tara ve ekle",
     subtitle: "önce tarayıcında çalışır",
-    intro: "Fatura, fiş, maaş bordrosu, emlak ilanı ya da el yazısı bir not yükle.",
-    uploadAria: "Görsel yükle",
-    drop: "Görseli bırak ya da yükle",
+    intro: "Ne aldığını görmek için fişinin fotoğrafını yükle. QR fatura, maaş bordrosu, emlak ilanı veya el yazısı notu da tarayabilirsin.",
+    uploadAria: "Kendi fiş fotoğrafını yükle",
+    drop: "Fiş fotoğrafını yükle veya buraya bırak",
     maxSize: "En fazla 15 MB",
     takePhoto: "Fotoğraf çek",
     tooBig: "En fazla 15 MB boyutunda bir görsel seç.",
@@ -422,6 +433,26 @@ export const tr = {
     add: "İkizine ekle",
   },
 
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → harcamalarına eklendi",
+    items: "Fiş kalemleri",
+    category: "Kategori",
+    total: "Toplam ({currency})",
+    itemName: "{count}. kalemin adı",
+    itemAmount: "{count}. kalemin tutarı ({currency})",
+    remove: "{count}. kalemi kaldır",
+    addItem: "Kalem ekle",
+    sum: "Kalemler {sum} · Toplam {total}",
+    summary_one: "{count:int} kalem · {amount}",
+    summary_other: "{count:int} kalem · {amount}",
+    matched: "Kalemlerin toplamı fişteki tutarla eşleşiyor.",
+    mismatch: "Kalemlerin toplamı fişteki tutardan farklı. Tutarları kontrol et.",
+    noItems: "Kalem bulunamadı. Fişine bakarak kalemleri ekle.",
+    convert: "Fişi eklemek için toplamı ve kalem tutarlarını CHF olarak gir.",
+    enterChf: "Tutarları CHF olarak gir",
+    textTier: "Tier 2 · Metin modeli",
+  },
+
   kind: {
     listing: "Emlak ilanı",
     receipt: "Fiş",
@@ -462,8 +493,8 @@ export const tr = {
   summary: {
     listingNoPrice: "İlan bulundu ama fiyat okunamadı.",
     listingImplausible: "İlan fiyatı {amount:chf} gerçekçi görünmüyor — eklenmedi.",
-    listingAdded: "🏠 {label} · {amount:chf} → zaman çizelgene eklendi",
-    listingReplaces: "🏠 {label} · {amount:chf} → zaman çizelgene eklendi (“{old}” yerine)",
+    listingAdded: "{label} · {amount:chf} → zaman çizelgene eklendi",
+    listingReplaces: "{label} · {amount:chf} → zaman çizelgene eklendi (“{old}” yerine)",
     noTotal: "Toplam tutar okunamadı.",
     bill: "Fatura",
     billFrom: "{merchant} faturası",
@@ -471,22 +502,23 @@ export const tr = {
     listingFallback: "İlandaki ev",
     spend: "Harcama",
     recurringBill: "Düzenli fatura",
-    billDuplicate: "🧾 {merchant} · {monthly:chf}/ay · {match} ile eşleşiyor → zaten bütçende, değişiklik yok",
-    billRecurring: "🧾 {merchant} · {monthly:chf}/ay düzenli → aylık giderlerine eklendi",
+    billDuplicate: "{merchant} · {monthly:chf}/ay · {match} ile eşleşiyor → zaten bütçende, değişiklik yok",
+    billRecurring: "{merchant} · {monthly:chf}/ay düzenli → aylık giderlerine eklendi",
     duplicateOf: "{merchant} ({amount:chf}/ay)",
-    receipt: "🧾 {merchant} · {amount:chf} · {category} → bu ayın harcamasına eklendi",
+    receipt: "{merchant} · {amount:chf} · {category} → bu ayın harcamasına eklendi",
     payslipNoNet: "Maaş bordrosu bulundu ama net maaş yok.",
     payslipImplausible: "Net maaş {amount:chf} gerçekçi görünmüyor — kullanılmadı.",
-    payslip: "💼 Net maaş (Nettolohn) {net:chf} ×13 → brüt ≈ {gross:chf}/yıl, vergi sonrası eline geçen ≈ {takeHome:chf}/ay",
+    payslip: "Net maaş (Nettolohn) {net:chf} ×13 → brüt ≈ {gross:chf}/yıl, vergi sonrası eline geçen ≈ {takeHome:chf}/ay",
     note: "Not",
-    noteNoAmount: "✍️ “{label}” — tutar bulunamadı.",
-    noteImplausible: "✍️ Tutar {amount:chf} gerçekçi görünmüyor — eklenmedi.",
-    noteAdded: "✍️ {label} · {amount:chf} → planlı gider olarak eklendi",
-    noteAddedYear: "✍️ {label} · {year} yılında {amount:chf} → planlı gider olarak eklendi",
+    noteNoAmount: "“{label}” — tutar bulunamadı.",
+    noteImplausible: "Tutar {amount:chf} gerçekçi görünmüyor — eklenmedi.",
+    noteAdded: "{label} · {amount:chf} → planlı gider olarak eklendi",
+    noteAddedYear: "{label} · {year} yılında {amount:chf} → planlı gider olarak eklendi",
     nothing: "Bu görselde finansal bir bilgi bulunamadı.",
   },
 
   step: {
+    receiptCheck: "Fiş kalemlerinin toplamını kontrol et",
     decode: "Görseli çözümle",
     prepareNaive: "Karşılaştırma görselini yerelde hazırla",
     cache: "Görsel önbelleği",
@@ -544,7 +576,7 @@ export const tr = {
 
   inspector: {
     kicker: "Tasarruflu işlem hattı denetçisi",
-    title: "Her token'ın hesabı burada.",
+    title: "Token kullanımı ve maliyet",
     closeAria: "Tasarruflu işlem hattı denetçisini kapat",
     oursMeasured: "Doppel · ölçülen",
     calls_one: "{count} çağrı",
@@ -566,7 +598,7 @@ export const tr = {
     tier1Title: "Tier 1 · Yerel OCR → metin",
     tier1Text: "Gri ton + kontrast + Tesseract. Temiz belgeler yerel regex ile çözülür (0 token); belirsiz metin küçük bir LLM'e gider.",
     tier2Title: "Tier 2 · 512px gri JPEG",
-    tier2Text: "Yalnızca OCR güveni %65'in altındaysa: ~20 KB gri tonlu bir görsel küçük bir VLM'e gider.",
+    tier2Text: "Yalnızca OCR güveni %65'in altındaysa ya da OCR başarısız olursa: ~20 KB gri tonlu bir görsel küçük bir VLM'e gider.",
     measuredCalls: "Ölçülen çağrılar ({count})",
     baselineNote: "Naif hesaplama gerçek görsel boyutlarını kullanır (büyütme yok); komut ve anlatımda profil verisini 2,4k karakterle sınırlar.",
     emptyAll: "Bir belge tara ya da bir senaryo sor — her çağrı rotası, gönderilen baytları ve içeriğiyle burada görünür.",
@@ -602,7 +634,7 @@ export const tr = {
     stateLive: "canlı ölçüldü",
     stateEstimated: "tahmini",
     liveCheck: "Canlı karşılaştırma",
-    liveCheckText: "Orijinal görseli doğrudan GPT-4o'ya gönder; gerçek token, maliyet ve doğruluğu karşılaştır.",
+    liveCheckText: "Görseli JPEG olarak (uzun kenarı en fazla 2048 px) doğrudan GPT-4o'ya gönder; gerçek token, maliyet ve doğruluğu karşılaştır.",
     running: "GPT-4o çalışıyor…",
     rerun: "Naif GPT-4o'yu yeniden çalıştır",
     run: "Naif yöntemi çalıştır (GPT-4o)",

@@ -37,10 +37,12 @@ import { ConeChart } from "./ConeChart";
 import { CommandBar } from "./CommandBar";
 import { SnapPanel, type SnapItem } from "./SnapPanel";
 import { FrugalBadge, Inspector } from "./Inspector";
-import { AffordabilityCard, BehaviorCard, RecipesCard, Timeline } from "./Cards";
+import { AffordabilityCard, BankerCard, BehaviorCard, RecipesCard, Timeline } from "./Cards";
 import { RetirementCard } from "./RetirementCard";
 import { PlanCompare, type PinnedPlan } from "./PlanCompare";
-import { InvestControls, WaitingStrip } from "./InvestControls";
+import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
+import { Hero } from "./Hero";
+import { CardHeader, Section } from "./ui";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -82,7 +84,7 @@ interface PendingImpact {
 }
 
 export default function DoppelApp() {
-  const { locale, setLocale, t, tm, rich, fmt, mounted } = useI18n();
+  const { locale, setLocale, t, tm } = useI18n();
   const [profileId, setProfileId] = useState(PROFILES[0].id);
   const base = PROFILES.find((p) => p.id === profileId)!;
 
@@ -461,7 +463,6 @@ export default function DoppelApp() {
 
   const set = (ops: Op[], label: Text) => mutate((s) => applyScenarioOps(s, validateOps(ops, s.events)), { label });
 
-  const probColor = real.successProb >= 0.8 ? "text-good" : real.successProb >= 0.5 ? "text-warn" : "text-bad";
   const hasOverrides =
     scenario.expenseDelta !== 0 || scenario.optimize || !!scenario.income || scenario.recurring.length > 0;
 
@@ -507,171 +508,145 @@ export default function DoppelApp() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-6 pb-24">
-        {/* Hero */}
-        <div className="mb-6">
-          <div className="label">
-            {rich("hero.who", { name: <span lang="de-CH">{effProfile.name}</span>, age: effProfile.age, city: <span lang="de-CH">{effProfile.city}</span>, tagline: effProfile.tagline })}
-          </div>
-          <h1 className="mt-1 font-serif text-4xl leading-tight sm:text-5xl">
-            {t("hero.goal", { goal: effProfile.goal.label })}{" "}
-            <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{fmt.pct(real.successProb)}</span>
-          </h1>
-          <p className="mt-1 text-sm text-ink-2">
-            {rich("hero.disciplined", { odds: <b className="num text-ink">{fmt.pct(ideal.successProb)}</b> })}{" "}
-            {rich("hero.netWorth", { amount: <b className="num text-ink">{fmt.chf(netWorthToday)}</b> })}{" "}
-            <span className="text-ink-3">{t("hero.netWorthNote")}</span>{" "}
-            {rich("hero.crunch", { risk: <b className="num text-ink">{fmt.pct(real.crunchProb)}</b> })}
-            {mounted && <>{" "}{rich("hero.simulated", {
-              paths: fmt.int(real.paths),
-              ms: <span className="num">{Math.round(real.ms)}</span>,
-            })}</>}
-          </p>
-          {impact && (
-            <p className="mt-1 text-sm">
-              <span className="text-ink-3">{t("impact.line", { label: impact.label })}</span>
-              <b className="num">
-                {t("common.arrow", { before: fmt.pct(impact.before), after: fmt.pct(impact.after) })}
-              </b>{" "}
-              <span className={`num text-xs ${impact.after > impact.before ? "text-good" : impact.after < impact.before ? "text-bad" : "text-ink-3"}`}>
-                {t("common.deltaPp", { value: (impact.after >= impact.before ? "+" : "−") + fmt.int(Math.abs(Math.round((impact.after - impact.before) * 100))) })}
-              </span>
-            </p>
-          )}
-          <div className="mt-4 flex flex-col gap-3">
-            <InvestControls
-              risk={effProfile.riskProfile}
-              onRisk={(r: RiskProfile) => set([{ op: "set", key: "riskProfile", value: r }], msg("change.riskProfile", { risk: msg(`risk.${r}`) }))}
-              contributes3a={effProfile.contributes3a || scenario.optimize}
-              on3a={(v) => set([{ op: "set", key: "contributes3a", value: v }], msg(v ? "change.max3a" : "change.stop3a"))}
-              monthlyInvest={scenario.monthlyInvest}
-              onClearInvest={() => set([{ op: "set", key: "monthlyInvest", value: 0 }], msg("change.stopStandingOrder"))}
-              panicHistory={effProfile.history.soldInDrawdown}
-              marginalTaxRate={effProfile.marginalTaxRate}
+      <main className="mx-auto max-w-6xl px-4 pt-8 pb-24">
+        {/* Hero: identity, headline, one supporting line, settings row */}
+        <Hero
+          name={effProfile.name}
+          age={effProfile.age}
+          city={effProfile.city}
+          tagline={effProfile.tagline}
+          goal={effProfile.goal.label}
+          odds={real.successProb}
+          ideal={ideal.successProb}
+          fresh={fresh}
+          netWorth={netWorthToday}
+          crunch={real.crunchProb}
+          sim={{ paths: real.paths, ms: real.ms }}
+          impact={impact}
+          taxTip={effProfile.contributes3a || scenario.optimize ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
+        >
+          <InvestControls
+            risk={effProfile.riskProfile}
+            onRisk={(r: RiskProfile) => set([{ op: "set", key: "riskProfile", value: r }], msg("change.riskProfile", { risk: msg(`risk.${r}`) }))}
+            contributes3a={effProfile.contributes3a || scenario.optimize}
+            on3a={(v) => set([{ op: "set", key: "contributes3a", value: v }], msg(v ? "change.max3a" : "change.stop3a"))}
+            monthlyInvest={scenario.monthlyInvest}
+            onClearInvest={() => set([{ op: "set", key: "monthlyInvest", value: 0 }], msg("change.stopStandingOrder"))}
+            panicHistory={effProfile.history.soldInDrawdown}
+            marginalTaxRate={effProfile.marginalTaxRate}
+          >
+            <PlanCompare
+              plan={pin}
+              a={planAResult}
+              b={real}
+              goalAge={effProfile.goal.age}
+              onPin={() => commitPin({ scenario: scenarioRef.current, label: msg("plan.pinned"), manual: true })}
+              onUnpin={() => commitPin(null)}
             />
-            <div>
-              <PlanCompare
-                plan={pin}
-                a={planAResult}
-                b={real}
-                goalAge={effProfile.goal.age}
-                onPin={() => commitPin({ scenario: scenarioRef.current, label: msg("plan.pinned"), manual: true })}
-                onUnpin={() => commitPin(null)}
-              />
-            </div>
-          </div>
-        </div>
+          </InvestControls>
+        </Hero>
 
-        <div className="mb-6">
+        <div className="mt-6 mb-6">
           <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} />
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Left column */}
-          <div className="space-y-5">
-            <section className="card p-4 sm:p-5">
-              <div className="mb-3 flex items-baseline justify-between gap-2">
-                <div className="label">{t("chart.title")}</div>
-                <span className="text-[11px] text-ink-3">{t("chart.engine")}</span>
-              </div>
-              <ConeChart
-                real={real}
-                ideal={ideal}
-                goal={effProfile.goal}
-                planA={planAResult && planAResult !== real ? planAResult : null}
-                retirementAge={effProfile.retirementAge}
-                eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
-              />
-              <div className="mt-4 border-t border-line pt-4">
-                <Timeline
-                  events={scenario.events}
-                  age={effProfile.age}
-                  onShift={(id, m) => {
-                    const e = scenario.events.find((x) => x.id === id);
-                    set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
-                  }}
-                  onRemove={(id) => {
-                    const e = scenario.events.find((x) => x.id === id);
-                    set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
-                  }}
-                />
-              </div>
-              {hasOverrides && (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  {scenario.expenseDelta !== 0 && (
-                    <Pill label={msg("pill.spending", { amount: scenario.expenseDelta })}
-                      onClear={() => mutate((s) => ({ ...s, expenseDelta: 0 }), { label: msg("change.resetSpending") })} />
-                  )}
-                  {scenario.optimize && (
-                    <Pill label={msg("pill.optimize")}
-                      onClear={() => mutate((s) => ({ ...s, optimize: false }), { label: msg("change.stopIdle") })} />
-                  )}
-                  {scenario.income && (
-                    <Pill label={msg("pill.income", { label: scenario.income.label, gross: scenario.income.grossIncomeYear, net: scenario.income.netIncomeMonth })}
-                      onClear={() => mutate((s) => ({ ...s, income: null }), { label: msg("change.removePayslip") })} />
-                  )}
-                  {scenario.recurring.map((r) => (
-                    <Pill key={r.id} label={msg("pill.recurring", { label: r.label, amount: r.monthly })}
-                      onClear={() => mutate((s) => ({ ...s, recurring: s.recurring.filter((x) => x.id !== r.id) }), { label: msg("change.removeItem", { label: r.label }) })} />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="card p-4 sm:p-5">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="label">{t("banker.title")}</div>
-                <button
-                  onClick={narrate}
-                  disabled={narrative?.loading}
-                  className="rounded-full border border-line px-3 py-1 text-xs font-medium transition hover:border-ink-3 disabled:opacity-50"
-                >
-                  {t(narrative ? "banker.refresh" : "banker.explain")}
-                </button>
-              </div>
-              {narrative?.loading && <p className="pulse-soft text-sm text-ink-3">{t("banker.loading")}</p>}
-              {narrative && !narrative.loading && (
-                <p className="font-serif text-xl leading-snug">{t("common.quote", {
-                  text: narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" "),
-                })}</p>
-              )}
-              {!narrative && (
-                <p className="text-sm text-ink-3">
-                  {t("banker.hint")}
-                </p>
-              )}
-            </section>
-
-            <BehaviorCard
-              behavior={behavior}
-              costChf={behaviorCost}
-              habitCosts={extras?.key === inputsKey ? extras.habits : null}
-              crunchProb={real.crunchProb}
-              goalAge={effProfile.goal.age}
-            />
-            <WaitingStrip items={sameProfileExtras ? sameProfileExtras.waiting : undefined} loading={extras?.key !== inputsKey} />
-          </div>
-
-          {/* Right column */}
-          <div className="space-y-5">
-            <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
-            {affordability && house && (
-              <AffordabilityCard
-                result={affordability}
-                label={house.labelMsg ?? house.label}
-                month={house.month}
-                boughtProb={house.boughtProb}
-                floorPlan={floorPlan}
-              />
-            )}
-            <RetirementCard
-              stats={real.retirement}
+        {/* Your future: the chart next to the snap input that changes it */}
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="card p-4 sm:p-6">
+            <CardHeader title={t("chart.title")} />
+            <ConeChart
+              real={real}
+              ideal={ideal}
+              goal={effProfile.goal}
+              planA={planAResult && planAResult !== real ? planAResult : null}
               retirementAge={effProfile.retirementAge}
-              disabled={!fresh}
-              onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], msg("change.retireAt", { age }))}
+              eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
             />
-            <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
-          </div>
+            <div className="mt-5">
+              <Timeline
+                events={scenario.events}
+                age={effProfile.age}
+                onShift={(id, m) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
+                }}
+                onRemove={(id) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
+                }}
+              />
+            </div>
+            {hasOverrides && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {scenario.expenseDelta !== 0 && (
+                  <Pill label={msg("pill.spending", { amount: scenario.expenseDelta })}
+                    onClear={() => mutate((s) => ({ ...s, expenseDelta: 0 }), { label: msg("change.resetSpending") })} />
+                )}
+                {scenario.optimize && (
+                  <Pill label={msg("pill.optimize")}
+                    onClear={() => mutate((s) => ({ ...s, optimize: false }), { label: msg("change.stopIdle") })} />
+                )}
+                {scenario.income && (
+                  <Pill label={msg("pill.income", { label: scenario.income.label, gross: scenario.income.grossIncomeYear, net: scenario.income.netIncomeMonth })}
+                    onClear={() => mutate((s) => ({ ...s, income: null }), { label: msg("change.removePayslip") })} />
+                )}
+                {scenario.recurring.map((r) => (
+                  <Pill key={r.id} label={msg("pill.recurring", { label: r.label, amount: r.monthly })}
+                    onClear={() => mutate((s) => ({ ...s, recurring: s.recurring.filter((x) => x.id !== r.id) }), { label: msg("change.removeItem", { label: r.label }) })} />
+                ))}
+              </div>
+            )}
+          </section>
+          <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
+        </div>
+
+        <div className="mt-14 space-y-14">
+          <Section title={t("layout.decisions")}>
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              {affordability && house && (
+                <AffordabilityCard
+                  result={affordability}
+                  label={house.labelMsg ?? house.label}
+                  month={house.month}
+                  boughtProb={house.boughtProb}
+                  floorPlan={floorPlan}
+                />
+              )}
+              <RetirementCard
+                stats={real.retirement}
+                retirementAge={effProfile.retirementAge}
+                disabled={!fresh}
+                onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], msg("change.retireAt", { age }))}
+              />
+            </div>
+          </Section>
+
+          <Section title={t("layout.nextSteps")}>
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
+              <BankerCard
+                started={!!narrative}
+                loading={!!narrative?.loading}
+                text={narrative && !narrative.loading
+                  ? narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" ")
+                  : undefined}
+                onExplain={narrate}
+              />
+            </div>
+          </Section>
+
+          <Section title={t("layout.habits")}>
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              <BehaviorCard
+                behavior={behavior}
+                costChf={behaviorCost}
+                habitCosts={extras?.key === inputsKey ? extras.habits : null}
+                crunchProb={real.crunchProb}
+                goalAge={effProfile.goal.age}
+              />
+              <WaitingStrip items={sameProfileExtras ? sameProfileExtras.waiting : undefined} loading={extras?.key !== inputsKey} />
+            </div>
+          </Section>
         </div>
       </main>
 

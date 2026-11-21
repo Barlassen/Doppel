@@ -30,15 +30,23 @@ export const en = {
     separator: "{first} · {second}",
     priceLabel: "{label} · {price:chf}",
     close: "Close",
+    details: "Details",
+    howCalculated: "How is this calculated?",
   },
 
   header: {
     profiles: "Demo profile",
   },
 
+  layout: {
+    decisions: "Big decisions",
+    nextSteps: "What to do next",
+    habits: "Habits and timing",
+  },
+
   profile: {
     lukas: { tagline: "Software engineer · wants a first home" },
-    elena: { tagline: "Family of four · dreams of retiring at 58" },
+    elena: { tagline: "Family of four · plans to retire at 58" },
     goal: "CHF {target:mio}M net worth by {age}",
   },
 
@@ -137,9 +145,10 @@ export const en = {
     pillar3aOn: "Pillar 3a maxed",
     pillar3aOff: "Pillar 3a off",
     standingOrder: "Standing order {amount:chf}/mo invested",
-    taxLeft: "💡 3a tax left on the table: {amount}/yr ({max:chf} at your {rate:pct} marginal rate).",
+    taxLeft: "3a tax left on the table: {amount}/yr ({max:chf} at your {rate:pct} marginal rate).",
+    taxLeftShort: "Maxing 3a would save {amount:chf} tax/yr",
     growthWarning:
-      "⚠️ Growth means deeper dips — and you sold in the last one. Your twin keeps that habit: more equities only pay if you hold through the drawdown.",
+      "Growth means deeper dips — and you sold in the last one. Your twin keeps that habit: more equities only pay if you hold through the drawdown.",
   },
 
   waiting: {
@@ -153,7 +162,7 @@ export const en = {
   },
 
   plan: {
-    pin: "📌 Pin as Plan A",
+    pin: "Pin as Plan A",
     pinTitle: "Snapshot the current plan and compare every change against it",
     label: "Plan A{marker}: {label}",
     atGoal: " · at {age}: ",
@@ -174,6 +183,8 @@ export const en = {
     simulating: "Simulating…",
     result: "{status} · {ops}",
     examplesAria: "Example what-ifs",
+    moreExamples: "More examples",
+    fewerExamples: "Fewer examples",
     examples: {
       jobLoss: "What if I lose my job for 6 months in 2028?",
       delay: "Delay the flat by 2 years",
@@ -247,7 +258,7 @@ export const en = {
     refresh: "Refresh",
     explain: "Explain my situation",
     loading: "Reading the numbers…",
-    hint: "One short call with only the final numbers (~150 tokens). The model explains; it never calculates.",
+    hint: "Sends your name, age, city and the engine's results to a language model. It explains them and never calculates. Usage appears in the Inspector.",
   },
 
   narr: {
@@ -265,7 +276,7 @@ export const en = {
     habitLeakage: "Payday & impulse spending",
     habitPanic: "Panic selling",
     approxPerMonth: "≈ {amount:chf}/mo",
-    none: "No costly patterns detected. 👏",
+    none: "No costly patterns detected.",
     snapped: "Snapped this month vs {months}-month baseline",
     snappedWith_one: "Snapped this month ({count} receipt) vs {months}-month baseline",
     snappedWith_other: "Snapped this month ({count} receipts) vs {months}-month baseline",
@@ -365,9 +376,9 @@ export const en = {
   snap: {
     title: "Snap to twin",
     subtitle: "runs in your browser first",
-    intro: "Drop a bill, receipt, payslip, property listing or a handwritten note.",
-    uploadAria: "Upload image",
-    drop: "Drop an image or upload",
+    intro: "Upload a receipt photo to see what you bought. You can also scan a QR-bill, payslip, listing or handwritten note.",
+    uploadAria: "Upload your own receipt photo",
+    drop: "Upload or drop your receipt photo",
     maxSize: "Up to 15 MB",
     takePhoto: "Take photo",
     tooBig: "Choose an image under 15 MB.",
@@ -420,6 +431,26 @@ export const en = {
     add: "Add to twin",
   },
 
+  receipt: {
+    recorded: "🧾 {merchant} · {amount} · {category} → added to spending",
+    items: "Receipt items",
+    category: "Category",
+    total: "Total ({currency})",
+    itemName: "Item {count} name",
+    itemAmount: "Item {count} amount ({currency})",
+    remove: "Remove item {count}",
+    addItem: "Add item",
+    sum: "Items {sum} · Total {total}",
+    summary_one: "{count:int} item · {amount}",
+    summary_other: "{count:int} items · {amount}",
+    matched: "The items match the printed total.",
+    mismatch: "The items and receipt total differ. Check the amounts.",
+    noItems: "No items found. Add them from your receipt.",
+    convert: "Enter the total and item amounts in CHF to add this receipt.",
+    enterChf: "Enter CHF amounts",
+    textTier: "Tier 2 · Text model",
+  },
+
   kind: {
     listing: "Property listing",
     receipt: "Receipt",
@@ -460,8 +491,8 @@ export const en = {
   summary: {
     listingNoPrice: "Listing found, but no price could be read.",
     listingImplausible: "Listing price {amount:chf} looks implausible — not added.",
-    listingAdded: "🏠 {label} · {amount:chf} → placed on your timeline",
-    listingReplaces: "🏠 {label} · {amount:chf} → placed on your timeline (replaces “{old}”)",
+    listingAdded: "{label} · {amount:chf} → placed on your timeline",
+    listingReplaces: "{label} · {amount:chf} → placed on your timeline (replaces “{old}”)",
     noTotal: "Couldn't read a total.",
     bill: "Bill",
     billFrom: "Bill from {merchant}",
@@ -469,22 +500,23 @@ export const en = {
     listingFallback: "Home from listing",
     spend: "Spend",
     recurringBill: "Recurring bill",
-    billDuplicate: "🧾 {merchant} · {monthly:chf}/month · matches {match} → already in your budget, nothing changes",
-    billRecurring: "🧾 {merchant} · {monthly:chf}/month recurring → added to your monthly costs",
+    billDuplicate: "{merchant} · {monthly:chf}/month · matches {match} → already in your budget, nothing changes",
+    billRecurring: "{merchant} · {monthly:chf}/month recurring → added to your monthly costs",
     duplicateOf: "{merchant} ({amount:chf}/mo)",
-    receipt: "🧾 {merchant} · {amount:chf} · {category} → counted in this month's spending",
+    receipt: "{merchant} · {amount:chf} · {category} → counted in this month's spending",
     payslipNoNet: "Payslip found, but no net pay.",
     payslipImplausible: "Net pay {amount:chf} looks implausible — not used.",
-    payslip: "💼 Nettolohn {net:chf} ×13 → gross ≈ {gross:chf}/yr, take-home after tax ≈ {takeHome:chf}/month",
+    payslip: "Nettolohn {net:chf} ×13 → gross ≈ {gross:chf}/yr, take-home after tax ≈ {takeHome:chf}/month",
     note: "Note",
-    noteNoAmount: "✍️ “{label}” — no amount found.",
-    noteImplausible: "✍️ Amount {amount:chf} looks implausible — not added.",
-    noteAdded: "✍️ {label} · {amount:chf} → added as a planned expense",
-    noteAddedYear: "✍️ {label} · {amount:chf} in {year} → added as a planned expense",
+    noteNoAmount: "“{label}” — no amount found.",
+    noteImplausible: "Amount {amount:chf} looks implausible — not added.",
+    noteAdded: "{label} · {amount:chf} → added as a planned expense",
+    noteAddedYear: "{label} · {amount:chf} in {year} → added as a planned expense",
     nothing: "Nothing financial found in this image.",
   },
 
   step: {
+    receiptCheck: "Check receipt item sum",
     decode: "Decode image",
     prepareNaive: "Prepare comparison image locally",
     cache: "Image cache",
@@ -542,7 +574,7 @@ export const en = {
 
   inspector: {
     kicker: "Frugal pipeline inspector",
-    title: "Every token, accounted for.",
+    title: "Token usage and cost",
     closeAria: "Close Frugal Pipeline Inspector",
     oursMeasured: "Doppel · measured",
     calls_one: "{count} call",
@@ -564,7 +596,7 @@ export const en = {
     tier1Title: "Tier 1 · Local OCR → text",
     tier1Text: "Grayscale + contrast + Tesseract. Clean docs resolve via local regex (0 tok); ambiguous text goes to a small LLM.",
     tier2Title: "Tier 2 · 512px gray JPEG",
-    tier2Text: "Only when OCR confidence < 65%: a ~20 KB grayscale image goes to a small VLM.",
+    tier2Text: "Only when OCR confidence < 65% or OCR fails: a ~20 KB grayscale image goes to a small VLM.",
     measuredCalls: "Measured calls ({count})",
     baselineNote: "Baseline uses actual image dimensions (no upscaling); command/narration baseline caps state at 2.4k chars.",
     emptyAll: "Snap a document or ask a what-if — each call appears here with its route, bytes sent, and payload.",
@@ -600,7 +632,7 @@ export const en = {
     stateLive: "measured live",
     stateEstimated: "estimated",
     liveCheck: "Live baseline check",
-    liveCheckText: "Send the original image straight to GPT-4o and compare real tokens, cost, and accuracy.",
+    liveCheckText: "Send the image to GPT-4o as a JPEG (longest side up to 2048 px) and compare real tokens, cost, and accuracy.",
     running: "Running GPT-4o…",
     rerun: "Re-run naive GPT-4o",
     run: "Run the naive way (GPT-4o)",

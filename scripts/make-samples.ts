@@ -111,6 +111,56 @@ const receipt = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="124
   </g>
 </svg>`;
 
+function tillReceipt(merchant: string, header: string[], rows: [string, string?][], footer: [string, string?][]) {
+  const width = 640;
+  const height = 230 + (rows.length + footer.length) * 43;
+  const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  const print = ([label, price]: [string, string?], y: number) =>
+    `<text x="38" y="${y}">${escape(label)}</text>${price ? `<text x="602" y="${y}" text-anchor="end">${price}</text>` : ""}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="#fbfaf6"/>
+  <g font-family="'Courier New', Courier, monospace" fill="#111" font-size="26">
+    <text x="320" y="57" text-anchor="middle" font-size="38" font-weight="bold">${escape(merchant)}</text>
+    ${header.map((line, i) => print([line], 101 + i * 34)).join("\n    ")}
+    <path d="M38 187h564 M38 ${195 + rows.length * 43}h564" stroke="#555" stroke-dasharray="8 6"/>
+    ${rows.map((row, i) => print(row, 224 + i * 43)).join("\n    ")}
+    ${footer.map((row, i) => print(row, 238 + (rows.length + i) * 43)).join("\n    ")}
+  </g>
+</svg>`;
+}
+
+const receiptMarket = tillReceipt("FALKENRIED MARKT", [
+  "Marktgasse 7, 3011 Bern", "Beleg 00538 · Kasse 2", "21.11.2026  10:42",
+], [
+  ["Vollmilch", "3.90"],
+  ["  2 x 1.95"],
+  ["Ruchbrot", "3.20"],
+  ["Gruyère AOP", "8.50"],
+  ["Waschmittel", "22.95"],
+  ["Äpfel Gala", "10.75"],
+  ["Aktion Waschmittel", "-2.00"],
+], [
+  ["TOTAL CHF", "47.30"],
+  ["Karte Debit", "47.30"],
+  ["MWST 2.6% / 8.1%"],
+]);
+
+const receiptCafe = tillReceipt("CAFÉ DES LUCIOLES", [
+  "Rue du Verger 16, 1003 Lausanne", "Ticket 124 · Table 4", "20.11.2026  14:26",
+], [
+  ["Café crème", "8,40"],
+  ["  2 x 4,20"],
+  ["Tarte aux poires", "7,50"],
+  ["Croque maison", "12,50"],
+  ["Couvert", "2,00"],
+  ["Pourboire", "2,00"],
+], [
+  ["TOTAL TTC CHF", "32,40"],
+  ["Espèces", "40,00"],
+  ["Rendu", "7,60"],
+  ["Dont TVA 8.1%", "2,28"],
+]);
+
 // ---------- 4. Handwritten goal note (Tier 2) ----------
 const font = "'Segoe Script', 'Bradley Hand', 'Snell Roundhand', 'Brush Script MT', cursive";
 const note = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700">
@@ -205,7 +255,9 @@ const payslip = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="128
 qrBill().then(() => {
   writeFileSync(`${OUT}/listing.svg`, listing);
   writeFileSync(`${OUT}/receipt.svg`, receipt);
+  writeFileSync(`${OUT}/receipt-market.svg`, receiptMarket);
+  writeFileSync(`${OUT}/receipt-cafe.svg`, receiptCafe);
   writeFileSync(`${OUT}/note.svg`, note);
   writeFileSync(`${OUT}/payslip.svg`, payslip);
-  console.log("samples written (qr-bill, listing, receipt, note, payslip); receipt total", total);
+  console.log("Samples written, including the long receipt (CHF " + total + "), supermarket, and café.");
 });

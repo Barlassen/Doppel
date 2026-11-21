@@ -6,6 +6,7 @@ import { exclusionReason, resolveOutcome, resolveRoute, resolveUsageKnown, total
 import { NAIVE_PRICE } from "@/lib/frugal/tokens";
 import { callTwin } from "@/lib/llm";
 import type { Extraction } from "@/lib/snap/types";
+import { ReceiptDetails } from "./ReceiptDetails";
 import { msg, type Fmt, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
@@ -465,6 +466,11 @@ function EntryRow({
         )}
       </button>
 
+      {!!e.receiptItems?.length && (
+        <div className="px-3 pb-2">
+          <ReceiptDetails items={e.receiptItems} total={e.extractedAmount} currency={e.receiptCurrency} />
+        </div>
+      )}
       {isOpen && (
         <div id={panelId} className="space-y-3 border-t border-line px-3 py-3 text-xs">
           {e.steps && e.steps.length > 0 && (
@@ -505,7 +511,8 @@ function EntryRow({
               </div>
               {e.fieldsMissing && e.fieldsMissing.length > 0 && (
                 <div className="mt-0.5 text-warn">{t("inspector.missingFields", {
-                  fields: e.fieldsMissing.map((field) => field === "kind" ? t("review.docType") : field === "amount" ? t("inspector.rowAmount") : field).join(", "),
+                  fields: e.fieldsMissing.map((field) => field === "kind" ? t("review.docType")
+                    : field === "amount" ? t("inspector.rowAmount") : field === "items" ? t("receipt.items") : field).join(", "),
                 })}</div>
               )}
             </div>

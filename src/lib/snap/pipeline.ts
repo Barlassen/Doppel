@@ -7,6 +7,7 @@ import { compressForVision, cropToInk, enhanceForOcr, imageFingerprint, jpegByte
 import type { OcrResult } from "./ocr";
 import { parseQrBill, qrBillToExtraction } from "./qrBill";
 import { heuristicExtract } from "./heuristics";
+import { hasReadableReceiptItems, canAcceptLocalReceipt, receiptExtractionStatus, receiptModelText, receiptSum, validatedReceiptItems } from "./receipt";
 import { DOC_KINDS, extractionStatus, isAmount, type Extraction, type PipelineStep, type SnapResult, type Usage } from "./types";
 
 export const OCR_CONFIDENCE_THRESHOLD = 65;
@@ -34,7 +35,9 @@ function readCache(): CacheEntry[] {
     const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "[]");
     return Array.isArray(cache) ? cache.filter((entry): entry is CacheEntry =>
       entry && typeof entry.hash === "string" && typeof entry.signature === "string" && [0, 1, 2].includes(entry.tier)
-      && DOC_KINDS.includes(entry.extraction?.kind) && entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)) : [];
+      && DOC_KINDS.includes(entry.extraction?.kind) && entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)
+      && (entry.extraction.kind !== "receipt" || (validatedReceiptItems(entry.extraction.items)
+        && receiptExtractionStatus(entry.extraction).outcome === "ok"))) : [];
   } catch {
     return [];
   }
@@ -110,6 +113,7 @@ function extractionRank(e: Extraction): number {
 function bestLocal(ocr: OcrResult): Extraction {
   const raw = offlineExtraction(ocr.rawText);
   const compact = offlineExtraction(ocr.compact);
+  if (raw.kind === "receipt") return raw;
   if (raw.kind === "payslip" && compact.kind !== "payslip") return raw;
   if (compact.kind === "payslip" && raw.kind !== "payslip") return compact;
   return extractionRank(compact) > extractionRank(raw) ? compact : raw;
@@ -147,7 +151,13 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
   steps.push({ name: msg("step.cache"), ms: performance.now() - start, detail: msg(forceLlm ? "step.bypassed" : cached ? "step.cacheHit" : "step.cacheMiss") });
 
   function finish(tier: SnapResult["tier"], route: SnapResult["route"], extraction: Extraction, details: Details = {}): SnapResult {
-    const status = extractionStatus(extraction);
+    const status = receiptExtractionStatus(extraction);
+    if (extraction.kind === "receipt" && extraction.items?.length && isAmount(extraction.amount)) {
+      const start = performance.now();
+      const { matches } = receiptSum(extraction.items, extraction.amount);
+      steps.push({ name: msg("step.receiptCheck"), ms: performance.now() - start,
+        detail: msg(matches ? "receipt.matched" : "receipt.mismatch") });
+    }
     if (route !== "cache" && status.outcome === "ok") {
       try {
         const rest = readCache().filter((entry) => entry.hash !== fingerprint.hash || entry.signature !== fingerprint.signature);
@@ -206,14 +216,18 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
     });
   }
 
-  if (ocr && ocr.confidence >= OCR_CONFIDENCE_THRESHOLD) {
+  start = performance.now();
+  const rawLocal = ocr ? heuristicExtract(ocr.rawText) : undefined;
+  const receipt = ocr && rawLocal?.kind === "receipt" && !looksLikePayslip(ocr.rawText) ? rawLocal : undefined;
+  if (ocr && (ocr.confidence >= OCR_CONFIDENCE_THRESHOLD || (receipt && hasReadableReceiptItems(receipt)))) {
     const { confidence } = ocr;
-    const text = ocr.compact || ocr.rawText.trim().slice(0, 600);
-    start = performance.now();
-    const local = heuristicExtract(text);
+    const text = receipt ? receiptModelText(ocr.rawText) : ocr.compact || ocr.rawText.trim().slice(0, 600);
+    const local = receipt ?? heuristicExtract(text);
     const extraField = local.merchant || local.rooms || local.location || local.date;
-    if (!forceLlm && confidence >= 80 && local.kind !== "other" && isAmount(local.amount) && extraField
-      && (local.kind !== "receipt" || !looksLikePayslip(ocr.rawText))) {
+    const canAccept = local.kind === "receipt"
+      ? !looksLikePayslip(ocr.rawText) && canAcceptLocalReceipt(local, confidence)
+      : confidence >= 80 && local.kind !== "other" && isAmount(local.amount) && extraField;
+    if (!forceLlm && canAccept) {
       steps.push({ name: msg("step.regex"), ms: performance.now() - start, bytes: utf8(text), detail: msg("step.regexAccepted") });
       return finish(1, "local-regex", local, { usage: { ...LOCAL_USAGE, model: "Regex (local)" }, ocrConfidence: confidence });
     }
@@ -223,13 +237,15 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
     if (!text) return finish(1, "offline-heuristic", { kind: "other" }, { ocrConfidence: confidence });
     onProgress?.(msg("progress.extracting"));
     start = performance.now();
-    const response = await callTwin<Extraction>({ task: "extract_text", text });
-    const details = gatewayDetails(response, steps, msg("step.textLlm"), start, utf8(text), { wouldSend: { task: "extract_text", text } });
-    if (response.ok && response.data) return finish(1, "text-llm", response.data, { ...details, ocrConfidence: confidence });
+    const request = { task: "extract_text", text, ...(receipt ? { receipt: true } : {}) };
+    const response = await callTwin<Extraction>(request);
+    const details = gatewayDetails(response, steps, msg("step.textLlm"), start, utf8(text), { wouldSend: request });
+    const tier = receipt || response.data?.kind === "receipt" ? 2 : 1;
+    if (response.ok && response.data) return finish(tier, "text-llm", response.data, { ...details, ocrConfidence: confidence });
     start = performance.now();
     const extraction = bestLocal(ocr);
     steps.push({ name: msg("step.fallback"), ms: performance.now() - start });
-    return finish(1, "offline-heuristic", extraction, { ...details, ocrConfidence: confidence });
+    return finish(tier, "offline-heuristic", extraction, { ...details, ocrConfidence: confidence });
   }
 
   start = performance.now();
