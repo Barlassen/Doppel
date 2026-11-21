@@ -6,10 +6,14 @@ import kotlin.math.ln
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+internal fun interface RandomDraw {
+    operator fun invoke(): Double
+}
+
 /** Int multiplication wraps modulo 2^32, matching Math.imul. ushr matches JavaScript >>>. */
-fun mulberry32(seed: Int): () -> Double {
+internal fun mulberry32(seed: Int): RandomDraw {
     var a = seed
-    return {
+    return RandomDraw {
         a += 0x6d2b79f5
         var t = a
         t = (t xor (t ushr 15)) * (t or 1)
@@ -26,19 +30,20 @@ internal fun pathSeed(seed: Int, path: Int): Int {
 }
 
 /** Box–Muller sampler. The spare variate preserves the TypeScript stream order. */
-fun normalSampler(rand: () -> Double): () -> Double {
-    var spare: Double? = null
-    return {
-        val cached = spare
-        if (cached != null) {
-            spare = null
-            cached
+internal fun normalSampler(rand: RandomDraw): RandomDraw {
+    var hasSpare = false
+    var spare = 0.0
+    return RandomDraw {
+        if (hasSpare) {
+            hasSpare = false
+            spare
         } else {
             var u = 0.0
             while (u == 0.0) u = rand()
             val v = rand()
             val r = sqrt(-2 * ln(u))
             spare = r * sin(2 * PI * v)
+            hasSpare = true
             r * cos(2 * PI * v)
         }
     }

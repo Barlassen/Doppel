@@ -6,7 +6,7 @@ Doppel Pocket runs the Doppel financial twin on Android and the desktop JVM. Bot
 
 Open the `pocket/` directory as its own Gradle project in IntelliJ IDEA or Android Studio. Set the Gradle JVM to JDK 17. This project was built with Temurin 17.0.16+8, Gradle 8.13, Kotlin 2.3.21, Compose Multiplatform 1.10.3, Material 3 1.9.0 and Android Gradle Plugin 8.13.2. Gradle 8.13 predates Java 25 runtime support.
 
-From this directory on Windows:
+On Windows, run the wrapper from the `pocket/` directory.
 
 ```powershell
 # Set JAVA_HOME to the installed JDK 17 directory before running the wrapper.
@@ -18,7 +18,7 @@ Use `./gradlew` on macOS and Linux. `:composeApp:run` opens the desktop window.
 
 For Android, install SDK Platform 36 and Build Tools 35.0.0. Set `ANDROID_HOME` or create an ignored `local.properties` in `pocket/` with `sdk.dir=C:/Users/you/AppData/Local/Android/Sdk`. The app targets API 36 and requires API 24 or newer.
 
-Install the debug APK on a running emulator or USB-connected device:
+Install and launch the debug APK on a running emulator or USB-connected device.
 
 ```powershell
 adb install -r composeApp/build/outputs/apk/debug/composeApp-debug.apk
@@ -47,14 +47,14 @@ Physical Kotlin source lines, including comments and blank lines. Tests and gene
 
 | Source set | Shared engine | Compose app | Role |
 | --- | ---: | ---: | --- |
-| `commonMain` | 1,973 | 724 | Engine, profiles, four intent parsers, QR payload and expense rules, Material 3 screens, chart and resources integration |
+| `commonMain` | 1,978 | 724 | Engine, profiles, four intent parsers, QR payload and expense rules, Material 3 screens, chart and resources integration |
 | `androidMain` | 11 | 99 | System date and Unicode bridge, activity, system bars, locale and photo picker |
 | `desktopMain` | 0 | 89 | Window, locale and file chooser |
 | `jvmMain` | 11 | 0 | Desktop engine date and Unicode bridge |
 | `jvmImagesMain` | 0 | 19 | ZXing decoder used by Android and desktop |
 | Server | 0 | 0 | Optional module omitted |
 
-The four Compose XML string bundles total 420 lines. To reproduce the counts, run from the repository root:
+The four Compose XML string bundles total 420 lines. Run the following count from the repository root.
 
 ```powershell
 function Count-Lines($path, $extension) {
