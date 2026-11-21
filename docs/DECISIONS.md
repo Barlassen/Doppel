@@ -11,7 +11,7 @@ This log records the design decisions found in the code, commit history, and ben
 * **Alternative rejected:** Prompting an LLM with the user's financial profile and asking it to project net worth or evaluate mortgage affordability ("LLM-does-the-maths").
 * **Why:** An LLM cannot execute 1,000 monthly stochastic paths reproducibly or auditably, and sending the profile state on every turn costs ~980–1,130 tokens per question (`naiveReasoning()` in `src/lib/frugal/tokens.ts`).
 * **Where it lives:** `src/lib/finance/monteCarlo.ts`, `src/lib/finance/swissRules.ts`, `src/lib/finance/pension.ts`, `src/lib/finance/behavioralEngine.ts`, `src/lib/finance/goalSolver.ts`.
-* **Measured evidence:** 1,000 monthly paths to age 90 run in 85–375 ms in Node (`scripts/engine-check.ts`) at 0 tokens and $0, with reproducible output on seed 42 (`HEADLINE` in `src/lib/finance/scenario.ts`).
+* **Measured evidence:** one 1,000-path run to age 90 takes about 0.2 s in Node on our laptop (`scripts/engine-check.ts` prints the time per run; 193–227 ms in our last run) at 0 tokens and $0, with reproducible output on seed 42 (`HEADLINE` in `src/lib/finance/scenario.ts`).
 
 ### 2. Four-step multimodal snap cascade (QR -> local OCR + regex -> compact text LLM -> 512px vision LLM)
 * **Decision:** Order document readers from cheapest to most expensive:
@@ -111,17 +111,17 @@ This log records the design decisions found in the code, commit history, and ben
 * **Alternative rejected:** Using `Intl.NumberFormat("de-CH")` during SSR and hydration, or routing non-English what-ifs to the LLM.
 * **Why:** Recorded in `src/lib/format.ts:1-4` and commit `30978fd`: Node and Chromium output different apostrophe characters for `de-CH` (`'` vs `’`), causing React hydration mismatches. Why Turkish (`tr`) was chosen as the fourth locale alongside `en`, `de`, and `fr`: **Reason: TEAM TO CONFIRM**.
 * **Where it lives:** `src/lib/format.ts`, `src/lib/i18n/`, `src/lib/twin/intents/`, `scripts/i18n-check.ts`.
-* **Measured evidence:** `npm run i18n:check` passes 242 keys × 4 locales and all localized 0-token intent suites; `scripts/browser-smoke.mjs:300-355` verifies zero hydration errors and 320px layout across EN, DE, FR, and TR.
+* **Measured evidence:** `npm run i18n:check` passes 487 keys × 4 locales and all localized 0-token intent suites; `scripts/browser-smoke.mjs:300-355` verifies zero hydration errors and 320px layout across EN, DE, FR, and TR.
 
 ---
 
 ## 2. Likely jury questions and answers
 
 ### Q1. Why not just send every photo straight to GPT-4o (or a single vision LLM)?
-Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In our 16-document benchmark (`docs/BENCHMARK.md`), 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy.
+Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In our 16-document benchmark (`docs/BENCHMARK.md`), 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy. Caveat to say out loud: the benchmark uses a 75% local gate; the app uses 80% plus a second field, so in the app at most 9 of these 16 would stay local (Q10).
 
 ### Q2. Why not send the full image to Gemini 2.5 Flash-Lite every time instead of building a 4-tier cascade?
-Two reasons: privacy and token volume. First, for the 11/16 documents resolved at Tier 0 (`qr`) and Tier 1 (`local-regex`), zero bytes leave the browser — a bank client's payslip, address, and IBAN stay on their device (`src/lib/snap/pipeline.ts`). Second, even on a cheap model, sending 0 tokens on 69% of documents, `<= 600` characters of text on Tier 1 escalations (244 tokens in the benchmark), and a `512px` grayscale JPEG (11–17 KB, ~430 tokens) only when OCR confidence falls below 65% cuts cloud calls and tokens by 87.3%.
+Two reasons: privacy and token volume. First, for the 11/16 documents resolved at Tier 0 (`qr`) and Tier 1 (`local-regex`), zero bytes leave the browser, so a client's payslip, address and IBAN stay on their device (`src/lib/snap/pipeline.ts`). Second, volume: only 5 of 16 documents make a cloud call at all, and those send at most 600 characters of text (244 tokens in the benchmark) or a 512px grayscale JPEG (11–17 KB, 402–451 tokens). Tokens drop by 87.3% against GPT-4o. We did not measure "full image to Flash-Lite" as a separate baseline (Decision 10), so we cannot say how much of the saving is the cascade and how much is the cheaper model.
 
 ### Q3. How do we know your token and cost savings numbers are real and not a rigged baseline?
 Three checks in the code:
