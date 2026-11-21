@@ -72,8 +72,8 @@ export const de = {
     listingHome: "Eigenheim",
     listingHomeIn: "Eigenheim in {place}",
     homeIn: "Eigenheim in {place}",
-    roomsHome: "{rooms}-Zimmer-Objekt",
-    roomsHomeIn: "{rooms}-Zimmer-Objekt in {place}",
+    roomsHome: "Eigenheim ({rooms} Zi.)",
+    roomsHomeIn: "Eigenheim in {place} ({rooms} Zi.)",
     jobLoss: "Jobverlust",
     crash: "Börsencrash −30%",
     baby: "Baby",
@@ -132,7 +132,7 @@ export const de = {
     pillar3aOn: "3a voll",
     pillar3aOff: "3a aus",
     standingOrder: "Anlegen per Dauerauftrag · {amount:chf}/Mt.",
-    taxLeft: "💡 Mit 3a sparst du {amount} Steuern pro Jahr. Bei {max:chf} Einzahlung und {rate:pct} Grenzsteuersatz.",
+    taxLeft: "💡 Mit voller 3a-Einzahlung sparst du {amount} Steuern pro Jahr ({max:chf} Einzahlung bei {rate:pct} Grenzsteuersatz).",
     growthWarning:
       "⚠️ Mehr Aktien können stärker an Wert verlieren. Beim letzten Rückgang hast du verkauft, und Doppel rechnet damit, dass es wieder passieren kann. Die höhere Aktienquote lohnt sich für dich nur, wenn du auch im Tief investiert bleibst.",
   },
@@ -250,8 +250,8 @@ export const de = {
     homeFails: "Das Eigenheim ist aus Sicht der Bank noch nicht tragbar. Zum geplanten Kaufzeitpunkt könntest du einen Kaufpreis bis {max:chf} finanzieren.",
     topHabit: "«{habit}» kostet dich bis zu deinem Zieltermin am meisten, rund {cost:chf}.",
     retirement: "Wenn du mit {age} in Pension gehst, reichen deine Ersparnisse in {odds:pct} der Szenarien bis 90.",
-    nextStep: "Du könntest so vorgehen. {move}",
-    bestMove: "Mit «{title}» liegt deine Zielchance bei {odds:pct}.",
+    nextStep: "Nächster Schritt: {move}",
+    bestMove: "«{title}» bringt deine Zielchance auf {odds:pct}.",
   },
 
   behavior: {
@@ -261,12 +261,12 @@ export const de = {
     habitPanic: "Panikverkäufe",
     approxPerMonth: "≈ {amount:chf}/Mt.",
     none: "Keine teuren Gewohnheiten erkannt. 👏",
-    snapped: "Ausgaben diesen Monat · Vergleich mit {months}-Monats-Schnitt",
-    snappedWith_one: "Diesen Monat {count} Beleg erfasst · Vergleich mit {months}-Monats-Schnitt",
-    snappedWith_other: "Diesen Monat {count} Belege erfasst · Vergleich mit {months}-Monats-Schnitt",
+    snapped: "Diesen Monat vs. {months}-Mt.-Schnitt",
+    snappedWith_one: "Diesen Monat ({count} Beleg) vs. {months}-Mt.-Schnitt",
+    snappedWith_other: "Diesen Monat ({count} Belege) vs. {months}-Mt.-Schnitt",
     discretionary: "/ {amount:chf} für variable Ausgaben",
-    crunch: "Risiko, dass das Geld ausgeht",
-    crunchBefore: "Risiko, dass das Geld vor {age} ausgeht",
+    crunch: "Geldmangel-Risiko",
+    crunchBefore: "Geldmangel-Risiko vor {age}",
   },
 
   insight: {
@@ -305,7 +305,7 @@ export const de = {
     title: "So erreichst du dein Ziel",
     solving: "wird berechnet …",
     onTrack: "Du bist auf Kurs (≥ 80%). Mach weiter so.",
-    intro: "Deine Chance liegt bei {odds}. Für die kleinsten wirksamen Änderungen vergleicht Doppel dieselben 1’000 Szenarien.",
+    intro: "Deine Chance liegt bei {odds}. Doppel sucht die kleinsten wirksamen Änderungen und prüft sie an denselben 1’000 Szenarien.",
     improvesTo: "steigt auf",
     apply: "Übernehmen",
     applyAria: "Übernehmen · {title}",
@@ -341,7 +341,7 @@ export const de = {
     badCase: "In einem ungünstigen Szenario (1 von 10) gehen sie dir mit {age} aus.",
     badCaseOk: "Auch in einem ungünstigen Szenario (1 von 10) reichen sie über 90 hinaus.",
     ahv: "AHV (ab 65, inkl. 13. Rente)",
-    bvg: "BVG ab {age}",
+    bvg: "BVG-Rente ab {age}",
     income: "Renteneinkommen",
     spending: "Ausgaben in der Pension",
     gap: "Lücke aus Ersparnissen",
@@ -354,13 +354,13 @@ export const de = {
     bridge_other:
       "Gehst du mit {age} in Pension, überbrückst du {count} Jahre ohne AHV mit deinen Ersparnissen. Der Umwandlungssatz der Pensionskasse fällt tiefer aus.",
     footnote:
-      "In heutigen CHF vor Steuern. AHV-Maximalrente × 13/12 × 90% (Beitragslücken). Die BVG-Rente ergibt sich aus dem Pensionskassenkapital mal gemischtem Umwandlungssatz (5,5% mit 65, bei früherer Pensionierung tiefer). Die Ausgaben sinken auf 80%, die Wohnkosten bleiben gleich.",
+      "In heutigen CHF vor Steuern. AHV-Maximalrente × 13/12 × 90% (Beitragslücken). Die BVG-Rente ergibt sich aus dem Pensionskassenkapital mal gemischtem Umwandlungssatz (5.5% mit 65, bei früherer Pensionierung tiefer). Die Ausgaben sinken auf 80%, die Wohnkosten bleiben gleich.",
   },
 
   snap: {
     title: "Beleg scannen",
     subtitle: "Zuerst im Browser",
-    intro: "Lade eine Rechnung, eine Quittung, eine Lohnabrechnung, ein Inserat oder eine handschriftliche Notiz hoch.",
+    intro: "Lade eine Rechnung, eine Quittung, eine Lohnabrechnung, ein Immobilieninserat oder eine handschriftliche Notiz hoch.",
     uploadAria: "Bild hochladen",
     drop: "Bild hierher ziehen oder hochladen",
     maxSize: "Bis 15 MB",
@@ -416,7 +416,7 @@ export const de = {
   },
 
   kind: {
-    listing: "Inserat",
+    listing: "Immobilieninserat",
     receipt: "Quittung",
     bill: "Rechnung",
     payslip: "Lohnabrechnung",
@@ -575,7 +575,7 @@ export const de = {
     energy: "Energiebedarf dieser Sitzung (grob geschätzt)",
     energyLine: "Doppel {ours} · direkt mit GPT-4o {naive}",
     energyNote:
-      "Grobe Schätzung mit rund 0,0006 Wh pro Token für Spitzenmodelle (Epoch AI, 2025), 0,0002 Wh pro Token für kleine Modelle (Google, 2025) und 0,002 Wh pro lokaler CPU-Verarbeitung (15 W × 0,5 s). Je nach Hardware und Bündelung der Anfragen variiert der Bedarf um Faktor 3–5.",
+      "Grobe Schätzung mit rund 0.0006 Wh pro Token für Spitzenmodelle (Epoch AI, 2025), 0.0002 Wh pro Token für kleine Modelle (Google, 2025) und 0.002 Wh pro lokalem CPU-Durchlauf (15 W × 0.5 s). Je nach Hardware und Bündelung der Anfragen variiert der Bedarf um Faktor 3–5.",
     noKey: "Für den Livevergleich mit GPT-4o fehlt der OPENROUTER_API_KEY. Doppel schätzt den Verbrauch anhand der OpenAI-Kachelformel.",
     compareFailed: "Der Direktvergleich ist fehlgeschlagen.",
     gpt4oMeasured: "GPT-4o live",
@@ -586,7 +586,7 @@ export const de = {
     oursHeader: "Doppel · {state}",
     stateOffline: "lokale Auswertung",
     stateMeasured: "gemessen",
-    inOut: "Ein {in} / Aus {out}",
+    inOut: "Eingabe {in} / Ausgabe {out}",
     route: "Pfad {route}",
     leftDevice: "Versendet {size}",
     input: " · Eingabe {size}",
