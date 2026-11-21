@@ -8,8 +8,8 @@ You snap a QR-bill, a receipt, a payslip, a property listing or a handwritten no
 
 Two rules shaped the code:
 
-1. **The LLM never does maths.** Every number on screen comes from deterministic TypeScript in `src/lib/finance`. Models only read documents, parse free-form what-ifs that the local parser misses, and phrase a three-sentence summary of numbers the engine already computed.
-2. **Use the cheapest reader that works.** A QR-bill is decoded locally. Printed text goes through local OCR and regex first. Only low-confidence OCR sends a 512px grayscale image to a small vision model.
+1. **The LLM never does maths.** Every financial number on screen comes from deterministic TypeScript in `src/lib/finance`. Models only read documents, parse free-form what-ifs that the local parser misses, and phrase a three-sentence summary of numbers the engine already computed.
+2. **Use the cheapest reader that works.** A QR-bill is decoded locally. Printed text goes through local OCR and regex first. Only low-confidence or failed OCR sends a grayscale JPEG capped at 512px to a small vision model.
 
 ## Run it
 
@@ -19,7 +19,7 @@ cp .env.example .env.local   # optional: OPENROUTER_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
-Without a key, QR-bills, local OCR, regex extraction, the local what-if parser and the whole finance engine still work. Calls that would need a model fall back to local heuristics. The Inspector lists them as `offline` and leaves them out of the savings figures.
+Without a key, QR-bills, local OCR, regex extraction, the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
 
 ## How it works
 
@@ -42,16 +42,17 @@ From the live benchmark run in [docs/BENCHMARK.md](docs/BENCHMARK.md) (16 synthe
 
 | | Doppel cascade | Whole image to GPT-4o |
 |---|---:|---:|
-| Amounts correct | 16/16 | 16/16 |
+| Amounts correct (within CHF 0.05 or 0.5%) | 16/16 | 16/16 |
 | Documents read with 0 tokens | 11/16 | 0/16 |
 | Tokens per document | 123 | 966 |
 | Cost per 1,000 documents | $0.02 | $2.61 |
 
 Limits of that run, also listed in BENCHMARK.md:
 
-- The benchmark runs a Node copy of the cascade, not the browser code. The copy uses Tesseract `eng+deu`, page-average OCR confidence, and a 75% local-regex threshold; the app adds `fra`, takes the minimum of page confidence and amount-line confidence, and requires 80% plus a second field. With the app's gate, at least two of the 11 local documents (OCR 75% and 79%) would go to the text model.
+- The benchmark runs a Node copy of the cascade, not the browser code. The copy uses Tesseract `eng+deu`, page-average OCR confidence, and a 75% local-regex threshold; the app adds `fra`, takes the minimum of page confidence and amount-line confidence, and requires 80% plus a second field. The two local receipts recorded at 75% and 79% OCR confidence do not meet the app's gate on those scores. Because the OCR setup also differs, the app's local share needs its own measurement.
 - The Doppel latency column includes the GPT-4o baseline call, because the timer starts before it. We have no clean latency comparison yet.
 - The documents are synthetic and were made by us.
+- The report stores token counts and costs, not the raw provider responses.
 
 The finance numbers used in the pitch (Lukas 40.3% vs 69.6%, −24.0 pp from payday spending, and the CHF 940k listing failing the bank test at 38.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 131k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 1,493,741 − CHF 1,362,649 = CHF 131,092`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 

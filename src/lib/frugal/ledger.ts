@@ -60,7 +60,7 @@ export interface LedgerEntry {
 export type ExclusionReason = "offline" | "failed" | "usage-unknown";
 
 export interface LedgerTotals {
-  /** Measured Doppel tokens across included (successful, non-offline, known-usage) entries. */
+  /** Measured Doppel tokens across included entries: not offline, not failed, usage known. Partial results count. */
   ours: number;
   /** Baseline tokens (live GPT-4o where compared, else estimated) across included entries. */
   naive: number;

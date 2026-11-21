@@ -126,14 +126,11 @@ export function naiveReasoning(stateJsonChars: number, outputTokens = 350): Naiv
 }
 
 /**
- * Rough order-of-magnitude serving energy assumptions (Wh per token):
- * - Frontier VLM/LLM (~0.0006 Wh/tok): Epoch AI (2025), "How much energy does ChatGPT use?",
- *   estimating ~0.3 Wh for a ~500-token GPT-4o query.
- * - Small/lite LLM (~0.0002 Wh/tok): Google (2025), "Measuring the environmental impact of
- *   delivering AI at Google Scale", reporting 0.24 Wh median per Gemini text prompt; lite models
- *   with short output caps sit near ~0.2 Wh per 1,000 tokens.
- * - Local browser pass (~0.002 Wh/call): ~15 W client CPU active for ~0.5 s during jsQR/OCR.
- * Real energy varies 3–5× with accelerator generation, batching, and datacenter PUE.
+ * Energy coefficients for illustrative estimates, not measured power use.
+ * References: Epoch AI (2025), "How much energy does ChatGPT use?" (~0.3 Wh for a ~500-token GPT-4o query),
+ * and Google (2025), "Measuring the environmental impact of delivering AI at Google Scale" (0.24 Wh median
+ * per Gemini text prompt). Both are per-query figures; the per-token rates below are our conversion.
+ * Local pass: 15 W x 0.5 s / 3,600 = 0.002 Wh, rounded; OCR can take longer.
  */
 export const ENERGY_ASSUMPTIONS = {
   frontierWhPerTok: 0.0006,

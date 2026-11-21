@@ -2,6 +2,8 @@
 
 This log records the design decisions found in the code, commit history, and benchmark, followed by questions for stage rehearsal. Where the repository does not record why a specific threshold, formula weight, or scope choice was made, the entry says `Reason: TEAM TO CONFIRM`.
 
+Two limits apply to every entry. Code and commits show what was built; they do not show that the financial assumptions are calibrated on real clients. Benchmark accuracy means the amount is within the larger of CHF 0.05 or 0.5% of ground truth (`amountCorrect()` in `scripts/benchmark.ts`); other fields are not scored.
+
 ---
 
 ## 1. Decision log
@@ -19,7 +21,7 @@ This log records the design decisions found in the code, commit history, and ben
   2. Cache: difference hash (`dHash`) + 512px FNV-1a luminance checksum in `localStorage` (`0` tokens).
   3. Tier 1 local: crop to ink, grayscale + 2–98 percentile contrast stretch, Tesseract.js (`eng+deu+fra`) in a Web Worker, and deterministic DE/FR/EN regex extraction (`0` tokens).
   4. Tier 1 cloud: if regex cannot resolve the document and OCR confidence is `>= 65%`, send at most 24 deduplicated lines (`<= 600` chars) to a small text model (`google/gemini-2.5-flash-lite`).
-  5. Tier 2 cloud: only when OCR confidence is `< 65%`, compress the cropped image to a `<= 512px` grayscale JPEG (`q = 0.6`, ~11–17 KB) and send it to a small vision model.
+  5. Tier 2 cloud: only when OCR confidence is `< 65%` or OCR fails, compress the cropped image to a `<= 512px` grayscale JPEG (`q = 0.6`, ~11–17 KB) and send it to a small vision model.
 * **Alternative rejected:** Sending every uploaded photo at full resolution straight to a frontier vision model (`openai/gpt-4o`), or sending all OCR text to an LLM without a local regex pass.
 * **Why:** Swiss QR-bills already encode structured payment data in the QR payload; printed receipts, listings, and payslips follow fixed keyword patterns that regex can extract locally; handwriting and severely blurred photos drop Tesseract confidence below 65%, where only a vision model succeeds.
 * **Where it lives:** `src/lib/snap/pipeline.ts`, `src/lib/snap/qrBill.ts`, `src/lib/snap/image.ts`, `src/lib/snap/ocr.ts`, `src/lib/snap/heuristics.ts`.
@@ -28,7 +30,7 @@ This log records the design decisions found in the code, commit history, and ben
 ### 3. Amount-line OCR confidence penalty and 80% browser local-regex gate (vs 75% in the Node benchmark)
 * **Decision:** In `src/lib/snap/ocr.ts`, compute OCR confidence as `min(pageConfidence, amountLineConfidence)` across lines matching `AMOUNT_CUE` (`CHF`, `k`, `Nettolohn`, `Total`, `Kaufpreis`, etc.). In `src/lib/snap/pipeline.ts`, accept `local-regex` only when `confidence >= 80`, `kind !== "other"`, `amount` is valid, and a supporting field (`merchant`, `rooms`, `location`, or `date`) is present.
 * **Alternative rejected:** Using Tesseract's raw page-average confidence (`data.confidence`) and a 75% gate, as implemented in `scripts/benchmark.ts`.
-* **Why:** Recorded in `src/lib/snap/ocr.ts:129` ("A page average can hide a poorly read amount among clear headings and footers") and commit `cea2853` (hardening the browser cascade against false local accepts). Why `scripts/benchmark.ts` kept the 75% threshold, page-average confidence, and `eng+deu` instead of syncing to the browser's 80% threshold and `eng+deu+fra`: **Reason: TEAM TO CONFIRM** (listed as an open item in `docs/ARCHITECTURE.md` Section 7).
+* **Why:** Recorded in `src/lib/snap/ocr.ts:129` ("A page average can hide a poorly read amount among clear headings and footers") and commit `cea2853` (hardening the browser cascade against false local accepts). Why `scripts/benchmark.ts` kept the 75% threshold, page-average confidence, and `eng+deu` instead of syncing to the browser's 80% threshold and `eng+deu+fra`: **Reason: TEAM TO CONFIRM** (listed as an open item in `docs/ARCHITECTURE.md` Section 7). Why exactly 80%, 65%, 600 characters and 512px: **Reason: TEAM TO CONFIRM**. No threshold sweep is recorded.
 * **Where it lives:** `src/lib/snap/ocr.ts:81,130-131`, `src/lib/snap/pipeline.ts:199-204`, `scripts/benchmark.ts:39-40,592-607`.
 * **Measured evidence:** In `docs/BENCHMARK.md`, `receipt-photo-desk` (79% OCR) and `receipt-fr-photo` (75% OCR) resolve locally in the 75% Node benchmark with the right amounts, but would escalate to `text-llm` under the browser app's 80% gate.
 
@@ -113,12 +115,19 @@ This log records the design decisions found in the code, commit history, and ben
 * **Where it lives:** `src/lib/format.ts`, `src/lib/i18n/`, `src/lib/twin/intents/`, `scripts/i18n-check.ts`.
 * **Measured evidence:** `npm run i18n:check` passes 487 keys × 4 locales and all localized 0-token intent suites; `scripts/browser-smoke.mjs:300-355` verifies zero hydration errors and 320px layout across EN, DE, FR, and TR.
 
+### 15. Retirement cash flow simulated to age 90, separate from the goal probability
+* **Decision:** Model the years between retirement and AHV at 65, the BVG annuity, the 3a payout and retirement spending, and report "savings last to 90" as its own probability next to the goal probability.
+* **Alternative rejected:** Extending working income through the whole projection, or treating "goal reached" as "retirement funded".
+* **Why:** Early retirement is the question Elena's profile asks, and goal probability does not answer it. Implemented in commit `f114673`. Why these return, spending and AHV-gap assumptions: **Reason: TEAM TO CONFIRM**; no calibration is recorded.
+* **Where it lives:** `src/lib/finance/monteCarlo.ts`, `src/lib/finance/pension.ts`, `src/components/RetirementCard.tsx`.
+* **Measured evidence:** `scripts/engine-check.ts` ("Elena retire at"): savings last to 90 in 30.3% of paths when retiring at 58, 53.0% at 60, 74.3% at 62, 94.4% at 65.
+
 ---
 
 ## 2. Likely jury questions and answers
 
 ### Q1. Why not just send every photo straight to GPT-4o (or a single vision LLM)?
-Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In our 16-document benchmark (`docs/BENCHMARK.md`), 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy. Caveat to say out loud: the benchmark uses a 75% local gate; the app uses 80% plus a second field, so in the app at most 9 of these 16 would stay local (Q10).
+Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In our 16-document benchmark (`docs/BENCHMARK.md`), 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy. Caveat to say out loud: this is the Node benchmark with a 75% local gate. The app uses 80% plus a second field and different OCR settings, so its local share on this set has not been measured (Q10).
 
 ### Q2. Why not send the full image to Gemini 2.5 Flash-Lite every time instead of building a 4-tier cascade?
 Two reasons: privacy and token volume. First, for the 11/16 documents resolved at Tier 0 (`qr`) and Tier 1 (`local-regex`), zero bytes leave the browser, so a client's payslip, address and IBAN stay on their device (`src/lib/snap/pipeline.ts`). Second, volume: only 5 of 16 documents make a cloud call at all, and those send at most 600 characters of text (244 tokens in the benchmark) or a 512px grayscale JPEG (11–17 KB, 402–451 tokens). Tokens drop by 87.3% against GPT-4o. We did not measure "full image to Flash-Lite" as a separate baseline (Decision 10), so we cannot say how much of the saving is the cascade and how much is the cheaper model.
@@ -153,12 +162,16 @@ The Inspector (`src/components/Inspector.tsx`) records `bytesSent` and the exact
 * **0 bytes leave the browser** for Tier 0 QR-bills, repeat-image cache hits, Tier 1 local-regex scans, local what-if commands (EN/DE/FR/TR), and all Monte Carlo / affordability / solver runs. Even Tesseract's worker and `.traineddata.gz` files are self-hosted in `public/tesseract/` (`scripts/browser-smoke.mjs` verifies zero external network requests).
 * **<= 600 characters of filtered OCR text** (never the image) leave the browser on a Tier 1 `text-llm` scan.
 * **A `<= 512px` grayscale JPEG (~11–17 KB)** (never the full-resolution photo) leaves the browser on a Tier 2 `vision-llm` scan.
-* **Aggregate summary numbers only** (never raw transactions or IBANs) leave the browser when the user clicks *Explain my situation* (`narrate` task in `src/components/DoppelApp.tsx:413-426`).
+* **The engine's final numbers plus the profile's name, age and city** (never raw transactions or IBANs) leave the browser when the user clicks *Explain my situation* (`narrate` task in `src/components/DoppelApp.tsx:413-426`).
+* **A JPEG capped at 2048px** leaves the browser only when the user clicks *Run the naive way (GPT-4o)* in the Inspector. This is the opt-in comparison, not part of the normal flow.
 
 ### Q10. What are the main limitations of your current prototype and benchmark?
 We list five in `README.md`, `docs/PITCH.md`, and `docs/BENCHMARK.md`:
-1. **Benchmark vs browser gate:** `scripts/benchmark.ts` runs a Node mirror with `eng+deu`, page-average OCR confidence, and a 75% `local-regex` threshold; the browser app uses `eng+deu+fra`, `min(pageConfidence, amountLineConfidence)`, and an 80% threshold, which would send at least 2 of the 11 local benchmark documents (75% and 79% OCR) to `text-llm`.
+1. **Benchmark vs browser gate:** `scripts/benchmark.ts` runs a Node mirror with `eng+deu`, page-average OCR confidence, and a 75% `local-regex` threshold; the browser app uses `eng+deu+fra`, `min(pageConfidence, amountLineConfidence)`, and an 80% threshold plus a second field. The two receipts recorded at 75% and 79% would not pass the app's gate on those scores; the app's local share has not been measured.
 2. **Benchmark latency column:** `runDoc()` in `scripts/benchmark.ts` starts the timer before the live GPT-4o baseline call, so the `Latency` column in `docs/BENCHMARK.md` includes both GPT-4o and the Doppel cascade.
 3. **Synthetic evaluation set:** All 16 benchmark documents are synthetic SVGs and `sharp`-degraded JPEGs, not real camera photos.
-4. **Energy figures:** Wh numbers (`0.0006 Wh/tok` frontier, `0.0002 Wh/tok` small model, `0.002 Wh` local pass in `src/lib/frugal/tokens.ts`) are order-of-magnitude estimates from published averages, not hardware measurements.
+4. **Energy figures:** Wh numbers (`0.0006 Wh/tok` frontier, `0.0002 Wh/tok` small model, `0.002 Wh` local pass in `src/lib/frugal/tokens.ts`) are fixed coefficients, not measurements. The cited reports give per-query figures, not per-token rates for this pipeline.
 5. **Single-lever solver:** `solveGoal()` searches single levers plus one delay + spending-cut combination, and runs on the main thread (1,000 paths chunked via `setTimeout` in `DoppelApp.tsx`) rather than in a Web Worker.
+
+### Q11. Are the probabilities validated against real clients?
+No. They are outcomes of the simulator under our assumptions (`src/lib/finance/monteCarlo.ts`, `pension.ts`, `behavioralEngine.ts`) for two fictional profiles (`src/lib/data/profiles.ts`). What we can show is that they are reproducible (seed 42) and internally consistent (the solver's recipe numbers match the headline after *Apply*, checked in `scripts/engine-check.ts`). Calibration on real data is future work.

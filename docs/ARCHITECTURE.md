@@ -10,14 +10,14 @@ Numbers come from code. Models read documents and language, and only when local 
 | Repeat snap of the same image | Local fingerprint cache (`route: "cache"`) | 0 tokens |
 | Read clean printed docs (receipts, listings, payslips) | Canvas cleanup + Tesseract.js (`eng+deu+fra`, self-hosted worker) → DE/FR/EN regex (`local-regex`) | 0 tokens |
 | Read printed text the regex cannot finish | ≤ 600 chars of filtered OCR lines → small text model (`text-llm`) | output ≤ 160 tokens |
-| Read handwriting, dim or blurred photos | 512px grayscale JPEG → small vision model (`vision-llm`), only when OCR confidence < 65% | output ≤ 160 tokens |
+| Read handwriting, dim or blurred photos | Grayscale JPEG capped at 512px → small vision model (`vision-llm`), only when OCR confidence < 65% or OCR fails | output ≤ 160 tokens |
 | Understand a what-if | Local regex intent parsers (EN/DE/FR/TR) → small model only on a miss | 0, or output ≤ 150 tokens |
 | Simulate the future | Monte Carlo in TypeScript, 1,000 paths | 0 tokens |
 | Swiss mortgage, pension, 3a rules | Deterministic functions | 0 tokens |
 | Fix the plan | Inverse solver over the simulator | 0 tokens |
 | Explain the result | Small model given only the engine's final numbers | output ≤ 160 tokens, on demand |
 
-Output caps are the `max_tokens` values in `src/app/api/twin/route.ts`. Measured token totals per call are in the Inspector and in [BENCHMARK.md](BENCHMARK.md). In Node, `scripts/engine-check.ts` prints the simulation time (85 to 175 ms per 1,000-path run on the dev machine) and the solver time (190 to 340 ms).
+Output caps are the `max_tokens` values in `src/app/api/twin/route.ts`. Measured token totals per call are in the Inspector and in [BENCHMARK.md](BENCHMARK.md). In Node, `scripts/engine-check.ts` prints the simulation and solver time on the machine running it (about 0.2 s per 1,000-path run and 0.4 to 0.8 s per solver call in our last run on a laptop).
 
 ## 2. Code map
 
@@ -156,16 +156,17 @@ image ─► decode; keep a ≤ 2048px JPEG in the browser for the optional GPT-
 * **Our numbers:** OpenRouter `usage` (`prompt_tokens`, `completion_tokens`, `cost`) for model calls; 0 tokens and
   0 bytes for local routes (`qr`, `cache`, `local-regex`, `local-parser`). A response without usage shows
   "usage unknown".
-* **Exclusion rule (`totals()`):** savings percentages use only successful entries with known usage. Offline
-  fallbacks, failed extractions and responses without usage go to a separate "Excluded from savings" list.
+* **Exclusion rule (`totals()`):** offline fallbacks, failed extractions and responses without usage go to a separate
+  "Excluded from savings" list. Partial extractions with known usage still count, and are tallied as `partialCount`.
 * **Naive snap baseline (estimate until the live check runs):** GPT-4o high-detail at $2.50 / $10.00 per 1M tokens;
   the image's actual size in OpenAI's tile formula (`85 + 170 × tiles` after fitting in 2048² and scaling the short
   side to ≤ 768px) + 160 prompt tokens + 120 output tokens. The live check replaces the estimate with measured usage.
 * **Naive command / narration baseline:** GPT-4o asked to do the projection itself, with state capped at 2,400 chars
   (~600 tokens, no raw transactions) + 180 prompt tokens + 350 (what-if) or 220 (narration) output tokens.
   This baseline is never measured live.
-* **Energy:** rough estimate only: 0.0006 Wh/token frontier (Epoch AI 2025), 0.0002 Wh/token small model
-  (Google 2025), 0.002 Wh per local browser pass. Sources and caveats in `tokens.ts`.
+* **Energy:** fixed coefficients, not measurements: 0.0006 Wh/token frontier, 0.0002 Wh/token small model,
+  0.002 Wh per local pass. The cited reports (Epoch AI 2025, Google 2025) give per-query figures, not per-token
+  rates for this pipeline. See `tokens.ts`.
 
 ## 7. Next steps
 
