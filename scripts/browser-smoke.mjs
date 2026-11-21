@@ -317,6 +317,12 @@ try {
     await page.getByText(L("speech.review")).waitFor();
     assert.equal(await page.evaluate(() => window.testSpeechLanguage), tag);
 
+    // Only the first examples show by default; expand once (the toggle then reads "Fewer examples").
+    const moreExamples = page.getByRole("button", { name: L("cmd.moreExamples"), exact: true });
+    if (await moreExamples.count()) {
+      await moreExamples.click();
+      assert.equal(await page.getByRole("button", { name: L("cmd.fewerExamples"), exact: true }).getAttribute("aria-expanded"), "true");
+    }
     const callsBefore = gatewayCalls.length;
     await page.getByRole("button", { name: L("cmd.examples.retire"), exact: true }).click();
     await page.getByText(new RegExp(escapeRegExp(L("cmd.parsedLocally")))).waitFor();
