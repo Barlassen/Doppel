@@ -156,7 +156,8 @@ const delimited = (tag: string, value: unknown) => `<${tag}>\n${JSON.stringify(v
 
 function providerRequest(body: Task, redactImage = false) {
   let model = TEXT_MODEL;
-  let maxTokens = 120;
+  // 160 leaves room for models that wrap the object in an array; the output stays tiny either way.
+  let maxTokens = 160;
   let system = EXTRACT_SYS;
   let content: string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
   switch (body.task) {
@@ -233,33 +234,35 @@ function firstObject(text: string): JsonObject | undefined {
   }
 }
 
+/**
+ * Keeps every valid field and drops invalid optional ones instead of rejecting the whole
+ * extraction: a wrong category must not throw away a correctly read amount.
+ * Only `kind` is mandatory. Numeric strings like "25'000" or "87.45" are coerced.
+ */
 function validatedExtraction(value: JsonObject): JsonObject | undefined {
   if (!DOC_KINDS.includes(value.kind as DocKind)) return;
   const data: JsonObject = { kind: value.kind };
   for (const key of ["merchant", "date", "location", "category", "label"]) {
-    if (value[key] === undefined) continue;
-    if (!textInRange(value[key], 80)) return;
-    data[key] = (value[key] as string).trim();
+    if (textInRange(value[key], 80)) data[key] = (value[key] as string).trim();
   }
   if (typeof data.date === "string") {
-    if (!/^\d{4}-\d\d-\d\d$/.test(data.date)) return;
     const parsed = new Date(data.date);
-    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== data.date) return;
+    if (!/^\d{4}-\d\d-\d\d$/.test(data.date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== data.date) delete data.date;
   }
-  if (data.category !== undefined && !CATEGORIES.includes(data.category as string)) return;
-  if (value.amount !== undefined) {
-    if (!isAmount(value.amount)) return;
-    data.amount = value.amount;
-  }
-  if (value.rooms !== undefined) {
-    if (!numberInRange(value.rooms, 0.5, 100)) return;
-    data.rooms = value.rooms;
-  }
-  if (value.year !== undefined) {
-    if (!integerInRange(value.year, 1900, 2200)) return;
-    data.year = value.year;
-  }
+  if (data.category !== undefined && !CATEGORIES.includes(data.category as string)) delete data.category;
+  const amount = toNumber(value.amount);
+  if (isAmount(amount)) data.amount = amount;
+  const rooms = toNumber(value.rooms);
+  if (numberInRange(rooms, 0.5, 100)) data.rooms = rooms;
+  const year = toNumber(value.year);
+  if (integerInRange(year, 1900, 2200)) data.year = year;
   return data;
+}
+
+function toNumber(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  const cleaned = v.replace(/['’\s]/g, "").replace(/^CHF/i, "");
+  return /^\d+(\.\d+)?$/.test(cleaned) ? Number(cleaned) : v;
 }
 
 function validSetting(key: unknown, value: unknown): boolean {
