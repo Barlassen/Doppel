@@ -349,7 +349,7 @@ export function AccountWizard({
                   type="button"
                   disabled={!reachable}
                   aria-current={active ? "step" : undefined}
-                  aria-label={`${n}. ${t(`data.wizardStep.${n}`)}`}
+                  aria-label={`${n}. ${t(`data.wizardStep.s${n as 1 | 2 | 3 | 4 | 5 | 6 | 7}`)}`}
                   onClick={() => setStep(idx)}
                   className={`grid size-7 place-items-center rounded-full text-xs font-semibold transition ${
                     active
@@ -366,7 +366,7 @@ export function AccountWizard({
           </div>
           <div className="text-xs font-medium text-ink-2">
             {t("data.wizardStepOf", { step: step + 1, total: TOTAL_STEPS })} ·{" "}
-            <span className="text-ink">{t(`data.wizardStep.${(step + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7}`)}</span>
+            <span className="text-ink">{t(`data.wizardStep.s${(step + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7}`)}</span>
           </div>
         </div>
 

@@ -392,6 +392,12 @@ function checkCategorisationAndStore() {
   console.log("  ✓ Categorisation rules, TWINT P2P, overrides, model validator & store CRUD passed");
 }
 
-await checkSampleRoundTrips();
-checkFormatsAndProfiles();
-checkCategorisationAndStore();
+// tsx compiles scripts as CommonJS here, so no top-level await.
+void (async () => {
+  await checkSampleRoundTrips();
+  checkFormatsAndProfiles();
+  checkCategorisationAndStore();
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

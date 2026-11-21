@@ -245,7 +245,7 @@ try {
     ctx.drawImage(fullBill, 292, 150, 184, 184, 1550, 2460, 460, 460);
     return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
   }, decoy);
-  await page.locator('input[type="file"]:not([capture])').setInputFiles({
+  await page.locator('input[type="file"][accept="image/*"]:not([capture])').setInputFiles({
     name: "qr-phone-photo.jpg", mimeType: "image/jpeg", buffer: Buffer.from(phonePhoto, "base64"),
   });
   const photoReview = page.getByRole("form", { name: "Review scan" });
@@ -334,7 +334,7 @@ try {
     ctx.fillText("Sabbatical in 2028", 100, 170);
     return canvas.toDataURL("image/png").split(",")[1];
   });
-  await page.locator('input[type="file"]:not([capture])').setInputFiles({
+  await page.locator('input[type="file"][accept="image/*"]:not([capture])').setInputFiles({
     name: "year-only-note.png", mimeType: "image/png", buffer: Buffer.from(dateOnlyNote, "base64"),
   });
   const yearReview = page.getByRole("form", { name: "Review scan" });
