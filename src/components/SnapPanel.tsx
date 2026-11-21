@@ -213,7 +213,7 @@ function ReviewCard({ review, onConfirm, onDiscard }: {
       <div>
         <h3 ref={heading} tabIndex={-1} className="break-words text-sm font-semibold">{t("review.heading", { name })}</h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <TierChip tier={result.tier} route={result.route} />
+          <TierChip tier={result.tier} />
           <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2">{t(`snapRoute.${result.route}`)}</span>
           {result.ocrConfidence !== undefined && (
             <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2">

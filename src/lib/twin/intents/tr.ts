@@ -101,7 +101,7 @@ const RETIRE_WORD = String.raw`(?:emekli\p{L}*|pensionskasse\p{L}*|pension\p{L}*
 /** A two-digit age, not an amount or duration ("50 bin", "60 ay"). */
 const NOT_MONEY = String.raw`(?![\d.,])(?!\s*(?:bin|milyon|mio|k|m|ay|yil|sene)${E})`;
 
-function retirementAge(t: string): number | undefined {
+function retirementAge(t: string, base: number): number | undefined {
   const age =
     // 60 yaşında emekli ol · 60'ta emekli olsam · 62 yaşında erken emekli olmak istiyorum · 62 yaşında Pensionskasse'den emekli olsam
     t.match(re(String.raw`(?<![\d.,])(\d{2})${NOT_MONEY}\s*(?:yas\p{L}*\s+)?(?:\p{L}+\s+){0,3}?${RETIRE_WORD}`)) ??
@@ -111,11 +111,11 @@ function retirementAge(t: string): number | undefined {
     t.match(re(String.raw`(?<![\d.,])(\d{2})\s*yas\p{L}*\s+kadar\s+calis`));
   if (age) return Number(age[1]);
   if (!re(RETIRE_WORD).test(t)) return undefined;
-  // Relative to Swiss statutory retirement age 65: "emekliliği 3 yıl öne çeksem", "2 yıl erken emekli olsam"
+  // Relative to the plan's current retirement age: "emekliliği 3 yıl öne çeksem", "2 yıl erken emekli olsam"
   const sooner = t.match(/(\d{1,2})\s*(?:yil|sene)\p{L}*\s+(?:daha\s+)?(?:one\s+(?:cek|al)\p{L}*|erken)/u);
-  if (sooner) return 65 - Number(sooner[1]);
+  if (sooner) return base - Number(sooner[1]);
   const later = t.match(/(\d{1,2})\s*(?:yil|sene)\p{L}*\s+(?:daha\s+)?(?:ertele\p{L}*|otele\p{L}*|gec\p{L}*|ileri\p{L}*|sonra\p{L}*)/u);
-  if (later) return 65 + Number(later[1]);
+  if (later) return base + Number(later[1]);
   return undefined;
 }
 
@@ -182,12 +182,12 @@ function homeShift(t: string): number | undefined {
   return s ? -months(s[1], s[2]) : undefined;
 }
 
-function parse({ text, house, now }: IntentContext): Op[] {
+function parse({ text, house, now, retirementAge: base }: IntentContext): Op[] {
   const t = prepare(text);
   const when = monthFrom(t, now);
   const ops: Op[] = [];
 
-  const age = retirementAge(t);
+  const age = retirementAge(t, base);
   if (age) ops.push({ op: "set", key: "retirementAge", value: age });
 
   const invest = monthlyInvest(t);

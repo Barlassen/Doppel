@@ -291,9 +291,13 @@ for (const locale of LOCALES) {
 
   const chips = commandExamples(locale);
   const parser = orderedParsers(locale)[0];
+  // Relative retirement shifts start from the plan's age, not the statutory 65.
+  if (locale === "tr" && !matches(localParseCommand("emekliliği 3 yıl öne çeksem", events, now, "tr", 58), { op: "set", key: "retirementAge", value: 55 })) {
+    errors.push("Relative retirement shift ignores the plan's retirement age");
+  }
   let parsedChips = 0;
   for (const { id, text } of chips) {
-    const native = validateLocalOps(parser.parse({ text, events, now, house: events.find((event) => event.type === "house") }), events);
+    const native = validateLocalOps(parser.parse({ text, events, now, retirementAge: 65, house: events.find((event) => event.type === "house") }), events);
     if (matches(native, chipOps[id]) && matches(localParseCommand(text, events, now, locale), chipOps[id])) parsedChips += 1;
     else errors.push("Example " + id + " does not produce the expected local intent: " + text + " → " + JSON.stringify(native));
   }

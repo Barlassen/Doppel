@@ -16,6 +16,8 @@ export interface IntentContext {
   /** The planned home, if any (the target of "delay the home"). */
   house?: LifeEvent;
   now: Date;
+  /** The active plan's retirement age — the base for "retire 2 years earlier/later". */
+  retirementAge: number;
 }
 
 export interface IntentParser {

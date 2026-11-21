@@ -340,7 +340,7 @@ export default function DoppelApp() {
     setCmdBusy(true);
     setCmdMsg(undefined);
     const t0 = performance.now();
-    const local = localParseCommand(text, scenarioRef.current.events, new Date(), locale);
+    const local = localParseCommand(text, scenarioRef.current.events, new Date(), locale, effProfile.retirementAge);
     let ops: Op[] | null = local;
     let status: Msg;
 

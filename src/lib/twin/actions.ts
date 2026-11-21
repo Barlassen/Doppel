@@ -184,8 +184,14 @@ export function compactEvents(events: LifeEvent[]): string {
 // Only when it can't parse the sentence do we pay for an LLM call.
 // ---------------------------------------------------------------------------
 
-export function localParseCommand(text: string, events: LifeEvent[], now = new Date(), locale: Locale = "en"): Op[] | null {
-  const context = { text, events, now, house: events.find((event) => event.type === "house") };
+export function localParseCommand(
+  text: string,
+  events: LifeEvent[],
+  now = new Date(),
+  locale: Locale = "en",
+  retirementAge = 65,
+): Op[] | null {
+  const context = { text, events, now, retirementAge, house: events.find((event) => event.type === "house") };
   for (const parser of orderedParsers(locale)) {
     const valid = validateLocalOps(parser.parse(context), events);
     if (valid.length > 0) return valid;

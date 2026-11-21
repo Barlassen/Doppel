@@ -38,10 +38,10 @@ export function Timeline({
       {sorted.length === 0 && <p className="text-sm text-ink-3">{t("timeline.empty")}</p>}
       <ul className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {sorted.map((e) => (
-          <li key={e.id} className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm">
+          <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm">
             <span>{EVENT_ICON[e.type]}</span>
-            <div className="min-w-0">
-              <div className="font-medium [overflow-wrap:anywhere]">{tm(e.labelMsg ?? e.label)}</div>
+            <div className="min-w-0 flex-1 basis-32">
+              <div className="font-medium break-words">{tm(e.labelMsg ?? e.label)}</div>
               <div className="num text-[11px] text-ink-3">
                 {mounted && t("timeline.when", { date: fmt.monthYear(e.month), age: age + Math.floor(e.month / 12) })}
                 {e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
