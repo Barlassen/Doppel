@@ -10,8 +10,8 @@
     <line x1="64" y1="150" x2="896" y2="150" stroke="#d0d4dc" stroke-width="2"/>
 
     <text x="64" y="198" font-size="18" font-weight="bold" fill="#555555">Mitarbeiter</text>
-    <text x="64" y="230" font-size="24" font-weight="bold">Lukas Brunner</text>
-    <text x="64" y="260" font-size="20" fill="#333333">Albisstrasse 12, 8038 Zürich</text>
+    <text x="64" y="230" font-size="24" font-weight="bold">Barlas Demir</text>
+    <text x="64" y="260" font-size="20" fill="#333333">Badenerstrasse 512, 8048 Zürich</text>
 
     <text x="540" y="198" font-size="18" font-weight="bold" fill="#555555">Abrechnungsdaten</text>
     <text x="540" y="230" font-size="20">Periode: 01.11.2026 – 30.11.2026</text>
