@@ -62,6 +62,7 @@ interface MainResults {
 }
 interface Extras {
   key: string;
+  profileId: string;
   habits: HabitCosts | null;
   waiting: WaitingCost[] | null;
 }
@@ -109,7 +110,7 @@ export default function DoppelApp() {
   });
   const [planA, setPlanA] = useState<{ key: string; result: SimResult } | null>(null);
   const [extras, setExtras] = useState<Extras | null>(null);
-  const [solver, setSolver] = useState<{ key: string; result: SolverResult } | null>(null);
+  const [solver, setSolver] = useState<{ key: string; profileId: string; result: SolverResult } | null>(null);
   const mainRef = useRef(main);
   const probCache = useRef(new Map<string, number>([[main.key, main.real.successProb]]));
   const pendingImpacts = useRef<PendingImpact[]>([]);
@@ -126,12 +127,19 @@ export default function DoppelApp() {
   }
 
   function switchProfile(id: string) {
+    if (id === profileIdRef.current) return;
     const p = PROFILES.find((x) => x.id === id)!;
     profileRevRef.current += 1;
     setProfileRev(profileRevRef.current);
     profileIdRef.current = id;
     setProfileId(id);
-    commitScenario(baseScenario(p));
+    const s = baseScenario(p);
+    commitScenario(s);
+    // A profile switch is a full context change: compute its headline synchronously (no stale flash).
+    const m = { key: keyOf(id, s), ...runPair(p, s) };
+    mainRef.current = m;
+    probCache.current.set(m.key, m.real.successProb);
+    setMain(m);
     commitPin(null);
     pendingImpacts.current = [];
     setImpact(null);
@@ -176,6 +184,9 @@ export default function DoppelApp() {
 
   // ---------------- debounced, chunked recomputation ----------------
   const jobRef = useRef(0);
+  const planAKeyRef = useRef<string | null>(null);
+  const extrasKeyRef = useRef<string | null>(null);
+  const solverKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const job = ++jobRef.current;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -191,27 +202,49 @@ export default function DoppelApp() {
     const key = keyOf(prof.id, s);
     const input = () => simInputFor(prof, s, analyzeBehavior(effectiveProfile(prof, s), s.extraTx).params);
 
+    // Resolve "28% → 11%" deltas once the futures before and after the change are both known.
+    const resolvePending = () => {
+      pendingImpacts.current = pendingImpacts.current
+        .filter((pi) => {
+          const b = probCache.current.get(pi.beforeKey);
+          const a = probCache.current.get(pi.afterKey);
+          if (a === undefined || b === undefined) return true;
+          resolveImpact(pi, b, a);
+          return false;
+        })
+        .slice(-5);
+    };
+
     const afterMain = () => {
-      // Resolve "28% → 11%" deltas whose before/after futures are both known.
-      pendingImpacts.current = pendingImpacts.current.filter((pi) => {
-        const b = probCache.current.get(pi.beforeKey);
-        const a = probCache.current.get(pi.afterKey);
-        if (a === undefined) return true;
-        if (b !== undefined) resolveImpact(pi, b, a);
-        return false;
-      });
-      step(() => {
-        if (pinned && keyOf(prof.id, pinned.scenario) !== key) {
-          const result = runReal(prof, pinned.scenario);
-          probCache.current.set(keyOf(prof.id, pinned.scenario), result.successProb);
-          setPlanA({ key: keyOf(prof.id, pinned.scenario), result });
-        } else setPlanA(null);
-      });
-      step(() => setExtras({ key, habits: habitCosts(input()), waiting: costOfWaiting(input()) }));
-      step(() => {
-        const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
-        setSolver({ key, result: solveGoal(simInputFor(prof, s, b.params), { spendTip: b.spendTip }) });
-      });
+      resolvePending();
+      const aKey = pinned ? keyOf(prof.id, pinned.scenario) : null;
+      if (aKey !== planAKeyRef.current) {
+        step(() => {
+          if (pinned && aKey !== key) {
+            const result = runReal(prof, pinned.scenario);
+            probCache.current.set(aKey!, result.successProb);
+            setPlanA({ key: aKey!, result });
+          } else setPlanA(null);
+          planAKeyRef.current = aKey;
+          resolvePending();
+        });
+      }
+      if (extrasKeyRef.current !== key) {
+        step(() => {
+          const habits = habitCosts(input());
+          step(() => {
+            setExtras({ key, profileId: prof.id, habits, waiting: costOfWaiting(input()) });
+            extrasKeyRef.current = key;
+          });
+        });
+      }
+      if (solverKeyRef.current !== key) {
+        step(() => {
+          const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
+          setSolver({ key, profileId: prof.id, result: solveGoal(simInputFor(prof, s, b.params), { spendTip: b.spendTip }) });
+          solverKeyRef.current = key;
+        });
+      }
     };
 
     if (mainRef.current.key === key) afterMain();
@@ -234,7 +267,8 @@ export default function DoppelApp() {
   const { ideal, real } = main;
   const fresh = main.key === inputsKey;
   const solving = !solver || solver.key !== inputsKey;
-  const recipes = solver?.result.recipes ?? [];
+  const recipes = solver?.profileId === profileId ? solver.result.recipes : [];
+  const sameProfileExtras = extras?.profileId === profileId ? extras : null;
   const planAResult = pin && planA && planA.key === pinKey && pinKey !== main.key ? planA.result : pin && pinKey === main.key ? real : null;
 
   // Affordability card: the bank test on the simulator's median future at the purchase date.
@@ -594,7 +628,7 @@ export default function DoppelApp() {
               crunchProb={real.crunchProb}
               goalAge={effProfile.goal.age}
             />
-            <WaitingStrip items={extras ? extras.waiting : undefined} loading={extras?.key !== inputsKey} />
+            <WaitingStrip items={sameProfileExtras ? sameProfileExtras.waiting : undefined} loading={extras?.key !== inputsKey} />
           </div>
 
           {/* Right column */}
@@ -614,7 +648,7 @@ export default function DoppelApp() {
               disabled={!fresh}
               onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], `Retire at ${age}`)}
             />
-            <RecipesCard recipes={recipes} loading={solving} baseProb={solver?.result.baseProb ?? real.successProb} onApply={applyRecipe} />
+            <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
           </div>
         </div>
       </main>

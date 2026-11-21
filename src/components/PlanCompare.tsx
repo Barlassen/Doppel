@@ -43,7 +43,7 @@ export function PlanCompare({
   const dchf = a ? b.medianAtGoal - a.medianAtGoal : null;
   const sign = (x: number) => (x > 0 ? "+" : x < 0 ? "−" : "±");
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-full border border-line bg-surface py-1 pr-1 pl-3 text-xs">
+    <div className="inline-flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface py-1 pr-1 pl-3 text-xs">
       <span className="flex items-center gap-1.5 text-ink-2">
         <span className="inline-block h-0 w-4 border-t-2 border-dotted" style={{ borderColor: "var(--ink-3)" }} />
         Plan A{plan.manual ? " 📌" : ""}: <span className="max-w-[16rem] truncate text-ink">{plan.label}</span>
