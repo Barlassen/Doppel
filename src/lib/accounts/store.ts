@@ -11,7 +11,8 @@
 import { PROFILES, takeHomeMonth } from "@/lib/data/profiles";
 import { monthlySpend, withDerivedBehavior } from "@/lib/finance/investBehavior";
 import type { InvestmentTrade, Profile, Transaction } from "@/lib/finance/types";
-import type { Account, AccountRecord, AccountsState, LocalData, NewAccountInput, ProfileFields } from "./types";
+import type { TransactionCategory } from "@/lib/finance/types";
+import type { Account, AccountRecord, AccountsState, ImportInput, ImportRecord, LocalData, NewAccountInput, ProfileFields } from "./types";
 
 export const ACTIVE_KEY = "doppel:account";
 export const DATA_KEY = "doppel:accounts:v1";
@@ -35,6 +36,8 @@ const emptyLocal = (): LocalData => ({
   tradesEdited: {},
   tradesDeleted: [],
   profile: {},
+  imports: [],
+  categoryOverrides: {},
 });
 
 // ---------------- materialization (pure) ----------------
@@ -95,7 +98,8 @@ function countChanges(local: LocalData): number {
   );
 }
 
-const withoutReceipts = (local: LocalData) => JSON.stringify({ ...local, receipts: undefined });
+// Receipts, the import history and category overrides do not change the profile, so they are not in the version.
+const withoutReceipts = (local: LocalData) => JSON.stringify({ ...local, receipts: undefined, imports: undefined, categoryOverrides: undefined });
 const EMPTY = withoutReceipts(emptyLocal());
 
 /** Short deterministic hash (djb2) of the profile-changing local data; receipts are excluded on purpose. */
@@ -348,6 +352,89 @@ export function deleteAccount(id: string): void {
   if (activeId === id) setActiveAccount(DEFAULT_ACCOUNT_ID);
   save();
   emit();
+}
+
+// ---------------- statement imports (docs/ACCOUNTS.md → "Imports") ----------------
+
+/**
+ * Writes a confirmed import in ONE step (one version change, one recomputation): the same records
+ * `addTransactions()` / `addTrades()` would add, plus a history entry for "undo this import" and the review's
+ * category corrections. Returns the history entry.
+ */
+export function addImport(accountId: string, input: ImportInput): ImportRecord {
+  const stamp = newId("imp");
+  const tx = input.transactions.map((value, i) => ({ id: `tx-${stamp.slice(4)}-${i}`, value: { ...value } }));
+  const trades = input.trades.map((value, i) => ({ id: `tr-${stamp.slice(4)}-${i}`, value: { ...value } }));
+  const refs: Record<string, string> = {};
+  input.refs?.forEach((ref, i) => {
+    if (ref && tx[i]) refs[tx[i].id] = ref;
+  });
+  const record: ImportRecord = {
+    id: stamp,
+    fileName: input.fileName.slice(0, 120),
+    at: new Date().toISOString(),
+    format: input.format,
+    profile: input.profile,
+    counts: { ...input.counts },
+    txIds: tx.map((r) => r.id),
+    tradeIds: trades.map((r) => r.id),
+    refs,
+  };
+  update(accountId, (l) => ({
+    ...l,
+    txAdded: [...l.txAdded, ...tx],
+    tradesAdded: [...l.tradesAdded, ...trades],
+    imports: [...l.imports, record],
+    categoryOverrides: { ...l.categoryOverrides, ...input.overrides },
+  }));
+  return record;
+}
+
+/** "Undo this import": removes the import's transactions and trades (also if edited since) and its history entry. */
+export function undoImport(accountId: string, importId: string): void {
+  update(accountId, (l) => {
+    const record = l.imports.find((r) => r.id === importId);
+    if (!record) return l;
+    const tx = new Set(record.txIds);
+    const tr = new Set(record.tradeIds);
+    const edited = <T>(m: Record<string, T>, gone: Set<string>) => Object.fromEntries(Object.entries(m).filter(([id]) => !gone.has(id)));
+    return {
+      ...l,
+      txAdded: l.txAdded.filter((r) => !tx.has(r.id)),
+      txEdited: edited(l.txEdited, tx),
+      tradesAdded: l.tradesAdded.filter((r) => !tr.has(r.id)),
+      tradesEdited: edited(l.tradesEdited, tr),
+      imports: l.imports.filter((r) => r.id !== importId),
+    };
+  });
+}
+
+export function listImports(accountId: string): ImportRecord[] {
+  return persisted.local[accountId]?.imports ?? [];
+}
+
+/** Bank references of imported transactions that still exist (for dedupe). */
+export function importedRefs(accountId: string): Set<string> {
+  const local = persisted.local[accountId];
+  if (!local) return new Set();
+  const alive = new Set(local.txAdded.map((r) => r.id));
+  const refs = new Set<string>();
+  for (const record of local.imports) for (const [id, ref] of Object.entries(record.refs)) if (alive.has(id)) refs.add(ref);
+  return refs;
+}
+
+export function categoryOverrides(accountId: string): Record<string, TransactionCategory> {
+  return persisted.local[accountId]?.categoryOverrides ?? {};
+}
+
+/** Stores (or with `undefined` removes) a merchant → category correction; `merchant` is a `merchantKey()`. */
+export function setCategoryOverride(accountId: string, merchant: string, category: TransactionCategory | undefined): void {
+  update(accountId, (l) => {
+    const next = { ...l.categoryOverrides };
+    if (category) next[merchant] = category;
+    else delete next[merchant];
+    return { ...l, categoryOverrides: next };
+  });
 }
 
 /** "Reset to original data": drops every local addition and edit of this account. */

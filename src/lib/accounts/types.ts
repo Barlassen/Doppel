@@ -1,4 +1,4 @@
-import type { Goal, InvestmentTrade, LifeEvent, Profile, RiskProfile, Transaction } from "@/lib/finance/types";
+import type { Goal, InvestmentTrade, LifeEvent, Profile, RiskProfile, Transaction, TransactionCategory } from "@/lib/finance/types";
 
 /** A transaction or trade with a stable id, so it can be edited or deleted later. */
 export interface AccountRecord<T> {
@@ -48,6 +48,52 @@ export interface LocalData {
   tradesEdited: Record<string, Partial<InvestmentTrade>>;
   tradesDeleted: string[];
   profile: ProfileFields;
+  /** Statement imports, oldest first (for the import history and "undo this import"). */
+  imports: ImportRecord[];
+  /** The user's category corrections, keyed by normalised merchant (`merchantKey()`); applied to future imports. */
+  categoryOverrides: Record<string, TransactionCategory>;
+}
+
+/** Counts shown in the import review and kept in the import history. */
+export interface ImportCounts {
+  transactions: number;
+  trades: number;
+  duplicates: number;
+  income: number;
+  transfers: number;
+  review: number;
+  skipped: number;
+}
+
+/** One confirmed statement import. Undo removes exactly `txIds` and `tradeIds`. */
+export interface ImportRecord {
+  id: string;
+  fileName: string;
+  /** ISO timestamp of the import. */
+  at: string;
+  /** "bank-csv" | "camt.053" | "camt.054" | "broker-csv". */
+  format: string;
+  /** Detected layout ("zkb", "postfinance", "swissquote", …) or "manual". */
+  profile: string;
+  counts: ImportCounts;
+  txIds: string[];
+  tradeIds: string[];
+  /** Bank reference of an imported transaction (camt `AcctSvcrRef`, …), by transaction id: dedupe of later imports. */
+  refs: Record<string, string>;
+}
+
+/** What `addImport()` writes in one step. */
+export interface ImportInput {
+  fileName: string;
+  format: string;
+  profile: string;
+  counts: ImportCounts;
+  transactions: Transaction[];
+  /** Bank reference per transaction (same order), if the file had one. */
+  refs?: (string | undefined)[];
+  trades: InvestmentTrade[];
+  /** Category corrections made in the review (merchant key → category). */
+  overrides?: Record<string, TransactionCategory>;
 }
 
 /** What `createAccount()` needs; everything else has a sensible default or is derived. */
