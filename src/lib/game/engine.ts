@@ -13,7 +13,7 @@
  * Deterministic: seeded futures, seeded leaves, no Math.random, no clock in the result. Fixed budgets.
  */
 import { MIN_BUFFER_MONTHS, type GameState, balances, bufferMonths, debtTotal, monthlySurplus, stepYear } from "./state";
-import { applyCard, cardById, dealHand, lifeDistribution, lifeEventFor, type CardParam } from "./cards";
+import { applyCard, cardById, dealHand, lifeDistribution, lifeEventFor, type CardParam, declaredChoice } from "./cards";
 import { type Evaluation, type MoveLabel, type Weights, evaluatePosition, labelFor, mateValue, moveAccuracy } from "./evaluate";
 import { BUCKET_P, BUCKET_Z, MEDIAN_BUCKET, REGIME, type Regime, type RegimeId, bucketOf, hashSeed, marketYear, uniform } from "./regime";
 
@@ -357,7 +357,7 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
       pv,
       sacrifice: false,
       drain: false,
-      lifeChoice: !!cardById(a0).lifeChoice,
+      lifeChoice: declaredChoice(root, a0),
       donut: donut(move.state, holdState, hAgeYears, ctx.regime, 0),
     });
   }
@@ -370,8 +370,11 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
     c.drain = !!def.recurring && c.e < hold.e - EPS && c.e1 <= hold.e1;
     c.donut = c.donut.map((s) => (s.channel === "goal" ? { ...s, value: c.parts.pGoal - hold.parts.pGoal } : s));
   }
-  // Life choices are scored and shown, but the engine never names one as the best move.
-  const candidates = actions.map((a) => scored.get(a)!).sort((x, y) => Number(x.lifeChoice) - Number(y.lifeChoice) || y.e - x.e);
+  // Life decisions (children, a partner, a sabbatical) and declared preferences are scored and shown, but the engine
+  // never names one as the best move: a higher simulated net worth is not the best *life* decision (UBS guidance).
+  // Undeclared, they are still graded against the best other move (their loss is 0 if they score higher).
+  const lifeType = (c: CandidateEval) => c.lifeChoice || !!cardById(c.card).lifeChoice;
+  const candidates = actions.map((a) => scored.get(a)!).sort((x, y) => Number(lifeType(x)) - Number(lifeType(y)) || y.e - x.e);
   return {
     turn: root.turn,
     age: root.age,

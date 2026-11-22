@@ -110,6 +110,8 @@ export interface GameState {
   pension: { bvgMonth: number; ahvMonth: number; formerGross: number } | null;
   /** Take the pension fund as a lump sum at retirement instead of an annuity (decided up to 3 years before). */
   lumpSum: boolean;
+  /** Life preferences the player declared at the start (see `LIFE_PREFS` in cards.ts). */
+  prefs: string[];
   startAge: number;
   age: number;
   /** Years played. */
@@ -338,6 +340,7 @@ export const cloneState = (s: GameState): GameState => ({
   phases: s.phases.map((p) => ({ ...p })),
   oneOffs: s.oneOffs.map((o) => ({ ...o })),
   played: { ...s.played },
+  prefs: [...s.prefs],
   pension: s.pension ? { ...s.pension } : null,
   check: s.check ? { ...s.check } : null,
 });
@@ -383,6 +386,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     endTurn: Math.max(1, o.lengthTurns ?? gameEndAge(p.age, p.retirementAge <= p.age) - p.age),
     pension: null,
     lumpSum: false,
+    prefs: [],
     priceIndex: 1,
     cash: p.cash,
     portfolio: p.portfolio,

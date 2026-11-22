@@ -44,6 +44,10 @@ export default function PlayApp() {
   const [preset, setPreset] = useState<PresetId | "custom">("balanced");
   const [weights, setWeights] = useState<Weights>(WEIGHT_PRESETS.balanced);
   const [opening, setOpening] = useState<Opening | null>(null);
+  const [prefs, setPrefs] = useState<string[]>([]);
+  // Suggested from the data (derived): a family household has children; nothing else is assumed.
+  const derivedPrefs = useMemo(() => (opening?.profile.origin?.household === "family" ? ["children"] : []), [opening]);
+  useEffect(() => setPrefs(derivedPrefs), [derivedPrefs]);
 
   useEffect(() => {
     let alive = true;
@@ -78,13 +82,13 @@ export default function PlayApp() {
     (o: Opening) => {
       generation.current++;
       inflight.current = null;
-      setGame(newGame(o.state, { regime, seed, depth, weights, preset }));
+      setGame(newGame({ ...o.state, prefs }, { regime, seed, depth, weights, preset }));
       setGameProfile(o.profile);
       setAnalyses({});
       setMainLine(null);
       setView(null);
     },
-    [regime, seed, depth, weights, preset],
+    [regime, seed, depth, weights, preset, prefs],
   );
 
   // The first opening that loads starts the demo game (Alexia by default).
@@ -282,6 +286,9 @@ export default function PlayApp() {
           onSeed={setSeed}
           opening={opening?.id === startId ? opening : null}
           onStart={() => opening && startGame(opening)}
+          prefs={prefs}
+          derivedPrefs={derivedPrefs}
+          onPrefs={setPrefs}
         />
 
         {!game || !live || !viewedPos ? (

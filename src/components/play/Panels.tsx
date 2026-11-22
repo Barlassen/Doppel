@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Profile } from "@/lib/finance/types";
-import { type CardParam, cardById } from "@/lib/game/cards";
+import { type CardParam, LIFE_PREFS, cardById, declaredChoice } from "@/lib/game/cards";
 import type { Analysis, DepthId, MoveReview } from "@/lib/game/engine";
 import { DEPTHS } from "@/lib/game/engine";
 import { LABEL_GLYPH, PRESETS, type MoveLabel, type PresetId, type Weights } from "@/lib/game/evaluate";
@@ -68,22 +68,39 @@ export function SetupPanel(props: {
   onSeed: (s: number) => void;
   opening: Opening | null;
   onStart: () => void;
+  prefs: string[];
+  derivedPrefs: string[];
+  onPrefs: (p: string[]) => void;
 }) {
   const { t, tm } = useI18n();
   const o = props.opening;
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? props.ubsProfiles.filter((p) => `${p.name} ${p.id} ${p.city} ${p.canton} ${p.age}`.toLowerCase().includes(q) || `ubs:${p.id}` === props.startId)
+    : props.ubsProfiles;
   return (
     <section className="card p-4 sm:p-5" aria-labelledby="play-setup">
       <CardHeader title={<span id="play-setup">{t("play.setup.title")}</span>} />
       <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1.6fr)_6rem_auto] sm:items-end">
         <label className="block min-w-0 text-xs text-ink-2">
           <span className="mb-1 block font-medium">{t("play.setup.profile")}</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("prefs.search")}
+            aria-label={t("prefs.search")}
+            data-testid="play-profile-search"
+            className="mb-1.5 min-h-9 w-full rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+          />
           <select
             value={props.startId}
             onChange={(e) => props.onStartId(e.target.value)}
             className="min-h-10 w-full rounded-lg border border-line bg-surface px-2 text-sm text-ink"
           >
             <optgroup label={t("play.setup.ubsGroup")}>
-              {props.ubsProfiles.map((p) => (
+              {shown.map((p) => (
                 <option key={p.id} value={`ubs:${p.id}`}>
                   {p.name}, {p.age} · {p.city} · {t(`play.ubs.employment.${p.employment}` as MessageKey)} ({p.id})
                 </option>
@@ -116,7 +133,24 @@ export function SetupPanel(props: {
           {t("play.setup.start")}
         </button>
       </div>
+      {q && <p className="mt-1 text-[11px] text-ink-3">{t("prefs.count", { n: shown.length, total: props.ubsProfiles.length })}</p>}
       <p className="mt-2 text-xs text-ink-3">{t(`play.regime.${props.regime}Hint` as MessageKey)}</p>
+      <fieldset className="mt-3" data-testid="play-prefs">
+        <legend className="text-xs font-medium text-ink-2">{t("prefs.title")}</legend>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {LIFE_PREFS.map((p) => {
+            const on = props.prefs.includes(p);
+            return (
+              <label key={p} className={`flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs ${on ? "border-s1 bg-s1/10 text-ink" : "border-line text-ink-2 hover:text-ink"}`}>
+                <input type="checkbox" className="accent-[var(--series-1)]" checked={on} onChange={() => props.onPrefs(on ? props.prefs.filter((x) => x !== p) : [...props.prefs, p])} />
+                {t(`prefs.item.${p}` as MessageKey)}
+                {props.derivedPrefs.includes(p) && <span className="text-ink-3">· {t("prefs.suggested")}</span>}
+              </label>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-ink-3">{t("prefs.note")}</p>
+      </fieldset>
       {o && (
         <p className="mt-1 text-xs text-ink-2">
           <span className="font-medium text-ink">{o.profile.name}</span> · {tm(o.profile.tagline)} ·{" "}
@@ -277,6 +311,7 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
   if (p.contributes3a && !p.abroad) chips.push(t("play.position.saving3a"));
   if (p.car) chips.push(t("play.position.car"));
   if (p.children) chips.push(t("play.position.children", { count: p.children }));
+  for (const pref of p.prefs) chips.push("♡ " + t(`prefs.item.${pref}` as MessageKey));
   return (
     <section className="card p-4 sm:p-5" aria-labelledby="play-position" data-turn={turn}>
       <CardHeader
@@ -350,14 +385,14 @@ function Assumptions({ params, scenarioId }: { params: CardParam[]; scenarioId: 
   );
 }
 
-function Tags({ id }: { id: string }) {
+function Tags({ id, declared }: { id: string; declared: boolean }) {
   const { t } = useI18n();
   const c = cardById(id);
   return (
     <span className="flex flex-wrap gap-1">
       {c.response && <Chip tone="text-good">{t("play.tag.response")}</Chip>}
       {c.recurring && <Chip tone="text-warn">{t("play.tag.recurring")}</Chip>}
-      {c.lifeChoice && <Chip tone="text-s1">{t("play.tag.lifeChoice")}</Chip>}
+      {declared && <Chip tone="text-s1">{t("play.tag.lifeChoice")}</Chip>}
     </span>
   );
 }
@@ -419,7 +454,7 @@ function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; 
           </span>
         </span>
         <span className="text-xs text-ink-2">{cardDesc(i, id, params)}</span>
-        <Tags id={id} />
+        <Tags id={id} declared={declaredChoice(position, id)} />
         {extra}
       </button>
       <Assumptions params={params} scenarioId={def.scenarioId} />

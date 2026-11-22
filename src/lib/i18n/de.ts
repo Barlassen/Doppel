@@ -1658,4 +1658,19 @@ export const de = {
     phaseWork: "Arbeitet in der Pension noch {months} Monate",
     group: "Pension",
   },
+  prefs: {
+    title: "Deine Lebenswünsche (optional)",
+    note: "Was du hier angibst, ist ein Lebensentscheid: Die Engine zeigt die Kosten, bewertet ihn aber nicht, und seine Karte kommt, sobald sie möglich ist. Lebensentscheide, die du nicht angibst, werden nach ihrer finanziellen Wirkung bewertet. Angaben stammen von dir (Benutzer); ein Vorschlag kommt aus dem Haushalt in den Daten.",
+    suggested: "Vorschlag aus den Daten",
+    search: "Profile suchen: Name, Stadt, Kanton oder ID",
+    count: "{n} von {total} Profilen",
+    item: {
+      children: "Ich möchte Kinder",
+      partner: "Mit Partner zusammenleben",
+      home: "Wohneigentum",
+      car: "Ein (Sport-)Auto",
+      sabbatical: "Ein Sabbatical",
+      earlyRetire: "Früh in Pension",
+    },
+  },
 } satisfies Messages;

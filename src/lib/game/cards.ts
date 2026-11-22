@@ -28,6 +28,24 @@ import {
 } from "./state";
 
 export type ParamSource = "ubs_synthetic_assumption" | "doppel_engine_default" | "user";
+
+/**
+ * Life preferences the player can declare at the start. A declared preference turns its card into a life choice:
+ * the engine shows its cost but does not grade it (and never names it the best move), and the card is dealt whenever
+ * it is eligible. Undeclared, the same card is graded like any other decision.
+ */
+export const LIFE_PREFS = ["children", "partner", "home", "car", "sabbatical", "earlyRetire"] as const;
+export type LifePref = (typeof LIFE_PREFS)[number];
+export const PREF_CARD: Record<LifePref, string> = {
+  children: "haveChild",
+  partner: "movePartner",
+  home: "buyHome",
+  car: "buyCar",
+  sabbatical: "sabbatical",
+  earlyRetire: "retireEarly",
+};
+/** The card is a life choice the player declared (not graded). */
+export const declaredChoice = (s: { prefs?: string[] }, card: string) => (s.prefs ?? []).some((p) => PREF_CARD[p as LifePref] === card);
 export type ParamUnit = "chf" | "chfMonth" | "chfYear" | "pct" | "months" | "years" | "age";
 
 export interface CardParam {
@@ -966,6 +984,13 @@ export function dealHand(s: GameState, seed: number): { cards: string[]; holdAll
     .map((x) => x.c);
   const hand: CardDef[] = [];
   const groups = new Set<CardGroup>();
+  // Declared preferences come up whenever they are possible (outside check), so the player can act on them.
+  if (!s.check) {
+    for (const c of ranked.filter((c) => declaredChoice(s, c.id)).slice(0, 2)) {
+      hand.push(c);
+      groups.add(c.group);
+    }
+  }
   // A thin buffer always comes with one way to repair it, so avoiding check never costs you the good responses.
   if (!s.check && bufferMonths(s) < 6) {
     const fix = ranked.find((c) => c.response);

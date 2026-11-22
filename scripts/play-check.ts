@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { PROFILES } from "../src/lib/data/profiles";
 import { simulate } from "../src/lib/game/sim";
 import type { Profile } from "../src/lib/finance/types";
-import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard } from "../src/lib/game/cards";
+import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
 import { analyse, bruteForce, reviewMove } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
@@ -281,6 +281,18 @@ async function main() {
     const r2 = rateGame(holdGame);
     const expected = Math.round(1200 + 0.4 * (r1.holdScore - 1200));
     check("rating: deterministic; holding every year rates 1200 + 0.4 × (outcome − 1200)", r1.elo === r2.elo && r1.elo === expected && r1.playerScore === r1.holdScore, `Elo ${r1.elo} (${r1.tier}) · outcome ${r1.player.kind} at ${r1.player.age}`);
+  }
+
+  // ---------- 10. declared life preferences ----------
+  {
+    const base = { ...accountOpening(PROFILES[1]), check: null };
+    const cands = ["haveChild", "hold"];
+    const undeclared = analyse(base, S, { candidates: cands, budget: { scenarios: 8, paths: 32 } });
+    const declared = analyse({ ...base, prefs: ["children"] }, S, { candidates: cands, budget: { scenarios: 8, paths: 32 } });
+    const lu = reviewMove(undeclared, "haveChild").label;
+    const ld = reviewMove(declared, "haveChild").label;
+    const dealt = dealHand({ ...base, prefs: ["children"] }, S.seed).cards.includes("haveChild");
+    check("preferences: a declared choice is not graded (♡) and is dealt; undeclared it is graded", ld === "lifeChoice" && lu !== "lifeChoice" && dealt, `undeclared ${lu} · declared ${ld} · dealt ${dealt}`);
   }
 
   // ---------- budget: a review takes about a second ----------

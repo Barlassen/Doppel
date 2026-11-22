@@ -214,3 +214,11 @@ The game is also shown as a legal chess game: `src/lib/game/board.ts` (rendering
 - **Review text.** The review says what the score compares (each option with the engine's best follow-up moves), shows where the points difference comes from (goal odds, never short of cash, median wealth, worst 10% of futures, weighted as in E), and explains why the rings (the move on its own, nothing changed afterwards) can disagree with the score.
 - **Directions on the board.** Building decisions (income, investing, study, a home) move forward; protecting decisions (buffer, cuts, flatmates, pausing) move back towards the king; spending pushes forward without developing (`motionForCard`).
 
+## 18. Threats, retirement decisions and declared preferences
+
+- **Threat vs check.** "Check" is used only when Life's move gives check on the board. A financial danger the board cannot show yet is a "threat" (amber ring, banner "Threat"); the forced response is the same.
+- **Verdict under the board.** The last move, its label, its loss and the engine's best sit under the board; on phones a link jumps to the full review.
+- **Retirement decisions.** Retire at 60 (S091), work until 67 (S092), pension fund as a lump sum (S099, decided up to 3 years before), part-time work in retirement (CHF 1'500/month for 36 months), move to a smaller flat (rent −30%, CHF 5'000 move), sell the home and rent (3% sale costs, rent = 3.5% of the value per year); Life's care-costs card from 80 (S100, CHF 1'500/month). Retiree goal: the spending gap until 95, and at least 80% of today's wealth kept in real terms.
+- **Declared preferences** (`LIFE_PREFS`): children, partner, home, car, sabbatical, early retirement. Declared (user), the card is a life choice: shown with its cost, not graded, dealt whenever possible. A family household suggests "children" (derived). Undeclared life decisions are graded against the best other move, and the engine never names a life decision as the best move.
+- **Profile search.** The setup panel filters the 1'200 profiles by name, city, canton, age or ID.
+

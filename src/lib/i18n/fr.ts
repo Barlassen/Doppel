@@ -1667,4 +1667,19 @@ export const fr = {
     phaseWork: "Travaille à la retraite encore {months} mois",
     group: "Retraite",
   },
+  prefs: {
+    title: "Vos souhaits de vie (facultatif)",
+    note: "Ce que vous déclarez ici est un choix de vie : le moteur en montre le coût sans le noter, et sa carte apparaît dès qu’elle est possible. Les décisions de vie non déclarées sont notées selon leur effet financier. Les déclarations sont les vôtres (utilisateur) ; une suggestion vient du ménage dans les données.",
+    suggested: "suggéré par les données",
+    search: "Chercher un profil : nom, ville, canton ou ID",
+    count: "{n} profils sur {total}",
+    item: {
+      children: "Je veux des enfants",
+      partner: "Vivre en couple",
+      home: "Être propriétaire",
+      car: "Une voiture (de sport)",
+      sabbatical: "Un congé sabbatique",
+      earlyRetire: "Retraite anticipée",
+    },
+  },
 } as const satisfies Messages;

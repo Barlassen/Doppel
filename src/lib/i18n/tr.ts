@@ -1664,4 +1664,19 @@ export const tr = {
     phaseWork: "Emeklilikte {months} ay daha çalışıyor",
     group: "Emeklilik",
   },
+  prefs: {
+    title: "Hayat tercihlerin (isteğe bağlı)",
+    note: "Burada beyan ettiğin şey bir hayat tercihidir: motor maliyetini gösterir ama not vermez, kartı da mümkün olduğunda eline gelir. Beyan etmediğin hayat kararları finansal etkisine göre notlanır. Beyanlar senindir (kullanıcı); öneri ise verideki hane bilgisinden gelir.",
+    suggested: "veriden öneri",
+    search: "Profil ara: isim, şehir, kanton ya da ID",
+    count: "{total} profilden {n} tanesi",
+    item: {
+      children: "Çocuk istiyorum",
+      partner: "Partnerle yaşamak",
+      home: "Ev sahibi olmak",
+      car: "Bir (spor) araba",
+      sabbatical: "Uzun izin (sabbatical)",
+      earlyRetire: "Erken emekli olmak",
+    },
+  },
 } satisfies Messages;

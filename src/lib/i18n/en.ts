@@ -1656,4 +1656,19 @@ export const en = {
     phaseWork: "Working in retirement for {months} more months",
     group: "Retirement",
   },
+  prefs: {
+    title: "Your life preferences (optional)",
+    note: "What you declare here is a life choice: the engine shows what it costs but does not grade it, and its card comes up whenever it is possible. Life decisions you do not declare are graded by their financial effect. Declarations are yours (user); a suggestion comes from the household in the data.",
+    suggested: "suggested from the data",
+    search: "Search profiles: name, city, canton or ID",
+    count: "{n} of {total} profiles",
+    item: {
+      children: "I want children",
+      partner: "Live with a partner",
+      home: "Own a home",
+      car: "A (sports) car",
+      sabbatical: "A sabbatical",
+      earlyRetire: "Retire early",
+    },
+  },
 } as const;
