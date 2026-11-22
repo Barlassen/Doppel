@@ -1131,6 +1131,7 @@ export const tr = {
     goalMedian: "Son tarihte medyan: {amount:chf} (bugünkü CHF)",
     goalsFootnote: "Her hedef, ana hedefle aynı simüle edilmiş geleceklerde değerlendirilir: son tarihte ölçülen değer hedefe ulaşmışsa ve öncesinde nakit sıkışıklığı olmamışsa hedefe ulaşılmış sayılır. Ana hedef en yüksek öncelikli, sonra en erken tarihli olandır.",
     chartMetricNote: "Grafik net varlığı gösterir. Ana hedef başka bir tutarı ölçtüğü için (bkz. Hedefler) hedef çizgisi çizilmez.",
+    chartClipped: "Grafik şu değerde kesildi: {floor:chfShort}. Bu planda nakit tükenir ve açık yıllık %6 faizle borç alınır, bu yüzden net varlık düşmeye devam eder (bkz. nakit sıkışıklığı riski).",
     debtTitle: "Borç",
     debtLine: "Aylık kredi taksiti {payment} · {months} ay sonra borçsuz ({when}).",
     debtExtra: "Ek ödeme",

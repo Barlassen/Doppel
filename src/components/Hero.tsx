@@ -30,6 +30,7 @@ export function Hero({
   sim,
   impact,
   taxTip,
+  notes,
   children,
 }: {
   name: string;
@@ -47,6 +48,8 @@ export function Hero({
   sim: { paths: number; ms: number };
   impact: HeroImpact | null;
   taxTip?: ReactNode;
+  /** Extra lines under "How is this calculated?" (e.g. the debt in net worth). */
+  notes?: ReactNode;
   children?: ReactNode;
 }) {
   const { t, rich, fmt, mounted } = useI18n();
@@ -86,6 +89,7 @@ export function Hero({
               {t("chart.engine")}
             </li>
           )}
+          {notes}
           {taxTip && <li>{taxTip}</li>}
         </ul>
       </Disclosure>

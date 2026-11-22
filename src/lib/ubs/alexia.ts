@@ -3,11 +3,13 @@
  * ledger they imply (the reference `scripts/ubs-check.ts` holds the engine to).
  */
 import type { CashflowPhase, LifeEvent, Profile, Scenario } from "@/lib/finance/types";
-import type { Msg } from "@/lib/i18n/types";
 import { ALEXIA_CONFIG_NOTE, ALEXIA_PATHS, ALEXIA_PROFILE } from "./generated/alexia";
 import { ASSUMPTIONS, STRINGS } from "./generated/assumptions";
 import { grossFromNet, marginalTaxFor } from "./map";
+import { ALEXIA_PATH_IDS, PATH_EVENT, clearPath, pathLabel, type AlexiaPathId } from "./path";
 import { ALEXIA_ID, type AlexiaPath, type UbsAssumption } from "./types";
+
+export { ALEXIA_PATH_IDS, clearPath, pathLabel, type AlexiaPathId };
 
 export { ALEXIA_CONFIG_NOTE, ALEXIA_PROFILE };
 
@@ -31,10 +33,6 @@ export function ubsAssumptions(scenarioId: string, profileId?: string): UbsAssum
   );
 }
 
-export type AlexiaPathId = "work" | "master" | "abroad";
-/** Order of `scenario_config.json`. */
-export const ALEXIA_PATH_IDS: readonly AlexiaPathId[] = ["work", "master", "abroad"];
-export const pathLabel = (id: AlexiaPathId): Msg => ({ key: `ubs.path.${id}` });
 
 /** S001 (full-time master's) parameters for a profile: study years and yearly tuition. */
 export function s001(profileId = ALEXIA_ID): { years: number; tuition: number; ids: string[] } | null {
@@ -84,8 +82,6 @@ export function pathPhases(id: AlexiaPathId, path: AlexiaPath): CashflowPhase[] 
   }));
 }
 
-const PATH_EVENT = "ubs-path-";
-
 /** The scenario with a path applied: phases + one-off costs as dated expenses (replacing an earlier path). */
 export function applyPath(s: Scenario, id: AlexiaPathId, path: AlexiaPath, useS001: boolean): Scenario {
   const oneOffs = pathOneOffs(id, path, useS001);
@@ -106,12 +102,5 @@ export function applyPath(s: Scenario, id: AlexiaPathId, path: AlexiaPath, useS0
   };
 }
 
-/** Removes an applied path (phases, its one-off costs and its pill). */
-export function clearPath(s: Scenario): Scenario {
-  const { phases: _phases, path: _path, ...rest } = s;
-  void _phases;
-  void _path;
-  return { ...rest, events: s.events.filter((e) => !e.id.startsWith(PATH_EVENT)) };
-}
 
 export const isAlexia = (p: Pick<Profile, "id">) => p.id === ALEXIA_ID;

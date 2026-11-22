@@ -27,11 +27,14 @@ export function Timeline({
   age,
   onShift,
   onRemove,
+  start,
 }: {
   events: LifeEvent[];
   age: number;
   onShift: (id: string, m: number) => void;
   onRemove: (id: string) => void;
+  /** Month 0 of the profile (a dataset's as-of date); default today. */
+  start?: Date;
 }) {
   const { t, fmt, tm, mounted } = useI18n();
   const sorted = [...events].sort((a, b) => a.month - b.month);
@@ -46,7 +49,7 @@ export function Timeline({
             <div className="min-w-0 flex-1 basis-32">
               <div className="font-medium break-words">{tm(e.labelMsg ?? e.label)}</div>
               <div className="num text-xs text-ink-2">
-                {mounted && t("timeline.when", { date: fmt.monthYear(e.month), age: age + Math.floor(e.month / 12) })}
+                {(mounted || start) && t("timeline.when", { date: fmt.monthYear(e.month, start), age: age + Math.floor(e.month / 12) })}
                 {e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
                 {e.durationMonths && e.type === "jobloss" ? t("timeline.duration", { months: e.durationMonths }) : ""}
               </div>
@@ -81,12 +84,14 @@ export function AffordabilityCard({
   month,
   boughtProb,
   floorPlan,
+  start,
 }: {
   result: AffordabilityResult;
   label: Text;
   month: number;
   boughtProb?: number;
   floorPlan?: FloorPlanVerification | null;
+  start?: Date;
 }) {
   const { t, fmt, rich, mounted } = useI18n();
   const ratio = result.costToIncome;
@@ -139,6 +144,12 @@ export function AffordabilityCard({
           <dd className="text-right">{fmt.chf(result.loan)}</dd>
           <dt className="text-ink-2">{t("afford.imputed")}</dt>
           <dd className="text-right">{fmt.chf(result.yearlyCost.total)}</dd>
+          {result.otherDebtYear ? (
+            <>
+              <dt className="text-ink-2">{t("ubs.affordOtherDebt")}</dt>
+              <dd className="text-right">{fmt.chf(result.otherDebtYear)}</dd>
+            </>
+          ) : null}
           {result.closingCosts > 0 && (
             <>
               <dt className="text-ink-2">{t("afford.closing")}</dt>
@@ -155,7 +166,7 @@ export function AffordabilityCard({
             })}
           </p>
         )}
-        <p className="mt-2 text-xs text-ink-2">{mounted && t("afford.basis", { when: fmt.monthYear(month) })}</p>
+        <p className="mt-2 text-xs text-ink-2">{(mounted || start) && t("afford.basis", { when: fmt.monthYear(month, start) })}</p>
       </Disclosure>
     </section>
   );

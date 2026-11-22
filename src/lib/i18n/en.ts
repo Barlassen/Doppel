@@ -1123,6 +1123,7 @@ export const en = {
     goalMedian: "Median at the date: {amount:chf} (today’s CHF)",
     goalsFootnote: "Every goal is scored on the same simulated futures as the headline: reached if its measure is at or above the target at its date, with no cash crunch before. The highest priority, then the earliest date, is the headline.",
     chartMetricNote: "The chart shows net worth. The headline goal measures a different amount (see Goals), so no target line is drawn.",
+    chartClipped: "The chart is cut at {floor:chfShort}: in this plan the cash runs out and the shortfall is borrowed at 6% a year, so net worth keeps falling (see the cash-crunch risk).",
     debtTitle: "Debt",
     debtLine: "Loan payments {payment} a month · debt-free after {months} months ({when}).",
     debtExtra: "Extra payment",

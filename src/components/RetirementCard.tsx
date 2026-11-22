@@ -10,11 +10,14 @@ export function RetirementCard({
   retirementAge,
   onChangeAge,
   disabled,
+  alreadyRetired,
 }: {
   stats?: RetirementStats;
   retirementAge: number;
   onChangeAge: (age: number) => void;
   disabled?: boolean;
+  /** Retired at the start (e.g. a UBS retiree): the pension is paid from month 0, there is no age to choose. */
+  alreadyRetired?: boolean;
 }) {
   const { t, fmt, rich } = useI18n();
   const ok = stats ? stats.lastsTo90Prob >= 0.8 : false;
@@ -25,7 +28,7 @@ export function RetirementCard({
       <CardHeader
         title={t("retire.title")}
         aside={
-          <div className="flex shrink-0 items-center gap-1 rounded-full border border-line px-1 text-xs">
+          alreadyRetired ? undefined : <div className="flex shrink-0 items-center gap-1 rounded-full border border-line px-1 text-xs">
             <button
               className="rounded-full px-1.5 py-0.5 text-ink-2 hover:text-ink disabled:opacity-40"
               disabled={disabled || retirementAge <= 55}
@@ -48,7 +51,9 @@ export function RetirementCard({
           </div>
         }
       />
-      {!stats ? (
+      {alreadyRetired ? (
+        <p className="text-sm text-ink-2">{t("ubs.alreadyRetired")}</p>
+      ) : !stats ? (
         <p className="pulse-soft text-sm text-ink-2">{t("retire.simulating")}</p>
       ) : (
         <>

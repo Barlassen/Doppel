@@ -1134,6 +1134,7 @@ export const fr = {
     goalMedian: "Médiane à l’échéance : {amount:chf} (en CHF actuels)",
     goalsFootnote: "Chaque objectif est évalué sur les mêmes avenirs simulés que l’objectif principal : atteint si la mesure atteint la cible à l’échéance, sans épuisement des liquidités avant. L’objectif principal est celui de plus haute priorité, puis le plus proche.",
     chartMetricNote: "Le graphique montre la fortune nette. L’objectif principal mesure un autre montant (voir Objectifs), d’où l’absence de ligne cible.",
+    chartClipped: "Le graphique est coupé à {floor:chfShort} : dans ce plan, les liquidités s’épuisent et le manque est emprunté à 6 % par an, donc la fortune continue de baisser (voir le risque d’épuisement des liquidités).",
     debtTitle: "Dettes",
     debtLine: "Mensualités {payment} · sans dette après {months} mois ({when}).",
     debtExtra: "Versement supplémentaire",

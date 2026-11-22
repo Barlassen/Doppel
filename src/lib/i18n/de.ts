@@ -1125,6 +1125,7 @@ export const de = {
     goalMedian: "Median am Stichtag: {amount:chf} (in heutigen CHF)",
     goalsFootnote: "Jedes Ziel wird in denselben simulierten Zukünften bewertet wie das Hauptziel: erreicht, wenn der Wert am Stichtag mindestens beim Ziel liegt und vorher kein Geldmangel auftrat. Hauptziel ist das mit der höchsten Priorität, danach das früheste.",
     chartMetricNote: "Die Grafik zeigt das Vermögen. Das Hauptziel misst einen anderen Betrag (siehe Ziele), darum fehlt die Ziellinie.",
+    chartClipped: "Die Grafik ist bei {floor:chfShort} abgeschnitten: In diesem Plan geht das Geld aus, die Lücke wird zu 6% im Jahr geliehen, und das Vermögen sinkt weiter (siehe Geldmangel-Risiko).",
     debtTitle: "Schulden",
     debtLine: "Kreditraten {payment} pro Monat · schuldenfrei nach {months} Monaten ({when}).",
     debtExtra: "Zusätzliche Rate",

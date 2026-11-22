@@ -24,9 +24,11 @@ interface Props {
   planA?: SimResult | null;
   /** Shades the retirement phase from this age. */
   retirementAge?: number;
+  /** Draw the target as a net-worth line (off when the goal measures cash, not net worth). Default true. */
+  targetLine?: boolean;
 }
 
-export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }: Props) {
+export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge, targetLine = true }: Props) {
   const { t, fmt } = useI18n();
   const byAgeA = new Map(planA?.bands.map((b) => [b.age, b]) ?? []);
   const data = real.bands.map((b, i) => {
@@ -44,6 +46,11 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
     };
   });
   const lastAge = data[data.length - 1]?.age ?? goal.age;
+  // A plan whose shortfall is borrowed for decades (e.g. a permanent deficit) would squash the chart into a line:
+  // cut the axis at −max(top, 50k) and say so below the chart.
+  const top = Math.max(0, ...data.map((d) => Math.max(d.p90, d.ideal ?? 0, d.rangeA?.[1] ?? 0)), targetLine ? goal.target : 0);
+  const bottom = Math.min(0, ...data.map((d) => Math.min(d.p10, d.ideal ?? 0, d.rangeA?.[0] ?? 0)));
+  const floor = top > 0 && bottom < -Math.max(top, 50_000) ? -Math.max(top, 50_000) : null;
   const retire = retirementAge !== undefined && retirementAge < lastAge ? retirementAge : undefined;
 
   return (
@@ -92,6 +99,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
               axisLine={false}
               tick={{ fill: "var(--ink-3)", fontSize: 11 }}
               width={44}
+              {...(floor !== null ? { domain: [floor, "auto"] as [number, string], allowDataOverflow: true } : {})}
             />
             <Tooltip content={<ConeTooltip />} cursor={{ stroke: "var(--ink-3)", strokeWidth: 1 }} />
             {retire !== undefined && (
@@ -124,12 +132,14 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
               isAnimationActive={false}
               activeDot={false}
             />
-            <ReferenceLine
-              y={goal.target}
-              stroke="var(--ink-2)"
-              strokeDasharray="2 4"
-              label={{ value: t("chart.goal", { target: goal.target }), position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
-            />
+            {targetLine && (
+              <ReferenceLine
+                y={goal.target}
+                stroke="var(--ink-2)"
+                strokeDasharray="2 4"
+                label={{ value: t("chart.goal", { target: goal.target }), position: "insideTopLeft", fill: "var(--ink-2)", fontSize: 11 }}
+              />
+            )}
             <ReferenceLine x={goal.age} stroke="var(--ink-3)" strokeDasharray="2 4" />
             {eventAges.map((e) => (
               <ReferenceLine key={e.id} x={e.age} stroke="var(--line)" strokeWidth={6} strokeOpacity={0.6} />
@@ -169,6 +179,7 @@ export function ConeChart({ real, ideal, goal, eventAges, planA, retirementAge }
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {floor !== null && <p className="mt-2 text-xs text-ink-2" data-testid="chart-clipped">{t("ubs.chartClipped", { floor })}</p>}
     </div>
   );
 }
