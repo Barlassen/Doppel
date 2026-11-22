@@ -206,6 +206,8 @@ Federal statutory minima were raised on 1 January 2025 (first increase since 200
 
 ---
 
+> **Status (2026-11-22, engine):** Part 2 is implemented for children (B), mobility (C), the economy as named deterministic scenarios built from the three regimes (A, not the Markov chain), the 10-year fixed mortgage with its reset, and the opt-in climate scenario (E.4). The figures of Part 1 live in `src/lib/finance/params.ts` with their source and date; the API is in `docs/ENGINE_API.md`. Not implemented: the rent rule tied to the reference rate, SARON mortgages, the heating event as its own type (a heat-pump retrofit is a one-off expense of CHF 43,000), the energy shock, IPV, old-age care, the `car_to_ga` solver lever, the Kotlin port. Where this document says "no source found", the engine asks the user for the value.
+>
 > **Status (2026-11-22):** implemented in `src/lib/finance/canton.ts` — health-premium real drift (D, 2.5 pp/yr above CPI, canton premium level from the EDI ordinance on average premiums 2026) and cantonal income-tax scaling for the UBS profiles (ESTV-based burden of the cantonal capitals). Used by the dashboard engine, the UBS mapping and `/play`. The built-in accounts keep their payslip-derived tax rates; their premium is a one-person household in their canton.
 
 ## Part 2: Engine Design Proposal

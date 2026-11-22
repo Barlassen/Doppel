@@ -66,9 +66,9 @@ The historical live run used 16 synthetic Swiss documents, including nine phone-
 
 The separate live vision report used Gemini 2.5 Flash-Lite on seven floor plans and charts. It records a 7/10 room-mapping result and two chart risk mismatches. [Live Gemini vision report](docs/VISION_BENCHMARK.md)
 
-The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, borderline) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, behind on her flat) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 
-The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from payday spending, and the CHF 940k listing failing the bank test at 66.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 24.7k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 458,214 − CHF 433,481 = CHF 24,733`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
+The finance numbers used in the pitch (Meriç 8.7% vs 24.8%, −14.2 pp from payday spending, and the CHF 940k listing failing the bank test at 72.7%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 25.1k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 362,038 − CHF 336,948 = CHF 25,089`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
 ## Scripts
 
@@ -89,7 +89,7 @@ All people, companies and documents in the demo are fictional.
 Contributors and coding agents: start with [AGENTS.md](AGENTS.md) and [docs/WORKPLAN.md](docs/WORKPLAN.md).
 Doppel Play (`/play`) turns the same twin into a chess-review life game: Life plays White, you play Black, and a Monte Carlo tree search over possible futures reviews every move. See [docs/PLAY.md](docs/PLAY.md).
 
-More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
+More: [docs/ENGINE_API.md](docs/ENGINE_API.md) (life decisions, economic scenarios, outlook), [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
 
 Contributor demo guides: [Judging and evidence](docs/JUDGING.md), [Hand control](docs/TKT.md).
 
