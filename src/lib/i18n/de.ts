@@ -2415,4 +2415,13 @@ export const de = {
       other: "andere",
     },
   },
+  // Second header row: jump links to the dashboard's main areas.
+  sections: {
+    aria: "Bereiche",
+    money: "Geld",
+    outlook: "Ausblick",
+    decisions: "Entscheidungen",
+    assistant: "KI-Zwilling-Assistent",
+    statements: "Kontoauszüge",
+  },
 } satisfies Messages;

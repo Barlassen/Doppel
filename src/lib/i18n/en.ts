@@ -2413,4 +2413,13 @@ export const en = {
       other: "other",
     },
   },
+  // Second header row: jump links to the dashboard's main areas.
+  sections: {
+    aria: "Sections",
+    money: "Money",
+    outlook: "Outlook",
+    decisions: "Decisions",
+    assistant: "AI twin assistant",
+    statements: "Statements",
+  },
 } as const;

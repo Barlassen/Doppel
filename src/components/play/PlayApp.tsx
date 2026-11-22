@@ -13,7 +13,7 @@ import type { GameState } from "@/lib/game/state";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ALEXIA_ID, loadUbsProfile } from "@/lib/ubs";
-import { SiteNav } from "../SiteNav";
+import { SectionNav, SiteNav } from "../SiteNav";
 import { Disclosure } from "../ui";
 import { boardLine } from "@/lib/game/board";
 import { ChessBoard } from "./ChessBoard";
@@ -291,6 +291,7 @@ export default function PlayApp() {
             ))}
           </div>
         </div>
+        <SectionNav current="play" />
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pt-6 pb-24 sm:pt-8">

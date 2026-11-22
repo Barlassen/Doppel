@@ -2421,4 +2421,13 @@ export const tr = {
       other: "diğer",
     },
   },
+  // Second header row: jump links to the dashboard's main areas.
+  sections: {
+    aria: "Bölümler",
+    money: "Para",
+    outlook: "Gidişat",
+    decisions: "Kararlar",
+    assistant: "AI Twin asistanı",
+    statements: "Ekstreler",
+  },
 } satisfies Messages;

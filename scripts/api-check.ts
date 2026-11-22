@@ -764,7 +764,7 @@ async function main() {
     // A decision that lacks figures says so, and the same facts in Turkish carry Turkish labels.
     const s2 = actions.applyScenarioOps(s0, actions.validateOps([{ op: "add", type: "income", label: "Marriage", month: 8, decision: { kind: "partner", married: true } }], s0.events));
     const tr = outlookFacts(outlook(barlas, s2, { behavior, paths: 100, now: new Date(2026, 10, 22) }), { profile: barlas, locale: "tr" }) as Json;
-    assert.match(String(tr.decision_inputs_missing), /Partnerin aylık net maaşı/);
+    assert.match(String(tr.decision_inputs_missing), /Partnerin net maaşı/);
     assert.equal(tr.economy_scenario, "Temel senaryo");
     // The gateway takes the object as it is.
     fresh();

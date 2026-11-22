@@ -22,3 +22,31 @@ export function SiteNav({ current }: { current: "dashboard" | "play" }) {
     </nav>
   );
 }
+
+/** The dashboard's main areas, in page order. Each id is an anchor on the dashboard. */
+const SECTIONS = ["money", "outlook", "decisions", "assistant", "statements"] as const;
+
+/**
+ * Second header row: jump links to the dashboard's main areas (money, outlook, decisions, the AI twin assistant,
+ * statements). On Doppel Play the same links lead back to the dashboard. Scrolls sideways on narrow screens.
+ */
+export function SectionNav({ current }: { current: "dashboard" | "play" }) {
+  const { t } = useI18n();
+  const base = current === "dashboard" ? "" : "/";
+  return (
+    <nav aria-label={t("sections.aria")} data-testid="section-nav" className="mx-auto max-w-6xl overflow-x-auto px-4 pb-2">
+      <ul className="flex w-max items-center gap-1">
+        {SECTIONS.map((id) => (
+          <li key={id}>
+            <a
+              href={`${base}#${id}`}
+              className="block min-h-6 whitespace-nowrap rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-2 hover:border-ink-3 hover:text-ink"
+            >
+              {t(`sections.${id}`)}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}

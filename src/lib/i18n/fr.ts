@@ -2424,4 +2424,13 @@ export const fr = {
       other: "autre",
     },
   },
+  // Second header row: jump links to the dashboard's main areas.
+  sections: {
+    aria: "Rubriques",
+    money: "Argent",
+    outlook: "Perspectives",
+    decisions: "Décisions",
+    assistant: "Assistant jumeau IA",
+    statements: "Relevés",
+  },
 } as const satisfies Messages;
