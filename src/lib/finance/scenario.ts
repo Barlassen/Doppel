@@ -32,6 +32,8 @@ export function simInputFor(p: Profile, s: Scenario, behavior?: BehaviorParams):
     expenseDelta: s.expenseDelta,
     optimizeIdleCash: s.optimize,
     monthlyInvest: s.monthlyInvest,
+    ...(s.debtExtra ? { extraDebtPayment: s.debtExtra } : {}),
+    ...(s.phases?.length ? { phases: s.phases } : {}),
     ...HEADLINE,
   };
 }

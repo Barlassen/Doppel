@@ -38,6 +38,7 @@ function applyRecipe(s: Scenario, r: Recipe): Scenario {
   const a = r.apply;
   if (a.kind === "expenseDelta") return { ...s, expenseDelta: a.value };
   if (a.kind === "optimize") return { ...s, optimize: true };
+  if (a.kind === "debtExtra") return { ...s, debtExtra: a.value };
   const shifted = applyScenarioOps(s, [{ op: "shift", id: a.eventId, months: a.months }], "solver");
   return a.kind === "combo" ? { ...shifted, expenseDelta: a.expenseDelta } : shifted;
 }

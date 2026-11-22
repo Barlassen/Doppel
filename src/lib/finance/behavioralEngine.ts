@@ -84,6 +84,15 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
   const leakageChfMonth = Math.round(leakageRate * surplus);
 
   const insights: BehaviorInsight[] = [];
+  // No transactions (e.g. a UBS synthetic profile): no habit is inferred. The engine keeps its neutral priors
+  // (3% leakage floor, 8% panic-sell chance) and says so instead of presenting them as observed habits.
+  if (tx.length === 0) {
+    insights.push({
+      id: "noHistory",
+      title: { key: "ubs.noHistoryTitle" },
+      detail: { key: "ubs.noHistoryDetail", params: { rate: leakageRate, prob: panicSellProb } },
+    });
+  }
   if (paydaySpike > 1.25) {
     const extraMonthly = Math.round(((after / afterDays - before / beforeDays) * afterDays) / historyMonths);
     insights.push({
@@ -93,7 +102,7 @@ export function analyzeBehavior(p: Profile, extra: Transaction[] = []): Behavior
       monthlyChf: extraMonthly,
     });
   }
-  if (leakageChfMonth > 0) {
+  if (leakageChfMonth > 0 && tx.length > 0) {
     insights.push({
       id: "leak",
       title: { key: "insight.leakTitle", params: { rate: leakageRate } },

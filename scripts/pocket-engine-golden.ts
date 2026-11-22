@@ -17,6 +17,7 @@ function applyRecipe(s: Scenario, recipe: Recipe): Scenario {
   const a = recipe.apply;
   if (a.kind === "expenseDelta") return { ...s, expenseDelta: a.value };
   if (a.kind === "optimize") return { ...s, optimize: true };
+  if (a.kind === "debtExtra") return { ...s, debtExtra: a.value };
   const events = s.events.map((e) => e.id === a.eventId ? { ...e, month: Math.max(0, e.month + a.months) } : e);
   return { ...s, events, ...(a.kind === "combo" ? { expenseDelta: a.expenseDelta } : {}) };
 }
