@@ -131,14 +131,12 @@ export function MoneyFlow({ profile, summary, outlook }: { profile: Profile; sum
             <div className="border-b border-line pb-1"><h4 className="label">{t("flow.decisions")}</h4></div>
             <ul>
               {after.lines.map((l) => (
-                <li key={l.id} className={`${ROW_GRID} py-1.5 text-sm`}>
+                <li key={l.id} className="flex items-center justify-between gap-3 border-b border-line/60 py-1.5 pr-[3.5rem] text-sm last:border-b-0">
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full border-2" style={{ borderColor: l.monthly < 0 ? "var(--bad)" : "var(--good)" }} aria-hidden="true" />
                     <span className="min-w-0 break-words">{tm(l.label)}</span>
                   </span>
-                  <span className="hidden sm:block" />
-                  <span className={`num text-right font-medium ${l.monthly < 0 ? "text-bad" : "text-good"}`}>{fmt.chfSigned(Math.round(l.monthly * k))}</span>
-                  <span />
+                  <span className={`num shrink-0 text-right font-medium ${l.monthly < 0 ? "text-bad" : "text-good"}`}>{fmt.chfSigned(Math.round(l.monthly * k))}</span>
                 </li>
               ))}
             </ul>
