@@ -10,7 +10,8 @@ import type { ParsedStatement, ReviewCounts, ReviewRow, ReviewTrade } from "./ty
  *
  * Dedupe rules
  *  - a row with a bank reference (camt `AcctSvcrRef`, ZKB-Referenz, UBS transaction no.) is a duplicate when an
- *    earlier import of this account recorded the same reference, or the same reference appears earlier in the file;
+ *    EARLIER IMPORT of this account recorded the same reference. A reference that repeats inside one file is not a
+ *    duplicate: the transactions of a camt batch and the detail rows of a UBS collective order share one;
  *  - otherwise (and for rows whose reference is new) it is a duplicate when the account already has a transaction
  *    with the same date, amount (to the cent) and normalised merchant. Matching is one-to-one, so two identical
  *    coffees on the same day in one file both stay when the account had neither;
@@ -47,16 +48,15 @@ const take = (m: Map<string, number>, k: string) => {
 
 export function buildReview(parsed: ParsedStatement, existing: ExistingData, overrides: Readonly<Record<string, TransactionCategory>> = {}): Review {
   const have = multiset(existing.transactions.map((r) => txKey(r.value)));
-  const seenRefs = new Set(existing.refs);
   const rows: ReviewRow[] = parsed.rows.map((row, i) => {
     const c = classifyRow(row, overrides);
     const amount = round2(-row.signed);
     const counted = c.kind === "spend" || c.kind === "refund";
     let duplicate = false;
     if (counted) {
-      if (row.ref && seenRefs.has(row.ref)) duplicate = true;
-      else duplicate = take(have, txKey({ date: row.date, amount, merchant: c.merchant }));
-      if (row.ref) seenRefs.add(row.ref);
+      // Take the date / amount / merchant match either way, so a re-imported row cannot be matched twice.
+      const known = take(have, txKey({ date: row.date, amount, merchant: c.merchant }));
+      duplicate = known || Boolean(row.ref && existing.refs.has(row.ref));
     }
     return {
       id: `r${i}`,

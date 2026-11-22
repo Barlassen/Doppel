@@ -1,5 +1,6 @@
 import { translateText } from "@/lib/i18n";
 import { msg } from "@/lib/i18n/types";
+import { isSwissIban } from "./heuristics";
 import { isAmount, type Extraction } from "./types";
 
 /**
@@ -19,13 +20,58 @@ export interface QrBill {
   billingInfo: string;
 }
 
+const REFERENCE_TYPES = ["QRR", "SCOR", "NON"] as const;
+const MOD10_TABLE = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
+
+/** QR reference: 27 digits, the last one a recursive modulo-10 check digit. */
+export function isQrReference(reference: string): boolean {
+  if (!/^\d{27}$/.test(reference)) return false;
+  let carry = 0;
+  for (const digit of reference.slice(0, 26)) carry = MOD10_TABLE[(carry + Number(digit)) % 10];
+  return (10 - carry) % 10 === Number(reference[26]);
+}
+
+/** Creditor reference (ISO 11649): "RF", two check digits, up to 21 letters or digits, modulo 97. */
+export function isCreditorReference(reference: string): boolean {
+  const ref = reference.replace(/\s+/g, "").toUpperCase();
+  if (!/^RF\d{2}[A-Z0-9]{1,21}$/.test(ref)) return false;
+  let remainder = 0;
+  for (const c of ref.slice(4) + ref.slice(0, 4)) {
+    for (const digit of /\d/.test(c) ? c : String(c.charCodeAt(0) - 55)) remainder = (remainder * 10 + Number(digit)) % 97;
+  }
+  return remainder === 1;
+}
+
+/** A QR-IBAN carries an institution id (IID) between 30000 and 31999 and is only valid with a QR reference. */
+const isQrIban = (iban: string) => {
+  const iid = Number(iban.slice(4, 9));
+  return iid >= 30000 && iid <= 31999;
+};
+
+/**
+ * Reads the payload only when it is a well-formed QR-bill: header, a CH / LI IBAN with correct check digits,
+ * an amount in the spec's format (digits, at most two decimals, at most 999'999'999.99), CHF or EUR, and a
+ * reference that fits its type and the IBAN. Anything else returns null and the cascade reads the document by OCR
+ * instead of trusting a 0-token decode of a malformed payment part.
+ */
 export function parseQrBill(raw: string): QrBill | null {
-  const l = raw.replace(/\r\n/g, "\n").split("\n");
+  const l = raw.replace(/\r\n?/g, "\n").split("\n");
   if (l[0] !== "SPC" || !/^02\d{2}$/.test(l[1] ?? "") || l[2] !== "1" || l[30] !== "EPD") return null;
+  const iban = (l[3] ?? "").replace(/\s+/g, "").toUpperCase();
+  const amountText = l[18] ?? "";
+  const currency = l[19] ?? "";
+  const referenceType = l[27] ?? "";
+  const reference = (l[28] ?? "").replace(/\s+/g, "");
+  if (!isSwissIban(iban) || !/^(?:CHF|EUR)$/.test(currency)) return null;
+  if (amountText !== "" && !/^\d{1,9}(?:\.\d{1,2})?$/.test(amountText)) return null;
+  if (!(REFERENCE_TYPES as readonly string[]).includes(referenceType)) return null;
+  if (referenceType === "QRR" ? !isQrIban(iban) || !isQrReference(reference) : isQrIban(iban)) return null;
+  if (referenceType === "SCOR" && !isCreditorReference(reference)) return null;
+  if (referenceType === "NON" && reference !== "") return null;
   const structured = l[4] === "S";
-  const amount = l[18] ? Number(l[18]) : undefined;
+  const amount = amountText ? Number(amountText) : undefined;
   return {
-    iban: l[3] ?? "",
+    iban,
     creditor: {
       name: l[5] ?? "",
       postcode: structured ? l[8] ?? "" : "",
@@ -33,10 +79,10 @@ export function parseQrBill(raw: string): QrBill | null {
       country: l[10] ?? "",
     },
     amount: isAmount(amount) ? amount : undefined,
-    currency: l[19] ?? "CHF",
+    currency,
     debtorName: l[21] || undefined,
-    referenceType: l[27] ?? "NON",
-    reference: l[28] ?? "",
+    referenceType,
+    reference,
     message: l[29] ?? "",
     billingInfo: l[31] ?? "",
   };

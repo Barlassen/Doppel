@@ -6,7 +6,7 @@ import type { GoalStats, Liability, Profile, ProfileGoal, Provenance } from "@/l
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { provenanceRows } from "@/lib/ubs/map";
-import { CardHeader, Disclosure } from "./ui";
+import { CardHeader, Disclosure, oddsTone } from "./ui";
 
 const PROVENANCE_STYLE: Record<Provenance, string> = {
   ubs_synthetic: "bg-accent/12 text-accent",
@@ -117,7 +117,7 @@ export function DebtCard({
         <div className="flex shrink-0 items-center gap-1 rounded-full border border-line px-1">
           <button
             type="button"
-            className="rounded-full px-1.5 py-0.5 text-ink-2 hover:text-ink disabled:opacity-40"
+            className="grid min-h-7 min-w-7 place-items-center rounded-full text-ink-2 hover:text-ink disabled:opacity-40"
             disabled={disabled || extra <= 0}
             onClick={() => onExtra(Math.max(0, extra - STEP))}
             aria-label={t("ubs.debtLess")}
@@ -128,7 +128,7 @@ export function DebtCard({
           <span className="num font-medium whitespace-nowrap" data-testid="debt-extra">{t("common.perMonth", { amount: fmt.chf(extra) })}</span>
           <button
             type="button"
-            className="rounded-full px-1.5 py-0.5 text-ink-2 hover:text-ink disabled:opacity-40"
+            className="grid min-h-7 min-w-7 place-items-center rounded-full text-ink-2 hover:text-ink disabled:opacity-40"
             disabled={disabled || extra >= 2000 || withExtra.debtFreeMonth === 1}
             onClick={() => onExtra(extra + STEP)}
             aria-label={t("ubs.debtMore")}
@@ -192,7 +192,7 @@ export function GoalsCard({ goals, stats, fresh }: { goals: ProfileGoal[]; stats
       <ul className="divide-y divide-line">
         {goals.map((g) => {
           const s = byId.get(g.id);
-          const color = !s ? "text-ink-3" : s.prob >= 0.8 ? "text-good" : s.prob >= 0.5 ? "text-warn" : "text-bad";
+          const color = !s ? "text-ink-3" : oddsTone(s.prob);
           return (
             <li key={g.id} className="py-2.5 first:pt-0" data-goal={g.id}>
               <div className="flex items-start justify-between gap-3">
@@ -213,7 +213,9 @@ export function GoalsCard({ goals, stats, fresh }: { goals: ProfileGoal[]; stats
           );
         })}
       </ul>
-      <p className="mt-3 text-xs text-ink-2">{t("ubs.goalsFootnote")}</p>
+      <Disclosure summary={t("common.howCalculated")} className="mt-3">
+        <p className="text-xs text-ink-2">{t("ubs.goalsFootnote")}</p>
+      </Disclosure>
     </section>
   );
 }

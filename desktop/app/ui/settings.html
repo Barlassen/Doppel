@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+<title>Assistant settings</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<form class="page" id="form" autocomplete="off">
+  <div>
+    <h1>Assistant</h1>
+    <p class="muted">Doppel computes every number on this device. A model is optional: it reads documents the local reader cannot, and answers questions about figures the twin already computed.</p>
+  </div>
+
+  <div class="card">
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Checking…</span></div>
+    <fieldset>
+      <legend>Connection</legend>
+      <label class="choice"><input type="radio" name="mode" value="offline"><span>Offline<small>No model. Removes a saved key.</small></span></label>
+      <label class="choice"><input type="radio" name="mode" value="openrouter"><span>OpenRouter<small>One key, default models.</small></span></label>
+      <label class="choice"><input type="radio" name="mode" value="custom"><span>Another endpoint<small>Any OpenAI-compatible server: a local Ollama, LM Studio, Groq…</small></span></label>
+    </fieldset>
+
+    <label class="field" id="base-url-field" hidden>
+      <span>Endpoint URL (without /chat/completions)</span>
+      <input type="url" id="base-url" placeholder="http://localhost:11434/v1" spellcheck="false">
+    </label>
+    <label class="field" id="key-field" hidden>
+      <span id="key-label">API key</span>
+      <input type="password" id="api-key" spellcheck="false" autocomplete="off">
+      <span class="small" id="key-hint"></span>
+    </label>
+    <div class="row" id="models" hidden>
+      <label class="field"><span>Text model</span><input type="text" id="text-model" spellcheck="false"></label>
+      <label class="field"><span>Vision model</span><input type="text" id="vision-model" spellcheck="false"></label>
+    </div>
+    <details id="limits" hidden>
+      <summary>Daily limits</summary>
+      <div class="inner">
+        <div class="row">
+          <label class="field"><span>Budget per day (USD)</span><input type="text" id="budget-usd" inputmode="decimal" placeholder="1"></label>
+          <label class="field"><span>Tokens per day</span><input type="text" id="budget-tokens" inputmode="numeric" placeholder="2000000"></label>
+        </div>
+        <p class="small">Spending stops for the UTC day at whichever is reached first. 0 switches the assistant off.</p>
+      </div>
+    </details>
+  </div>
+
+  <p class="small">Saved on this computer only, in <button type="button" class="link" id="show-env">doppel.env</button> (plain text). The key is sent to the endpoint above and nowhere else.</p>
+  <p class="error" id="error" role="alert" hidden></p>
+
+  <div class="actions">
+    <button type="button" id="cancel">Close</button>
+    <button type="submit" class="primary" id="save">Save and restart</button>
+  </div>
+</form>
+<script src="settings.js"></script>
+</body>
+</html>

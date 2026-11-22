@@ -8,7 +8,7 @@ import { DEPTHS } from "@/lib/game/engine";
 import { LABEL_GLYPH, PRESETS, type MoveLabel, type PresetId, type Weights } from "@/lib/game/evaluate";
 import type { Game, LifeRecord, MoveRecord } from "@/lib/game/game";
 import { REGIME, REGIMES, type RegimeId } from "@/lib/game/regime";
-import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlyOutflow, monthlySurplus, netWorth, pensionNet, realNetWorth } from "@/lib/game/state";
+import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, monthlyOutflow, monthlySurplus, pensionNet, realNetWorth, targetAt } from "@/lib/game/state";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { type UbsProfileSummary, ubsScenarioCatalog } from "@/lib/ubs";
@@ -72,7 +72,7 @@ export function SetupPanel(props: {
   derivedPrefs: string[];
   onPrefs: (p: string[]) => void;
 }) {
-  const { t, tm } = useI18n();
+  const { t } = useI18n();
   const o = props.opening;
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -135,7 +135,6 @@ export function SetupPanel(props: {
         </button>
       </div>
       {q && <p className="mt-1 text-[11px] text-ink-3">{t("prefs.count", { n: shown.length, total: props.ubsProfiles.length })}</p>}
-      <p className="mt-2 text-xs text-ink-3">{t(`play.regime.${props.regime}Hint` as MessageKey)}</p>
       <fieldset className="mt-3" data-testid="play-prefs">
         <legend className="text-xs font-medium text-ink-2">{t("prefs.title")}</legend>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -150,15 +149,7 @@ export function SetupPanel(props: {
             );
           })}
         </div>
-        <p className="mt-1.5 text-[11px] text-ink-3">{t("prefs.note")}</p>
       </fieldset>
-      {o && (
-        <p className="mt-1 text-xs text-ink-2">
-          <span className="font-medium text-ink">{o.profile.name}</span> · {tm(o.profile.tagline)} ·{" "}
-          {t("play.setup.opening", { nw: netWorth(o.state), net: incomeAt(o.state, 0).net, target: o.state.goal.target, age: o.state.goal.age })}
-          {debtTotal(o.state) > 0 && <> · {t("play.setup.debt", { amount: debtTotal(o.state) })}</>}
-        </p>
-      )}
     </section>
   );
 }
@@ -169,7 +160,7 @@ export function SetupPanel(props: {
  * `boardCheck`: Life's last move gives check on the board. The word "check" is used only then; a financial danger
  * the board cannot show as a check yet is a "threat" (the same forced response applies).
  */
-export function Banner({ position: p, boardCheck }: { position: GameState; boardCheck: boolean }) {
+export function Banner({ position: p, boardCheck, atStart = false }: { position: GameState; boardCheck: boolean; atStart?: boolean }) {
   const { t } = useI18n();
   let kind: "check" | "threat" | "mate" | "won" | "ended" | null = null;
   let text = "";
@@ -178,7 +169,8 @@ export function Banner({ position: p, boardCheck }: { position: GameState; board
     text = t("play.banner.mate", { line: CREDIT_LINE });
   } else if (p.status === "won") {
     kind = "won";
-    text = t("fi.won", { age: p.age });
+    // An opening that is already independent: nothing was won by a move, and the banner says so.
+    text = atStart ? t("play.banner.wonAtStart", { age: p.age }) : t("fi.won", { age: p.age });
   } else if (p.status === "ended") {
     kind = "ended";
     text = t("fi.ended", { age: p.age });
@@ -293,7 +285,10 @@ export function PositionPanel({ position: p, profile, turn, regime, seed }: { po
   const homeEq = p.home ? (p.home.value - p.home.mortgage) / k : 0;
   const debt = debtTotal(p) / k;
   const nw = realNetWorth(p);
-  const progress = Math.max(0, Math.min(1, nw / Math.max(1, p.goal.target)));
+  // Once a player who started working is retired, the pension fund is an annuity: progress is measured against
+  // the liquid capital still needed (targetAt), not against the old target that included the fund.
+  const goalNow = p.pension && p.goal.retired ? targetAt(p, p.age) : p.goal.target;
+  const progress = Math.max(0, Math.min(1, nw / Math.max(1, goalNow)));
   const stat = (label: string, value: string, sub?: string) => (
     <div className="min-w-0 rounded-lg bg-surface-2 px-3 py-2">
       <div className="truncate text-[11px] text-ink-3">{label}</div>
@@ -354,7 +349,6 @@ export function PositionPanel({ position: p, profile, turn, regime, seed }: { po
         </div>
       )}
       <IndependenceLine position={p} regime={regime} seed={seed} />
-      <p className="mt-2 text-[11px] text-ink-3">{t("play.position.startChf")}</p>
     </section>
   );
 }
@@ -456,7 +450,7 @@ export function LifeCard({ life, regime }: { life: LifeRecord | undefined; regim
   );
 }
 
-function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; index?: number; position: GameState; regime: RegimeId; onPlay: () => void; extra?: ReactNode }) {
+function CardTile({ id, index, position, regime, onPlay, extra, onPreview }: { id: string; index?: number; position: GameState; regime: RegimeId; onPlay: () => void; extra?: ReactNode; onPreview?: (card: string | null) => void }) {
   const i = useI18n();
   const def = cardById(id);
   const params = useMemo(() => def.params(position, REGIME[regime]), [def, position, regime]);
@@ -467,6 +461,10 @@ function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; 
         onClick={onPlay}
         data-testid="play-card"
         data-card={id}
+        onMouseEnter={() => onPreview?.(id)}
+        onMouseLeave={() => onPreview?.(null)}
+        onFocus={() => onPreview?.(id)}
+        onBlur={() => onPreview?.(null)}
         aria-keyshortcuts={index ? String(index) : undefined}
         className="flex min-h-24 flex-1 flex-col items-start gap-1 rounded-lg p-1 text-left hover:bg-surface-2"
       >
@@ -497,6 +495,8 @@ export function DecisionArea(props: {
   onWhatIf: (card: string) => void;
   over: boolean;
   thinking: boolean;
+  /** Tells the board which decision is under the pointer or the focus (its piece and target are shown there). */
+  onPreview?: (card: string | null) => void;
 }) {
   const i = useI18n();
   const { t } = i;
@@ -506,7 +506,6 @@ export function DecisionArea(props: {
     return (
       <section className="card p-4 sm:p-5" aria-labelledby="play-whatif">
         <CardHeader title={<span id="play-whatif">{t("play.moves.whatIf")}</span>} />
-        <p className="mb-3 text-xs text-ink-3">{t("play.moves.whatIfHint", { turn: r.move.turn + 1 })}</p>
         {!r.analysis && <p className="text-sm text-ink-3 pulse-soft">{t("play.move.reviewing")}</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           {cands.map((c) => {
@@ -540,10 +539,10 @@ export function DecisionArea(props: {
         <p className="text-sm text-ink-2">{t("play.move.over")}</p>
       ) : (
         <>
-          <p className={`mb-3 text-xs ${props.position.check ? "font-medium text-warn" : "text-ink-3"}`}>{props.position.check ? t("threat.respond") : t("play.move.hint")}</p>
+          {props.position.check && <p className="mb-3 text-xs font-medium text-warn">{t("threat.respond")}</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             {cards.map((c, k) => (
-              <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} />
+              <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} onPreview={props.onPreview} />
             ))}
           </div>
           {holdAllowed && (
@@ -551,6 +550,10 @@ export function DecisionArea(props: {
               type="button"
               onClick={() => props.onPlay("hold")}
               data-testid="play-hold"
+              onMouseEnter={() => props.onPreview?.("hold")}
+              onMouseLeave={() => props.onPreview?.(null)}
+              onFocus={() => props.onPreview?.("hold")}
+              onBlur={() => props.onPreview?.(null)}
               aria-keyshortcuts="H"
               className="mt-3 flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-dashed border-line px-4 py-3 text-left hover:bg-surface-2"
             >
@@ -686,6 +689,7 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
           </div>
           <p className="mt-1 text-sm text-ink-2">
             {r.loss > 0.005 ? t("play.review.loss", { loss: r.loss }) : t("play.review.noLoss")}
+            {r.loss > 0.005 && r.lossSe >= 0.05 && <> <span className="text-ink-3" data-testid="play-loss-noise">{t("play.review.lossNoise", { se: r.lossSe })}</span></>}
             {r.best !== r.card && <> · <span className="font-medium text-ink">{t("play.review.bestIs", { move: cardTitle(i, r.best) })}</span></>}
           </p>
           <div className="mt-3 space-y-1">
@@ -698,7 +702,6 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
             ))}
           </div>
           {r.card !== best.card && <ScoreBreakdown mine={mine} best={best} weights={weights} />}
-          {r.card !== best.card && <p className="mt-2 text-xs text-ink-2">{t("play.explain.scoreVsRings", { age: a.horizonAge })}</p>}
           <div className="mt-4">
             <div className="label mb-2">{t("play.review.donutTitle")}</div>
             <div className={`grid gap-3 ${r.card !== best.card ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -707,7 +710,6 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
               ))}
             </div>
             <DonutTable you={mine.donut} best={best.donut} showBest={r.card !== best.card} />
-            <p className="mt-2 text-[11px] text-ink-3">{t("play.review.donutNote", { age: a.horizonAge })}</p>
           </div>
           <LuckMeter luck={info.luck} bucket={info.move.market} />
           <p className="mt-3 text-[11px] text-ink-3">
@@ -784,7 +786,6 @@ export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport 
           {t("play.moves.latest")}
         </button>
       )}
-      <p className="mt-3 text-[11px] text-ink-3">{t("play.keys")}</p>
     </section>
   );
 }
@@ -839,7 +840,6 @@ function GameRating({ game }: { game: Game }) {
           {t("fi.rating.yourNetWorth", { nw: rating.player.kind === "mated" ? 0 : rating.player.netWorth })}
         </p>
       )}
-      <p className="mt-2 text-[11px] text-ink-3">{t("fi.rating.formula")}</p>
     </div>
   );
 }
@@ -873,7 +873,6 @@ export function EndReview({ game, moves }: { game: Game; moves: MoveInfo[] }) {
           <div className="num font-serif text-3xl leading-tight text-ink">{fmt.chfShort(realNetWorth(last))}</div>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-ink-3">{t("play.end.accuracyNote")}</p>
       <GameRating game={game} />
       <div className="mt-3 flex flex-wrap gap-1.5">
         {[...counts.entries()].map(([label, n]) => (

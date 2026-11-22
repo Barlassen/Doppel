@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { Disclosure } from "./ui";
+import { Disclosure, oddsTone } from "./ui";
 
 export interface HeroImpact {
   label: Text;
@@ -28,6 +28,7 @@ export function Hero({
   netWorth,
   crunch,
   sim,
+  economy,
   impact,
   taxTip,
   notes,
@@ -46,40 +47,50 @@ export function Hero({
   netWorth: number;
   crunch: number;
   sim: { paths: number; ms: number };
+  /** The economy the futures were drawn from ("Economy: Baseline"): shown with the headline, never apart from it. */
+  economy?: string;
   impact: HeroImpact | null;
   taxTip?: ReactNode;
   /** Extra lines under "How is this calculated?" (e.g. the debt in net worth). */
   notes?: ReactNode;
   children?: ReactNode;
 }) {
-  const { t, rich, fmt, mounted } = useI18n();
-  const probColor = odds >= 0.8 ? "text-good" : odds >= 0.5 ? "text-warn" : "text-bad";
+  const { t, tm, rich, fmt, mounted } = useI18n();
+  const probColor = oddsTone(odds);
+  // The change in points is taken from the two rounded figures on screen, so "91% → 90%" always reads "−1".
+  const delta = impact ? Math.round(impact.after * 100) - Math.round(impact.before * 100) : 0;
   return (
     <div>
       <div className="label">
-        {rich("hero.who", { name: <span>{name}</span>, age, city: <span lang={cityLang}>{city}</span>, tagline })}
+        {rich("hero.who", { name: <span>{name}</span>, age, city: <span lang={cityLang}>{city}</span> })}
       </div>
       <h1 className="mt-1.5 font-serif text-4xl leading-tight sm:text-5xl">
         {t("hero.goal", { goal })}{" "}
         <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{fmt.pct(odds)}</span>
       </h1>
-      <p className="mt-1.5 text-[15px] text-ink-2">
-        {rich("hero.disciplined", { odds: <b className="num font-semibold text-ink">{fmt.pct(ideal)}</b> })}{" "}
-        {rich("hero.crunch", { risk: <b className="num font-semibold text-ink">{fmt.pct(crunch)}</b> })}
-      </p>
+      {economy && (
+        <p className="mt-1.5 text-ink-2">
+          <span className="inline-block rounded-full border border-line px-2 py-0.5 align-middle text-xs" data-testid="hero-economy">{economy}</span>
+        </p>
+      )}
       {impact && (
         <p className="mt-1 text-sm">
           <span className="text-ink-2">{t("impact.line", { label: impact.label })}</span>
           <b className="num">
             {t("common.arrow", { before: fmt.pct(impact.before), after: fmt.pct(impact.after) })}
           </b>{" "}
-          <span className={`num text-xs ${impact.after > impact.before ? "text-good" : impact.after < impact.before ? "text-bad" : "text-ink-2"}`}>
-            {t("common.deltaPp", { value: (impact.after >= impact.before ? "+" : "−") + fmt.int(Math.abs(Math.round((impact.after - impact.before) * 100))) })}
+          <span className={`num text-xs ${delta > 0 ? "text-good" : delta < 0 ? "text-bad" : "text-ink-2"}`}>
+            {t("common.deltaPp", { value: delta === 0 ? "±0" : fmt.signed(delta) })}
           </span>
         </p>
       )}
-      <Disclosure summary={t("common.howCalculated")} className="mt-1.5">
+      <Disclosure summary={t("common.details")} className="mt-1.5">
         <ul className="max-w-3xl space-y-1 text-xs text-ink-2">
+          <li>{tm(tagline)}</li>
+          <li>
+            {rich("hero.disciplined", { odds: <b className="num font-semibold text-ink">{fmt.pct(ideal)}</b> })}{" "}
+            {rich("hero.crunch", { risk: <b className="num font-semibold text-ink">{fmt.pct(crunch)}</b> })}
+          </li>
           <li>
             {rich("hero.netWorth", { amount: <b className="num text-ink">{fmt.chf(netWorth)}</b> })} {t("hero.netWorthNote")}
           </li>

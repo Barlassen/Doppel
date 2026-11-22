@@ -7,16 +7,21 @@ import {
   deleteAccount,
   getAccount,
   hydrateAccounts,
+  listImports,
   resetAccount,
+  setProfileFields,
   setActiveAccount,
   useAccounts,
   type Account,
   type AccountsState,
 } from "@/lib/accounts";
-import { simulate } from "@/lib/finance/monteCarlo";
+import { ASSUMPTIONS, EQUITY_WEIGHT, simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe, type SolverResult } from "@/lib/finance/goalSolver";
 import { checkAffordability } from "@/lib/finance/swissRules";
+import { ECONOMIES } from "@/lib/finance/economy";
+import { compileLife } from "@/lib/finance/life";
+import { outlook, type Outlook } from "@/lib/finance/outlook";
 import { netWorthOf, totalDebt } from "@/lib/finance/debt";
 import {
   baseScenario,
@@ -27,9 +32,10 @@ import {
   type HabitCosts,
   type WaitingCost,
 } from "@/lib/finance/scenario";
-import { GOAL_DEFINITION, type Profile, type RiskProfile, type Scenario, type SimResult } from "@/lib/finance/types";
+import { GOAL_DEFINITION, type LifeEvent, type Profile, type RiskProfile, type Scenario, type SimResult } from "@/lib/finance/types";
 import {
   applyScenarioOps,
+  BOUNDS,
   compactEvents,
   describeOps,
   extractionToUpdate,
@@ -38,8 +44,12 @@ import {
   validateLocalOps,
   type Op,
 } from "@/lib/twin/actions";
-import { callTwin } from "@/lib/llm";
-import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
+import { orderedParsers } from "@/lib/twin/intents";
+import { eventLabel } from "@/lib/twin/intents/shared";
+import { askErrorMsg, askFacts, askTwin, callTwin, twinStatus, type AskFacts, type TwinStatus } from "@/lib/llm";
+import { outlookFacts } from "@/lib/twin/facts";
+import { entryFromAsk, entryFromCommand, entryFromNarrate, entryFromSnap, usageBasisMsg, type LedgerEntry } from "@/lib/frugal/ledger";
+import { summaryAskFacts, type InferredFact } from "@/lib/import";
 import type { SnapResult, Usage } from "@/lib/snap/types";
 import {
   applyChartToProfile,
@@ -51,20 +61,31 @@ import {
 import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { ConeChart } from "./ConeChart";
+import { AskCard, type AssistantReply } from "./AskCard";
+import { ConeChart, type ChartMarker } from "./ConeChart";
+import { DecisionsCard, eventIcon, markerIcon } from "./Decisions";
+import { EconomyNote, EconomySelect, economyIdOf } from "./EconomyControl";
+import { learnedFrom } from "./Learned";
+import { OutlookCard } from "./OutlookCard";
+import { useStatementMemory } from "./statementMemory";
+import type { IncomingStatement } from "./ImportPanel";
 import { CommandBar } from "./CommandBar";
 import { SnapPanel, type SnapItem } from "./SnapPanel";
 import { FrugalBadge, Inspector } from "./Inspector";
-import { AffordabilityCard, BankerCard, BehaviorCard, RecipesCard, Timeline } from "./Cards";
+import { AffordabilityCard, BehaviorCard, RecipesCard } from "./Cards";
 import { RetirementCard } from "./RetirementCard";
 import { PlanCompare, type PinnedPlan } from "./PlanCompare";
 import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
 import { defaultHealthPremium } from "@/lib/finance/canton";
+import { CHILD } from "@/lib/finance/params";
 import { cantonLine } from "./CantonLine";
 import { Hero } from "./Hero";
+import { MoneyFlow } from "./MoneyFlow";
+import { TwinCard } from "./TwinCard";
+import { Insights } from "./Insights";
 import { CardHeader, Section } from "./ui";
 import { AccountSwitcher } from "./AccountSwitcher";
-import { SiteNav } from "./SiteNav";
+import { SectionNav, SiteNav } from "./SiteNav";
 import { AccountWizard } from "./AccountWizard";
 import { ImportPanel } from "./ImportPanel";
 import { TransactionsPanel } from "./TransactionsPanel";
@@ -164,12 +185,17 @@ export default function DoppelApp() {
   const [narrative, setNarrative] = useState<{
     loading: boolean;
     fallback: Msg[];
-    cloud?: { locale: Locale; text: string };
+    cloud?: { locale: Locale; text: string; model: string };
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
+  // The assistant: whether one is connected (asked once after mount), and the last question with its answer.
+  const [assistant, setAssistant] = useState<TwinStatus | undefined | "checking">("checking");
+  const [ask, setAsk] = useState<{ question: string; loading: boolean; text?: string; error?: Msg; model?: string; usage?: AssistantReply["usage"] } | null>(null);
+  // A decision to open in the form: a what-if or a confirmed statement fact that still needs inputs.
+  const [decisionSeed, setDecisionSeed] = useState<{ token: number; op: Extract<Op, { op: "add" }> } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [ubsPickerOpen, setUbsPickerOpen] = useState(false);
-  const [importOpenToken, setImportOpenToken] = useState(0);
+  const [incomingStatement, setIncomingStatement] = useState<IncomingStatement | null>(null);
   const pendingDataChange = useRef<{ accountId: string; label: Text; before: number } | null>(null);
 
   // Account-scoped request revision: async results that resolve after an account switch are ignored.
@@ -196,6 +222,9 @@ export default function DoppelApp() {
   const [planA, setPlanA] = useState<{ key: string; result: SimResult } | null>(null);
   const [extras, setExtras] = useState<Extras | null>(null);
   const [solver, setSolver] = useState<{ key: string; profileId: string; result: SolverResult } | null>(null);
+  // "What happens next": the engine's outlook of the current plan against the account's own plan.
+  const [outlookState, setOutlookState] = useState<{ key: string; profileId: string; result: Outlook } | null>(null);
+  const outlookCache = useRef(new Map<string, Outlook>());
   const mainRef = useRef(main);
   const probCache = useRef(new Map<string, number>([[main.key, main.real.successProb]]));
   const pendingImpacts = useRef<PendingImpact[]>([]);
@@ -270,6 +299,7 @@ export default function DoppelApp() {
       setChartPatch(null);
     }
     setNarrative(null);
+    setAsk(null);
     setCmdMsg(undefined);
   }
 
@@ -292,6 +322,32 @@ export default function DoppelApp() {
     const fresh = getAccount(id);
     if (fresh && id === accountRef.current.id) loadAccount(fresh, true);
   }
+
+  // The <title> follows the language. React owns the server-rendered <title> and writes the English text back when
+  // it re-renders the head, so the localized title is re-applied whenever that element changes.
+  useEffect(() => {
+    const want = t("ux.docTitle");
+    const apply = () => {
+      if (document.title !== want) document.title = want;
+    };
+    apply();
+    const el = document.querySelector("head > title");
+    if (!el) return;
+    const observer = new MutationObserver(apply);
+    observer.observe(el, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes with the locale
+  }, [locale]);
+
+  useEffect(() => {
+    let alive = true;
+    void twinStatus().then((status) => {
+      if (alive) setAssistant(status);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Hydration: read the stored accounts after mount, then follow the store's active account.
   useEffect(() => {
@@ -334,6 +390,7 @@ export default function DoppelApp() {
     pendingImpacts.current.push({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId });
     commitScenario(next);
     setNarrative(null);
+    setAsk(null);
   }
 
   function resolveImpact(pi: PendingImpact, before: number, after: number) {
@@ -357,6 +414,7 @@ export default function DoppelApp() {
   const planAKeyRef = useRef<string | null>(null);
   const extrasKeyRef = useRef<string | null>(null);
   const solverKeyRef = useRef<string | null>(null);
+  const outlookKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const job = ++jobRef.current;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -388,6 +446,24 @@ export default function DoppelApp() {
 
     const afterMain = () => {
       resolvePending();
+      if (outlookKeyRef.current !== key) {
+        const cached = outlookCache.current.get(key);
+        if (cached) {
+          setOutlookState({ key, profileId: prof.id, result: cached });
+          outlookKeyRef.current = key;
+        } else
+          step(() => {
+            const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
+            // Before = the account's own plan in the same economy, so the difference is the decisions.
+            const own = baseScenarioFor(acc);
+            const { economy, ...plan } = s;
+            const unchanged = JSON.stringify(plan) === JSON.stringify(own);
+            const result = outlook(prof, s, { baseline: unchanged ? null : own, behavior: b.params, ...(economy ? { economy } : {}) });
+            remember(outlookCache.current, key, result, 8);
+            setOutlookState({ key, profileId: prof.id, result });
+            outlookKeyRef.current = key;
+          }, 20);
+      }
       const aKey = pinned ? keyOf(acc.version, pinned.scenario) : null;
       if (aKey !== planAKeyRef.current) {
         step(() => {
@@ -497,6 +573,33 @@ export default function DoppelApp() {
   function pinAlexiaPath(next: Scenario, id: AlexiaPathId) {
     commitPin({ scenario: next, label: pathLabel(id), manual: true });
   }
+  // The outlook of this account: the fresh one, or the previous one (dimmed) while the next is computed.
+  const outlookShown = outlookState?.profileId === profileId ? outlookState.result : null;
+  const outlookFresh = outlookState?.key === inputsKey ? outlookState.result : null;
+  const economyId = economyIdOf(scenario.economy);
+  const planStart = useMemo(() => start ?? new Date(), [start]);
+  // Chart markers: the outlook's dated markers (birth, daycare, car bought, …); the plan's events until it is ready.
+  const chartMarkers = useMemo<ChartMarker[]>(() => {
+    if (!outlookFresh) {
+      return scenario.events.map((e) => ({ id: e.id, age: effProfile.age + Math.floor(e.month / 12), icon: eventIcon(e), label: e.labelMsg ?? e.label, rank: 0 }));
+    }
+    const seen = new Set<string>();
+    return outlookFresh.markers
+      .filter((m) => m.kind !== "goal" && m.kind !== "retirement" && m.kind !== "ahv")
+      .map((m, i) => {
+        const first = !!m.eventId && !seen.has(m.eventId);
+        if (m.eventId) seen.add(m.eventId);
+        return { id: `${m.kind}-${m.month}-${i}`, age: m.age, icon: markerIcon(m.kind), label: m.label, rank: first ? 0 : m.eventId ? 1 : 2 };
+      });
+  }, [outlookFresh, scenario.events, effProfile.age]);
+  // The "before" line: a manually pinned Plan A, else the account's own plan from the outlook.
+  const manualPlanA = pin?.manual && planAResult && planAResult !== real ? planAResult : null;
+  const chartBefore = manualPlanA ?? outlookFresh?.baselineSim ?? null;
+  const memory = useStatementMemory(account.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the account version changes with every import
+  const importIds = useMemo(() => listImports(account.id).map((r) => r.id), [account.id, account.version]);
+  const learned = useMemo(() => learnedFrom(account, memory.income, importIds), [account, memory.income, importIds]);
+
   const stateChars = useMemo(() => JSON.stringify({ profile: effProfile, events: scenario.events }).length, [effProfile, scenario.events]);
 
   // ---------------- multimodal snap ----------------
@@ -560,6 +663,92 @@ export default function DoppelApp() {
   }
 
   // ---------------- what-if commands ----------------
+  /**
+   * Why the local parsers produced no valid change, when the reason is known: the what-if was understood but cannot
+   * apply (a retirement age outside the engine's range, or "delay the home" with no home on the timeline). The
+   * parsers return raw ops; only the validation dropped them, so no parser change is needed for these two messages.
+   */
+  function whyNotApplied(text: string): Msg | null {
+    const events = scenarioRef.current.events;
+    const ctx = { text, events, now: new Date(), retirementAge: effProfile.retirementAge, house: events.find((e) => e.type === "house") };
+    const parsers = orderedParsers(locale);
+    const [minAge, maxAge] = BOUNDS.retirementAge;
+    for (const op of parsers.flatMap((parser) => parser.parse(ctx))) {
+      if (op.op === "set" && op.key === "retirementAge" && typeof op.value === "number" && (op.value < minAge || op.value > maxAge)) {
+        return msg("ux.cmdRetireRange", { min: minAge, max: maxAge });
+      }
+    }
+    if (!ctx.house) {
+      const probe: LifeEvent = { id: "probe-home", type: "house", label: "", month: 0, amount: 0 };
+      const withHome = parsers.flatMap((parser) => parser.parse({ ...ctx, events: [...events, probe], house: probe }));
+      if (withHome.some((op) => op.op === "shift" && op.id === probe.id)) return msg("ux.cmdNoHome");
+    }
+    return null;
+  }
+
+  /** The first decision among `ops` for which the engine still lacks an input it cannot source (e.g. the new rent of a move). */
+  function decisionLackingInputs(ops: Op[]): Extract<Op, { op: "add" }> | null {
+    const months = (ASSUMPTIONS.endAge - effProfile.age) * 12;
+    const retireMonth = Math.max(0, (effProfile.retirementAge - effProfile.age) * 12);
+    for (const o of ops) {
+      if (o.op !== "add" || !o.decision) continue;
+      const probe: LifeEvent = { id: "probe-decision", type: o.type, label: o.label, month: o.month, amount: 0, decision: o.decision };
+      if (compileLife(effProfile, [...scenarioRef.current.events, probe], months, retireMonth).inputsNeeded.some((n) => n.eventId === probe.id)) return o;
+    }
+    return null;
+  }
+
+  /** Decisions from the picker (and edits): the same ops as a what-if, applied through the same path. */
+  function applyDecision(ops: Op[], label: Text) {
+    // Ops built by the picker are local and trusted: `validateLocalOps` keeps their translatable label.
+    mutate((s) => applyScenarioOps(s, validateLocalOps(ops, s.events), "command", { profile: base }), { label });
+  }
+
+  /** A life fact read from the statement was confirmed: what it means for the profile or the plan. */
+  function onFact(fact: InferredFact) {
+    const id = accountRef.current.id;
+    const amount = Math.round(fact.monthlyAmount);
+    const seed = (op: Extract<Op, { op: "add" }>) => setDecisionSeed((prev) => ({ token: (prev?.token ?? 0) + 1, op }));
+    switch (fact.id) {
+      case "salary":
+        if (amount > 0) {
+          onDataChange(msg("ux.learned.did.salary", { amount }));
+          setProfileFields(id, { netIncomeMonth: amount });
+        }
+        break;
+      case "tenant":
+        if (amount > 0) {
+          onDataChange(msg("ux.learned.did.tenant", { amount }));
+          setProfileFields(id, { rentMonth: amount });
+        }
+        break;
+      case "pillar3a":
+        onDataChange(msg("ux.learned.did.pillar3a", { amount }));
+        setProfileFields(id, { contributes3a: true });
+        break;
+      case "car": {
+        // The car is already in the spending: the decision starts today and names that spending as replaced.
+        const lease = learned.summary?.fixed.items.find((item) => item.kind === "leasing");
+        seed({
+          op: "add", type: "expense", ...eventLabel({ key: lease ? "life.event.carLease" : "life.event.car" }), month: 0, amount: 0,
+          decision: { kind: "car", mode: lease ? "leased" : "owned", ...(lease ? { leaseMonthly: Math.round(lease.monthlyAmount) } : {}), ...(amount > 0 ? { replacesMonthly: amount } : {}) },
+        });
+        break;
+      }
+      case "child": {
+        const daycare = learned.summary?.fixed.items.find((item) => item.kind === "childcare");
+        const days = CHILD.kitaDaysPerWeek.value;
+        seed({
+          op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: 0, amount: 0,
+          decision: { kind: "child", ...(daycare ? { ageYears: 2, kitaDaysPerWeek: days, kitaDailyChf: Math.round(daycare.monthlyAmount / (days * CHILD.kitaWeeksPerMonth.value)) } : {}) },
+        });
+        break;
+      }
+      default:
+        break; // owner, debt, investor: remembered as confirmed; the profile already carries what they imply
+    }
+  }
+
   async function onCommand(text: string) {
     const rev = profileRevRef.current;
     const accountId = accountRef.current.id;
@@ -583,6 +772,11 @@ export default function DoppelApp() {
         }),
       );
       status = msg("cmd.parsedLocally");
+    } else if (whyNotApplied(text)) {
+      // Understood locally, but it cannot apply: say why instead of sending it to a model.
+      setCmdMsg(whyNotApplied(text) ?? undefined);
+      setCmdBusy(false);
+      return;
     } else {
       const now = new Date().toISOString().slice(0, 7);
       const r = await callTwin<{ ops: unknown }>({ task: "command", text, now, events: compactEvents(scenarioRef.current.events) });
@@ -611,9 +805,14 @@ export default function DoppelApp() {
       setCmdBusy(false);
       return; // account switched while parsing — don't apply to the wrong twin
     }
-    if (ops && ops.length) {
+    const lacking = ops && ops.length ? decisionLackingInputs(ops) : null;
+    if (lacking) {
+      // Understood, but the engine has no sourced value for part of it: the form opens with what was said.
+      setDecisionSeed((prev) => ({ token: (prev?.token ?? 0) + 1, op: lacking }));
+      status = msg("ux.cmdNeedsInputs", { label: lacking.labelMsg ?? lacking.label });
+    } else if (ops && ops.length) {
       const valid = ops;
-      mutate((s) => applyScenarioOps(s, valid, "command"), { label: text });
+      mutate((s) => applyScenarioOps(s, valid, "command", { profile: base }), { label: text });
       status = msg("cmd.result", { status, ops: describeOps(valid) });
     }
     setCmdMsg(status);
@@ -624,6 +823,7 @@ export default function DoppelApp() {
   async function narrate() {
     const rev = profileRevRef.current;
     const accountId = accountRef.current.id;
+    setAsk(null);
     setNarrative({ fallback: [], loading: true });
     const top = recipes[0];
     const ret = real.retirement;
@@ -654,10 +854,10 @@ export default function DoppelApp() {
     const t0 = performance.now();
     const request = { task: "narrate", lang: locale, facts };
     const r = await callTwin<string>(request);
-    let cloud: { locale: Locale; text: string } | undefined;
+    let cloud: { locale: Locale; text: string; model: string } | undefined;
     let usage: Usage;
     if (r.ok && typeof r.data === "string") {
-      cloud = { locale, text: r.data };
+      cloud = { locale, text: r.data, model: r.usage?.model ?? "LLM" };
       usage = { ...r.usage!, mode: "llm" };
     } else {
       usage = { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "template (offline)", mode: "offline" };
@@ -665,6 +865,64 @@ export default function DoppelApp() {
     addLedger(accountId, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: request }, ms: performance.now() - t0, stateChars }));
     if (rev !== profileRevRef.current) return;
     setNarrative({ fallback, cloud, loading: false });
+  }
+
+  /**
+   * The engine's current figures as the facts an answer may quote. `outlookFacts()` writes every figure under a key
+   * that names its unit and time basis; before the first outlook is computed only the plain profile facts are sent.
+   */
+  function askFactsNow(): AskFacts {
+    // The same rule as the recipe cards: a move that does not raise the odds is not a "best move".
+    const top = recipes.find((r) => r.reaches || Math.round(r.newProb * 100) > Math.round(real.successProb * 100));
+    const extra = learned.summary ? summaryAskFacts(learned.summary) : undefined;
+    if (outlookFresh) {
+      const decisions = scenario.events.map((e) => translateText(locale, e.labelMsg ?? e.label)).join(", ");
+      return outlookFacts(outlookFresh, {
+        profile: effProfile,
+        locale,
+        ...(decisions ? { scenario: decisions } : {}),
+        disciplined: ideal,
+        ...(behavior.insights[0] ? { topHabit: behavior.insights[0].title } : {}),
+        ...(top ? { bestMove: { title: top.title, odds: top.newProb } } : {}),
+        ...(extra ? { extra } : {}),
+      });
+    }
+    const pctOf = (share: number) => Math.round(share * 1000) / 10;
+    return askFacts({
+      ...extra,
+      client: effProfile.name,
+      age_years: effProfile.age,
+      city: effProfile.city,
+      canton: effProfile.canton,
+      goal: translateText(locale, effProfile.goal.label),
+      goal_target_chf: Math.round(effProfile.goal.target),
+      years_to_goal: Math.max(0, effProfile.goal.age - effProfile.age),
+      economy_scenario: translate(locale, `economy.name.${economyId}`),
+      goal_odds_pct: pctOf(real.successProb),
+      goal_odds_disciplined_pct: pctOf(ideal.successProb),
+      net_worth_today_chf: Math.round(netWorthToday),
+      ...(debtToday > 0 ? { debt_today_chf: Math.round(debtToday) } : {}),
+    });
+  }
+
+  // ---------------- ask your twin ----------------
+  async function onAsk(question: string) {
+    const rev = profileRevRef.current;
+    const accountId = accountRef.current.id;
+    setAsk({ question, loading: true });
+    const facts = askFactsNow();
+    const t0 = performance.now();
+    const r = await askTwin(question, facts, locale);
+    const ms = r.ms ?? performance.now() - t0;
+    const answered = r.ok && typeof r.data === "string" && r.data.trim() !== "";
+    const usage: Usage = r.usage
+      ? { ...r.usage, mode: "llm" }
+      : { promptTokens: 0, completionTokens: 0, costUsd: 0, model: r.offline ? "not connected" : "assistant", mode: r.offline ? "offline" : "llm" };
+    addLedger(accountId, entryFromAsk({ question, usage, payload: r.request ?? { question, facts }, ms, stateChars, usageKnown: r.usageKnown, outcome: answered ? "ok" : "failed" }));
+    if (rev !== profileRevRef.current) return;
+    setAsk(answered
+      ? { question, loading: false, text: r.data!.trim(), model: usage.model, usage: { tokens: usage.promptTokens + usage.completionTokens, costUsd: usage.costUsd, basis: usageBasisMsg(usage) } }
+      : { question, loading: false, error: askErrorMsg(r) });
   }
 
   function applyRecipe(r: Recipe) {
@@ -689,28 +947,46 @@ export default function DoppelApp() {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-full focus:bg-ink focus:px-3 focus:py-1.5 focus:text-xs focus:font-medium focus:text-bg">
+        {t("ux.skip")}
+      </a>
+      {/* Header. Below `sm`: logo + page nav + a compact language select on the first row, account + tokens on the second. */}
       <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur">
         <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-2 sm:grid-cols-[auto_1fr_auto_auto] sm:gap-3 sm:py-3">
-          <div className="flex items-center gap-2">
-            <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
-            <span className="font-serif text-2xl leading-none">Doppel</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
+            <span className="hidden font-serif text-2xl leading-none min-[360px]:inline">Doppel</span>
             <SiteNav current="dashboard" />
           </div>
-          <div className="flex items-center justify-self-end rounded-full border border-line p-0.5" role="group" aria-label={t("lang.switcher")}>
-            {LOCALES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                lang={LOCALE_TAGS[option]}
-                aria-label={LOCALE_NAMES[option]}
-                aria-pressed={locale === option}
-                onClick={() => setLocale(option)}
-                className={`rounded-full px-2 py-1 text-[11px] font-medium ${locale === option ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
-              >
-                {option.toUpperCase()}
-              </button>
-            ))}
+          <div className="justify-self-end">
+            <select
+              aria-label={t("lang.switcher")}
+              data-testid="lang-select"
+              value={locale}
+              onChange={(e) => setLocale(e.currentTarget.value as Locale)}
+              className="min-h-7 rounded-full border border-line bg-surface px-2 text-[11px] font-medium text-ink sm:hidden"
+            >
+              {LOCALES.map((option) => (
+                <option key={option} value={option} lang={LOCALE_TAGS[option]} aria-label={LOCALE_NAMES[option]}>
+                  {option.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <div className="hidden items-center rounded-full border border-line p-0.5 sm:flex" role="group" aria-label={t("lang.switcher")}>
+              {LOCALES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  lang={LOCALE_TAGS[option]}
+                  aria-label={LOCALE_NAMES[option]}
+                  aria-pressed={locale === option}
+                  onClick={() => setLocale(option)}
+                  className={`min-h-6 rounded-full px-2 py-1 text-[11px] font-medium ${locale === option ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
+                >
+                  {option.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
           {/* Mobile: own full-width row; from sm the two items join the header grid (`contents`). */}
           <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
@@ -728,9 +1004,10 @@ export default function DoppelApp() {
             </div>
           </div>
         </div>
+        <SectionNav current="dashboard" />
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-8 pb-24">
+      <main id="main" className="mx-auto max-w-6xl px-4 pt-8 pb-24">
         {/* Hero: identity, headline, one supporting line, settings row */}
         <Hero
           name={effProfile.name}
@@ -745,12 +1022,35 @@ export default function DoppelApp() {
           netWorth={netWorthToday}
           crunch={real.crunchProb}
           sim={{ paths: real.paths, ms: real.ms }}
+          economy={t("ux.econ.chip", { name: ECONOMIES[economyId].label })}
           impact={impact}
           taxTip={effProfile.contributes3a || scenario.optimize || effProfile.retirementAge <= effProfile.age ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
           notes={
             <>
               {debtToday > 0 && <li>{t("ubs.heroDebt", { debt: debtToday })}</li>}
-              <li>{cantonLine(t, effProfile.canton, effProfile.healthPremiumMonth ?? defaultHealthPremium(effProfile))}</li>
+              <li data-testid="assumptions">
+                {t("ux.assumptions", {
+                  equity: ASSUMPTIONS.equity.mu,
+                  equityVol: ASSUMPTIONS.equity.sigma,
+                  bonds: ASSUMPTIONS.bonds.mu,
+                  bondsVol: ASSUMPTIONS.bonds.sigma,
+                  cash: ASSUMPTIONS.cashRate,
+                  inflation: ASSUMPTIONS.inflation,
+                  wages: ASSUMPTIONS.wageGrowth,
+                  overdraft: ASSUMPTIONS.overdraftRate,
+                  share: EQUITY_WEIGHT[effProfile.riskProfile],
+                })}
+              </li>
+              <li>
+                {cantonLine(t, effProfile.canton, effProfile.healthPremiumMonth ?? defaultHealthPremium(effProfile))}
+                {effProfile.healthPremiumMonth === undefined && <> {t("ux.premiumAssumed")}</>}
+              </li>
+              {!effProfile.origin && (
+                <li>
+                  {t(account.builtIn ? "ux.inputsDemo" : "ux.inputsOwn", { transactions: effProfile.transactions.length, trades: effProfile.trades.length })}
+                </li>
+              )}
+              <li>{t("ux.notAdvice")}</li>
             </>
           }
         >
@@ -764,6 +1064,13 @@ export default function DoppelApp() {
             panicHistory={effProfile.history.soldInDrawdown}
             marginalTaxRate={effProfile.marginalTaxRate}
             no3a={effProfile.retirementAge <= effProfile.age}
+            economy={
+              <EconomySelect
+                value={economyId}
+                onChange={(id) => set([{ op: "set", key: "economy", value: id }], msg("economy.opSet", { value: ECONOMIES[id].label }))}
+              />
+            }
+            note={<EconomyNote value={economyId} />}
           >
             <PlanCompare
               plan={pin}
@@ -777,39 +1084,30 @@ export default function DoppelApp() {
         </Hero>
         <UbsSourceNote profile={effProfile} />
 
-        <div className="mt-6 mb-6">
-          <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} />
-        </div>
+        <div className="mt-6 space-y-5">
+          <TwinCard profile={effProfile} summary={learned.summary} />
+          <div id="money" className="scroll-mt-36">
+            <MoneyFlow profile={effProfile} summary={learned.summary} outlook={outlookFresh} />
+          </div>
+          <Insights profile={effProfile} summary={learned.summary} />
 
-        {/* Your future: the chart next to the snap input that changes it */}
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="card p-4 sm:p-6">
+          <h2 className="sr-only">{t("ux.futureTitle")}</h2>
+          <section id="outlook" className="card scroll-mt-36 p-4 sm:p-6">
             <CardHeader title={t("chart.title")} />
             <ConeChart
               real={real}
               ideal={ideal}
               goal={effProfile.goal}
-              planA={planAResult && planAResult !== real ? planAResult : null}
+              before={chartBefore}
+              beforeLabel={manualPlanA && pin ? t("plan.label", { marker: "", label: pin.label }) : t("ux.chart.legendBefore")}
+              cashLow={outlookFresh?.cashLow}
               retirementAge={effProfile.retirementAge}
-              eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
+              markers={chartMarkers}
               targetLine={goalIsNetWorth}
+              netWorthToday={netWorthToday}
+              footnote={economyId !== "baseline" ? tm(ECONOMIES[economyId].summary) : undefined}
             />
             {!goalIsNetWorth && <p className="mt-2 text-xs text-ink-2">{t("ubs.chartMetricNote")}</p>}
-            <div className="mt-5">
-              <Timeline
-                events={scenario.events}
-                age={effProfile.age}
-                start={start}
-                onShift={(id, m) => {
-                  const e = scenario.events.find((x) => x.id === id);
-                  set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
-                }}
-                onRemove={(id) => {
-                  const e = scenario.events.find((x) => x.id === id);
-                  set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
-                }}
-              />
-            </div>
             {hasOverrides && (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {scenario.expenseDelta !== 0 && (
@@ -838,12 +1136,34 @@ export default function DoppelApp() {
               </div>
             )}
           </section>
-          <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
         </div>
 
         <div className="mt-14 space-y-14">
-          <Section title={t("layout.decisions")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
+          <Section id="decisions" title={t("layout.decisions")}>
+            <div className="mb-5">
+              <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} hasHome={scenario.events.some((e) => e.type === "house")} />
+            </div>
+            {/* Extension point "decisions": every big decision is one card in this grid (home, retirement, debt, …).
+                New life decisions from the engine go here as further cards, in the same CardHeader style. */}
+            <div className="grid items-start gap-5 lg:grid-cols-2" data-slot="decisions">
+              <DecisionsCard
+                profile={effProfile}
+                events={scenario.events}
+                start={planStart}
+                outlooks={outlookFresh?.decisions}
+                needs={outlookFresh?.inputsNeeded}
+                seed={decisionSeed}
+                onApply={applyDecision}
+                onShift={(id, m) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
+                }}
+                onRemove={(id) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
+                }}
+              />
+              <OutlookCard outlook={outlookShown} loading={!outlookFresh} start={start} labels={new Map(scenario.events.map((e) => [e.id, e.labelMsg ?? e.label]))} />
               {account.id === ALEXIA_ID && (
                 <AlexiaPaths base={base} scenario={accountStart} activePath={scenario.path?.id} onApply={applyAlexiaPath} onPin={pinAlexiaPath} />
               )}
@@ -876,19 +1196,22 @@ export default function DoppelApp() {
           <Section title={t("layout.nextSteps")}>
             <div className="grid items-start gap-5 lg:grid-cols-2">
               <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
-              <BankerCard
-                started={!!narrative}
-                loading={!!narrative?.loading}
-                text={narrative && !narrative.loading
-                  ? narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" ")
-                  : undefined}
+              <AskCard
+                status={assistant}
+                busy={!!ask?.loading || !!narrative?.loading}
+                reply={
+                  ask && !ask.loading
+                    ? { question: ask.question, text: ask.text, error: ask.error, source: ask.model ? { model: ask.model } : undefined, usage: ask.usage }
+                    : !ask && narrative && !narrative.loading
+                      ? {
+                          text: narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" "),
+                          source: narrative.cloud?.locale === locale ? { model: narrative.cloud.model } : "template",
+                        }
+                      : null
+                }
+                onAsk={onAsk}
                 onExplain={narrate}
               />
-            </div>
-          </Section>
-
-          <Section title={t("layout.habits")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
               <BehaviorCard
                 behavior={behavior}
                 costChf={behaviorCost}
@@ -900,14 +1223,17 @@ export default function DoppelApp() {
             </div>
           </Section>
 
-          <Section title={t("data.sectionTitle")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
+          <Section id="statements" title={t("data.sectionTitle")}>
+            <div className="grid items-start gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
               <ImportPanel
                 account={account}
+                onFact={onFact}
                 onLedger={(entry) => addLedger(account.id, entry)}
                 onDataChange={onDataChange}
-                openToken={importOpenToken}
-              />
+                incoming={incomingStatement}
+              >
+                <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
+              </ImportPanel>
               <TransactionsPanel account={account} onDataChange={onDataChange} />
             </div>
           </Section>
@@ -917,10 +1243,10 @@ export default function DoppelApp() {
       <AccountWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
-        onCreated={(id, withImport) => {
+        onCreated={(id, statement) => {
           setWizardOpen(false);
           setActiveAccount(id);
-          if (withImport) setImportOpenToken((n) => n + 1);
+          if (statement) setIncomingStatement((prev) => ({ id: (prev?.id ?? 0) + 1, accountId: id, ...statement }));
         }}
       />
       {ubsPickerOpen && (
@@ -943,7 +1269,7 @@ function Pill({ label, onClear }: { label: Msg; onClear: () => void }) {
   return (
     <span className="flex items-center gap-1 rounded-full bg-surface-2 py-1 pr-1 pl-3">
       {tm(label)}
-      <button onClick={onClear} aria-label={t("pill.clear", { label })} className="rounded-full px-1.5 text-ink-3 hover:text-ink">
+      <button type="button" onClick={onClear} aria-label={t("pill.clear", { label })} className="grid min-h-6 min-w-6 place-items-center rounded-full text-ink-3 hover:text-ink">
         ✕
       </button>
     </span>

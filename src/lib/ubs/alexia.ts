@@ -92,6 +92,8 @@ export function applyPath(s: Scenario, id: AlexiaPathId, path: AlexiaPath, useS0
     labelMsg: id === "master" && useS001 ? { key: "ubs.tuitionEvent" } : { key: "ubs.oneOffEvent" },
     month: o.month,
     amount: o.amountChf,
+    // The starter kit's costs are nominal CHF at their date, like its phases.
+    nominal: true,
     source: "profile",
   }));
   return {

@@ -13,16 +13,23 @@ import { hasReceiptTotal, parseReceipt } from "./receipt";
 
 // Include ° / ´ / ‘ because Tesseract occasionally reads Swiss apostrophe thousands separators (795'000) as 795°000.
 const THOUS_SEP = "['’‘`´°\\u202f\\u00a0 ]";
+// Dots group thousands only where nothing else can be meant: before a decimal comma ("1.234,50"), before ".–"
+// ("1.250.–"), or with two or more groups ("1.250.000").
+const DOT_THOUSANDS = "\\d{1,3}(?:\\.\\d{3})+(?=,\\d{2}(?!\\d)|\\.[-–—])|\\d{1,3}(?:\\.\\d{3}){2,}(?![\\d])";
 const AMOUNT_RE = new RegExp(
-  `(?:^|[^\\d])(\\d{1,3}(?:${THOUS_SEP}\\d{3})+|\\d+)(?:[.,](\\d{2}|[-–—]))?(?=$|[^\\d])`,
+  `(?:^|[^\\d.,])(${DOT_THOUSANDS}|\\d{1,3}(?:${THOUS_SEP}\\d{3})+|\\d+)(?:[.,](\\d{2}|[-–—]))?(?=$|[^\\d])`,
   "g",
 );
+const SEPARATORS = /['’‘`´°\u202f\u00a0 ]/g;
+const DAY_MONTH = "(?:0?[1-9]|[12]\\d|3[01])\\.(?:0?[1-9]|1[0-2])\\.";
 
 /** Parse all plausible monetary amounts on a line (skipping percentages and dates). */
 function extractAmountsFromLine(line: string): number[] {
   // Strip dates (DD.MM.YYYY, DD/MM/YY, YYYY-MM-DD), percentages (5.30 %), and IBAN/AHV numbers.
   const cleaned = line
     .replace(/\b\d{1,2}[./]\d{1,2}[./]\d{2,4}\b/g, " ")
+    // "zahlbar bis 31.12." has no year; it is still a date, not CHF 31.12.
+    .replace(new RegExp(`(?<![\\d.,])${DAY_MONTH}(?![\\d–—-])`, "g"), " ")
     .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ")
     .replace(/\b756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}\b/g, " ")
     .replace(/\bCH\d{2}[\s\d]{16,24}\b/gi, " ")
@@ -31,7 +38,8 @@ function extractAmountsFromLine(line: string): number[] {
 
   const results: number[] = [];
   for (const m of cleaned.matchAll(AMOUNT_RE)) {
-    const intPart = m[1].replace(/['’‘`´°\u202f\u00a0 ]/g, "");
+    const grouped = m[1].replace(SEPARATORS, "");
+    const intPart = /^\d{1,3}(?:\.\d{3})+$/.test(grouped) ? grouped.replace(/\./g, "") : grouped;
     const decPart = m[2] && /^\d{2}$/.test(m[2]) ? `.${m[2]}` : "";
     const n = Number(intPart + decPart);
     if (Number.isFinite(n) && n > 0) results.push(n);
@@ -39,18 +47,27 @@ function extractAmountsFromLine(line: string): number[] {
   return results;
 }
 
+const CURRENCY_NUMBER = "[+-]?(?:\\d{1,3}(?:['’‘`´°\\u202f\\u00a0 ,.]\\d{3})+|\\d+)(?:[.,](?:\\d{2}(?!\\d)|[-–—]))?";
+const AFTER_CURRENCY = new RegExp(`(?:CHF|SFR|Fr\\.?)\\s*(${CURRENCY_NUMBER})`, "i");
+const BEFORE_CURRENCY = new RegExp(`(?<![\\d.,])(${CURRENCY_NUMBER})\\s*(?:CHF|SFR|Fr\\.)(?![\\p{L}])`, "iu");
+
+/** The amount printed next to the currency ("CHF 1'234.50", "1.234,50 CHF", "CHF 1.250.000.–"), if any. */
+export function currencyAmount(s: string): number | undefined {
+  const raw = (AFTER_CURRENCY.exec(s) ?? BEFORE_CURRENCY.exec(s))?.[1];
+  if (!raw) return undefined;
+  const decimals = /[.,](\d{2}|[-–—])$/.exec(raw);
+  const whole = (decimals ? raw.slice(0, decimals.index) : raw).replace(SEPARATORS, "").replace(/^[+-]/, "");
+  // A comma or dot inside the whole part groups thousands (it is followed by exactly three digits).
+  if (!/^\d+(?:[.,]\d{3})*$/.test(whole)) return undefined;
+  const n = Number(whole.replace(/[.,]/g, "") + (decimals && /^\d{2}$/.test(decimals[1]) ? `.${decimals[1]}` : ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 /** Parse a single CHF-formatted number from text (supports Swiss apostrophe, spaces, comma decimals). */
 function parseChf(s: string): number | undefined {
-  // Prefer explicit currency-prefixed number first.
-  const withCur = s.match(/(?:CHF|Fr\.?)\s*([+-]?\d{1,3}(?:['’‘`´°\u202f\u00a0 ,.]\d{3})+|\d+)(?:[.,](\d{2}|[-–—]))?/i);
-  if (withCur) {
-    const raw = withCur[1].replace(/['’‘`´°\u202f\u00a0 ]/g, "");
-    // Distinguish thousands comma/dot from decimal when 3 trailing digits match
-    const intStr = raw.replace(/[.,](?=\d{3}$)/g, "");
-    const dec = withCur[2] && /^\d{2}$/.test(withCur[2]) ? `.${withCur[2]}` : "";
-    const n = Number(intStr + dec);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
+  // Prefer the number printed next to the currency.
+  const withCur = currencyAmount(s);
+  if (withCur !== undefined) return withCur;
   const vals = extractAmountsFromLine(s);
   return vals.length > 0 ? vals[vals.length - 1] : undefined;
 }
@@ -129,6 +146,9 @@ export function scoreDocKinds(text: string): Record<DocKind, number> {
     [/section\s+paiement|r[ée]c[ée]piss[ée]/, 5],
     [/zahlbar\s+an|payable\s+[àa]/, 4],
     [/\brechnung\b|\bfacture\b|\binvoice\b/, 3],
+    [/rechnungs?[- ]?(?:nr|nummer|datum|betrag)|rechnung\s+nr|invoice\s+(?:no|number|date)|facture\s+n[°o]|n[°o]\s+de\s+facture/, 3],
+    [/rechnungsbetrag|montant\s+(?:total|d[ûu]|[àa]\s+payer)|amount\s+due/, 2],
+    [/zahlbar\s+(?:bis|innert)|f[äa]llig\s+am|payable\s+(?:jusqu|dans|by|within)|[ée]ch[ée]ance|due\s+date|zahlungsfrist/, 3],
     [/pr[äa]mie|krankenkasse|assurance\s+maladie/, 2],
     [/\biban\b|ch\d{2}\s?\d{4}/, 2],
   ]);
@@ -159,12 +179,21 @@ export function classifyDoc(text: string): DocKind {
 }
 
 function parseDate(text: string): string | undefined {
-  const iso = text.match(/\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
-  if (iso) return iso[0];
-  const dmy = text.match(/\b(0?[1-9]|[12]\d|3[01])[./](0?[1-9]|1[0-2])[./](\d{2,4})\b/);
-  if (!dmy) return undefined;
-  const year = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
-  return `${year}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  // The first date that exists in the calendar: "31.02.2026" is an OCR slip, not a date.
+  const real = (year: string, month: string, day: string) => {
+    const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso ? iso : undefined;
+  };
+  for (const m of text.matchAll(/\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/g)) {
+    const date = real(m[1], m[2], m[3]);
+    if (date) return date;
+  }
+  for (const m of text.matchAll(/\b(0?[1-9]|[12]\d|3[01])[./](0?[1-9]|1[0-2])[./](\d{4}|\d{2})\b/g)) {
+    const date = real(m[3].length === 2 ? `20${m[3]}` : m[3], m[2], m[1]);
+    if (date) return date;
+  }
+  return undefined;
 }
 
 function generatedLabel(labelMsg: Msg) {
@@ -252,26 +281,59 @@ function extractPayslip(t: string): Extraction {
   };
 }
 
-function extractBill(t: string, lower: string): Extraction {
-  const lines = t.split("\n").map((l) => l.trim()).filter(Boolean);
-  let amount: number | undefined;
+const BILL_TOTAL = /(?:rechnungs(?:betrag|total)|gesamt(?:betrag|total|summe)|total(?:betrag)?|endbetrag|zu\s+(?:be)?zahlen|zahlbar|betrag\s+f[äa]llig|montant\s+(?:total|d[ûu]|[àa]\s+payer)|[àa]\s+payer|total\s+ttc|amount\s+(?:due|payable)|balance\s+due|importo\s+totale|da\s+pagare)/i;
+const BILL_PARTIAL = /(?:zwischen[\s-]?(?:total|summe)|sub[\s-]?total|sous[\s-]?total|netto|net\b|\bht\b|exkl|excl|mwst|tva|\bvat\b|\biva\b|rabatt|skonto|remise|discount|anzahlung|acompte|bereits\s+bezahlt)/i;
+
+/** One line's amount: the number next to the currency, else the last number with decimals, else the last number. */
+function lineAmount(line: string): number | undefined {
+  const marked = currencyAmount(line);
+  if (marked !== undefined && marked < 1_000_000) return marked;
+  const vals = extractAmountsFromLine(line).filter((v) => v > 0 && v < 1_000_000);
+  return vals.findLast((v) => !Number.isInteger(v)) ?? vals[vals.length - 1];
+}
+
+/**
+ * The amount to pay on an invoice. `strong`: it stands on a total line ("Total", "Rechnungsbetrag", "zu zahlen",
+ * "montant à payer") that is not a subtotal, a net amount or a tax line. Otherwise the first line that mentions
+ * CHF or an amount word is used, as a best guess for the review.
+ */
+export function billTotal(text: string): { amount?: number; strong: boolean } {
+  const lines = text.replace(/\r/g, "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const amountAt = (i: number) => lineAmount(lines[i]) ?? (lines[i + 1] && !BILL_PARTIAL.test(lines[i + 1]) ? lineAmount(lines[i + 1]) : undefined);
+  let strong: number | undefined;
   for (let i = 0; i < lines.length; i += 1) {
-    if (/(chf|betrag|montant|total)/i.test(lines[i])) {
-      const vals = extractAmountsFromLine(lines[i]).filter((v) => v > 0 && v < 1_000_000);
-      if (vals.length > 0) {
-        amount = vals[vals.length - 1];
-        break;
-      }
-      if (lines[i + 1]) {
-        const nextVals = extractAmountsFromLine(lines[i + 1]).filter((v) => v > 0 && v < 1_000_000);
-        if (nextVals.length > 0) {
-          amount = nextVals[nextVals.length - 1];
-          break;
-        }
-      }
-    }
+    if (!BILL_TOTAL.test(lines[i]) || BILL_PARTIAL.test(lines[i])) continue;
+    // The last total line wins: it follows subtotals, tax and discounts.
+    strong = amountAt(i) ?? strong;
   }
-  const iban = t.match(/\bCH\d{2}(?:\s?\d{4}){4}\s?\d\b/i)?.[0]?.replace(/\s+/g, "");
+  if (strong !== undefined) return { amount: strong, strong: true };
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/(chf|betrag|montant|total)/i.test(lines[i]) || BILL_PARTIAL.test(lines[i])) continue;
+    const amount = amountAt(i);
+    if (amount !== undefined) return { amount, strong: false };
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/(chf|betrag|montant|total)/i.test(lines[i])) continue;
+    const amount = amountAt(i);
+    if (amount !== undefined) return { amount, strong: false };
+  }
+  return { strong: false };
+}
+
+/** CH / LI IBAN with a correct ISO 13616 check (mod 97). */
+export function isSwissIban(value: string): boolean {
+  const iban = value.replace(/\s+/g, "").toUpperCase();
+  if (!/^(?:CH|LI)\d{2}[A-Z0-9]{17}$/.test(iban)) return false;
+  let remainder = 0;
+  for (const c of iban.slice(4) + iban.slice(0, 4)) {
+    for (const digit of /\d/.test(c) ? c : String(c.charCodeAt(0) - 55)) remainder = (remainder * 10 + Number(digit)) % 97;
+  }
+  return remainder === 1;
+}
+
+function extractBill(t: string, lower: string): Extraction {
+  const { amount } = billTotal(t);
+  const iban = t.match(/\b(?:CH|LI)\d{2}(?:\s?[A-Z0-9]{4}){4}\s?[A-Z0-9]\b/i)?.[0]?.replace(/\s+/g, "").toUpperCase();
   const insurance = /kranken|versicherung|assurance|insurance|pr[äa]mie/.test(lower);
   return {
     kind: "bill",

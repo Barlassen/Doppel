@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { hydrateAccounts, useAccounts } from "@/lib/accounts";
 import type { Profile } from "@/lib/finance/types";
 import { type Analysis, type DepthId, type EngineSettings, reviewMove } from "@/lib/game/engine";
-import { type MoveLabel, type PresetId, type Weights, WEIGHT_PRESETS, mateValue } from "@/lib/game/evaluate";
+import { type PresetId, type Weights, WEIGHT_PRESETS } from "@/lib/game/evaluate";
 import { type Game, currentPosition, isOver, legalMoves, newGame, play, truncate } from "@/lib/game/game";
 import { toRecord } from "@/lib/game/notation";
 import type { RegimeId } from "@/lib/game/regime";
@@ -13,11 +13,13 @@ import type { GameState } from "@/lib/game/state";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ALEXIA_ID, loadUbsProfile } from "@/lib/ubs";
-import { SiteNav } from "../SiteNav";
+import { SectionNav, SiteNav } from "../SiteNav";
 import { Disclosure } from "../ui";
 import { boardLine } from "@/lib/game/board";
 import { ChessBoard } from "./ChessBoard";
 import { AnalysisPanel, Banner, DecisionArea, EndReview, EvalCard, LifeCard, MoveList, PositionPanel, SetupPanel, type MoveInfo } from "./Panels";
+import { EngineCancelled } from "./engineClient";
+import { keyAction } from "./keys";
 import { useEngine } from "./useEngine";
 
 export interface Opening {
@@ -29,11 +31,13 @@ export interface Opening {
 const weightsKey = (w: Weights) => [w.goal, w.safe, w.wealth, w.down].join(",");
 /** A position is identified by the moves that led to it (same game seed and profile). */
 const posKey = (g: Game, turn: number) => turn + ":" + g.moves.slice(0, turn).map((m) => m.card).join(",");
+/** Household preferences the profile's data suggests (derived): a family household has children. */
+const suggestedPrefs = (household: string | undefined) => (household === "family" ? ["children"] : []);
 
 export default function PlayApp() {
   const i18n = useI18n();
   const { t, locale, setLocale } = i18n;
-  const runEngine = useEngine();
+  const engine = useEngine();
 
   // ---------------- setup ----------------
   const ubsProfiles = useMemo(() => [...playableUbsProfiles()].sort((a, b) => Number(b.id === ALEXIA_ID) - Number(a.id === ALEXIA_ID)), []);
@@ -50,8 +54,12 @@ export default function PlayApp() {
   const [weights, setWeights] = useState<Weights>(WEIGHT_PRESETS.balanced);
   const [opening, setOpening] = useState<Opening | null>(null);
   const [prefs, setPrefs] = useState<string[]>([]);
-  // Suggested from the data (derived): a family household has children; nothing else is assumed.
-  const derivedPrefs = useMemo(() => (opening?.profile.origin?.household === "family" ? ["children"] : []), [opening]);
+  // Suggested from the data (derived): a family household has children; nothing else is assumed. The suggestion
+  // replaces the player's choices only when another profile is chosen, not when the same opening is loaded again
+  // (the accounts list re-hydrates, or changes in another tab).
+  const openingId = opening?.id;
+  const household = opening?.profile.origin?.household;
+  const derivedPrefs = useMemo(() => (openingId ? suggestedPrefs(household) : []), [openingId, household]);
   useEffect(() => setPrefs(derivedPrefs), [derivedPrefs]);
 
   useEffect(() => {
@@ -77,31 +85,43 @@ export default function PlayApp() {
   const [mainLine, setMainLine] = useState<{ game: Game; from: number } | null>(null);
   const [view, setView] = useState<number | null>(null);
   const [compare, setCompare] = useState<"you" | "engine">("you");
+  /** The decision under the pointer or the focus in the card list (the board shows its move). */
+  const [previewCard, setPreviewCard] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, Analysis>>({});
+  /** Luck of each move (points), by the moves that led to the position after it. */
+  const [lucks, setLucks] = useState<Record<string, number>>({});
   const [engineMs, setEngineMs] = useState(0);
-  const inflight = useRef<string | null>(null);
+  /** The one request the engine is working on (an object, so an old request can never clear a newer one). */
+  const inflight = useRef<{ key: string } | null>(null);
   const failed = useRef(new Set<string>());
   const generation = useRef(0);
+  /** Re-runs the review queue after a request ended without a result (failed or cancelled). */
+  const [queueTick, nudgeQueue] = useReducer((n: number) => n + 1, 0);
 
   const startGame = useCallback(
-    (o: Opening) => {
+    (o: Opening, declared: string[] = prefs) => {
+      // A new game: whatever the engine is still computing belongs to the old one. Stop it, forget its failures.
       generation.current++;
+      engine.reset();
       inflight.current = null;
-      setGame(newGame({ ...o.state, prefs }, { regime, seed, depth, weights, preset }));
+      failed.current.clear();
+      setGame(newGame({ ...o.state, prefs: declared }, { regime, seed, depth, weights, preset }));
       setGameProfile(o.profile);
       setAnalyses({});
+      setLucks({});
       setMainLine(null);
       setView(null);
     },
-    [regime, seed, depth, weights, preset, prefs],
+    [engine, regime, seed, depth, weights, preset, prefs],
   );
 
-  // The first opening that loads starts the demo game (Alexia by default).
+  // The first opening that loads starts the demo game (Alexia by default), with the preferences its data suggests
+  // (the state that holds them is only set in this same pass).
   const autoStarted = useRef(false);
   useEffect(() => {
     if (opening && !autoStarted.current) {
       autoStarted.current = true;
-      startGame(opening);
+      startGame(opening, suggestedPrefs(opening.profile.origin?.household));
     }
   }, [opening, startGame]);
 
@@ -112,31 +132,47 @@ export default function PlayApp() {
   const evalKey = `${depth}|${weightsKey(weights)}`;
   const analysisAt = useCallback((turn: number) => (game ? analyses[evalKey + "|" + posKey(game, turn)] : undefined), [analyses, evalKey, game]);
 
-  // Review queue: the move just played first, then the live position, then older positions (after a depth change).
+  const luckKey = useCallback((g: Game, move: number) => evalKey + "|luck|" + posKey(g, move + 1), [evalKey]);
+
+  // Review queue, one request at a time: the move just played (its review, then its luck), the live position, then
+  // older positions and their luck (after a depth or weights change).
   useEffect(() => {
     if (!game || !engineSettings || inflight.current) return;
     const n = game.positions.length;
-    const order = [n - 2, n - 1, ...Array.from({ length: Math.max(0, n - 2) }, (_, k) => n - 3 - k)].filter((x) => x >= 0);
-    const turn = order.find((k) => {
-      const key = evalKey + "|" + posKey(game, k);
-      return game.positions[k].status !== "mate" && !analyses[key] && !failed.current.has(key);
+    const older = Array.from({ length: Math.max(0, n - 2) }, (_, k) => n - 3 - k);
+    const analysisJob = (k: number) => ({ kind: "analysis" as const, k, key: evalKey + "|" + posKey(game, k) });
+    const luckJob = (k: number) => ({ kind: "luck" as const, k, key: luckKey(game, k) });
+    const jobs = [analysisJob(n - 2), luckJob(n - 2), analysisJob(n - 1), ...older.map(analysisJob), ...older.map(luckJob)];
+    const job = jobs.find((j) => {
+      if (j.k < 0 || failed.current.has(j.key)) return false;
+      // Only a position that is still to be played has moves to review; every played move has its luck.
+      return j.kind === "analysis" ? game.positions[j.k].status === "playing" && !analyses[j.key] : j.k < game.moves.length && lucks[j.key] === undefined;
     });
-    if (turn === undefined) return;
-    const key = evalKey + "|" + posKey(game, turn);
+    if (!job) return;
     const gen = generation.current;
-    inflight.current = key;
-    runEngine(game.positions[turn], engineSettings)
-      .then(({ analysis, ms }) => {
-        if (gen !== generation.current) return;
-        setEngineMs(ms);
-        setAnalyses((prev) => ({ ...prev, [key]: analysis }));
+    const token = { key: job.key };
+    inflight.current = token;
+    const request =
+      job.kind === "analysis"
+        ? engine.analyse(game.positions[job.k], engineSettings).then(({ analysis, ms }) => {
+            if (gen !== generation.current) return;
+            setEngineMs(ms);
+            setAnalyses((prev) => ({ ...prev, [job.key]: analysis }));
+          })
+        : engine.luck(game.positions[job.k], game.moves[job.k].card, game.positions[job.k + 1], game.moves[job.k].crunch, engineSettings).then((l) => {
+            if (gen !== generation.current) return;
+            setLucks((prev) => ({ ...prev, [job.key]: l.luck * 100 }));
+          });
+    request
+      .catch((error: unknown) => {
+        // A cancelled request belongs to a game that was replaced; only a real engine error is remembered.
+        if (!(error instanceof EngineCancelled) && gen === generation.current) failed.current.add(job.key);
       })
-      .catch(() => failed.current.add(key))
       .finally(() => {
-        if (inflight.current === key) inflight.current = null;
-        if (gen === generation.current) setAnalyses((prev) => ({ ...prev }));
+        if (inflight.current === token) inflight.current = null;
+        if (gen === generation.current) nudgeQueue();
       });
-  }, [game, engineSettings, analyses, evalKey, runEngine]);
+  }, [game, engineSettings, analyses, lucks, evalKey, luckKey, engine, queueTick]);
 
   const live = game ? currentPosition(game) : null;
   const over = game ? isOver(game) : false;
@@ -147,6 +183,7 @@ export default function PlayApp() {
       if (!game || isOver(game) || !legalMoves(game).includes(card)) return;
       setGame(play(game, card));
       setView(null);
+      setPreviewCard(null);
     },
     [game],
   );
@@ -175,45 +212,37 @@ export default function PlayApp() {
     return game.moves.map((m, k) => {
       const a = analysisAt(k);
       const review = a ? reviewMove(a, m.card) : null;
-      const next = game.positions[k + 1];
-      const nextA = analysisAt(k + 1);
-      const nextValue = next.status === "mate" ? mateValue(weights).e : nextA ? (nextA.candidates[0]?.e ?? nextA.hold.e) : null;
-      const luck = review && nextValue !== null ? (nextValue - review.e) * 100 : null;
+      // Luck: the realised turn against the expected turn, at the review's horizon (engine: turnLuck).
+      const luck = lucks[luckKey(game, k)] ?? null;
       return { move: m, analysis: a ?? null, review, luck, life: game.lifeEvents[k + 1] };
     });
-  }, [game, analysisAt, weights]);
+  }, [game, analysisAt, lucks, luckKey]);
 
   const shown = view ?? (moves.length ? moves.length - 1 : null);
 
-  // The board: the same game rendered as legal chess moves; re-rendered when a review (label) arrives.
-  const labelsKey = moves.map((m) => m.review?.label ?? "").join(",");
-  const line = useMemo(
-    () => (game ? boardLine(game, labelsKey.split(",").map((l) => (l || null) as MoveLabel | null)) : null),
-    [game, labelsKey],
-  );
+  // The board: the same game rendered as legal chess moves. A review never changes a move that was played.
+  const line = useMemo(() => (game ? boardLine(game) : null), [game]);
   const sanList = useMemo(() => (line ? line.turns.map((tn) => ({ w: tn.white?.san, b: tn.black?.san })) : []), [line]);
   const liveAnalysis = live && game ? analysisAt(game.positions.length - 1) : undefined;
 
   // ---------------- keyboard ----------------
+  // The rules (which key, when it is ignored) are in keys.ts; Tab is left alone so the focus moves normally.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey || e.ctrlKey || e.metaKey) return;
-      const el = e.target as HTMLElement | null;
-      if (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
-      if (e.key === "ArrowLeft" && moves.length) {
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      const action = keyAction({ key: e.key, repeat: e.repeat, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, targetTag: el?.tagName, editable: el?.isContentEditable });
+      if (!action) return;
+      if (action.kind === "prev" || action.kind === "next") {
+        if (!moves.length) return;
         e.preventDefault();
-        setView((v) => Math.max(0, (v ?? moves.length) - 1));
-      } else if (e.key === "ArrowRight" && moves.length) {
-        e.preventDefault();
-        setView((v) => (v === null || v + 1 >= moves.length ? null : v + 1));
-      } else if (/^[1-4]$/.test(e.key) && view === null) {
-        const cards = hand.filter((c) => c !== "hold");
-        const c = cards[Number(e.key) - 1];
+        if (action.kind === "prev") setView((v) => Math.max(0, (v ?? moves.length) - 1));
+        else setView((v) => (v === null || v + 1 >= moves.length ? null : v + 1));
+      } else if (action.kind === "card") {
+        const c = view === null ? hand.filter((x) => x !== "hold")[action.index] : undefined;
         if (c) onPlay(c);
-      } else if ((e.key === "h" || e.key === "H") && view === null && hand.includes("hold")) {
-        onPlay("hold");
-      } else if (e.key === "Tab" && (document.activeElement === document.body || document.activeElement === null)) {
-        e.preventDefault();
+      } else if (action.kind === "hold") {
+        if (view === null && hand.includes("hold")) onPlay("hold");
+      } else {
         setCompare((c) => (c === "you" ? "engine" : "you"));
       }
     };
@@ -223,7 +252,9 @@ export default function PlayApp() {
 
   const download = () => {
     if (!game) return;
-    const blob = new Blob([JSON.stringify(toRecord(game), null, 2)], { type: "application/json" });
+    // The record carries the reviews as shown, and the depth and weights they were made with.
+    const record = toRecord(game, { reviews: moves.map((m) => (m.review ? { ...m.review, luck: m.luck } : null)), reviewedWith: { depth, weights, preset } });
+    const blob = new Blob([JSON.stringify(record, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -260,13 +291,13 @@ export default function PlayApp() {
             ))}
           </div>
         </div>
+        <SectionNav current="play" />
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pt-6 pb-24 sm:pt-8">
         <div className="mb-5">
           <div className="label mb-1">{t("play.kicker")}</div>
           <h1 className="font-serif text-3xl leading-tight sm:text-4xl">{t("play.title")}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-ink-2">{t("play.subtitle")}</p>
           <Disclosure summary={t("play.how.summary")} className="mt-3">
             <ul className="max-w-3xl list-disc space-y-1.5 pl-5 text-sm text-ink-2">
               <li>{t("play.how.turn")}</li>
@@ -276,8 +307,8 @@ export default function PlayApp() {
               <li>{t("play.how.rules")}</li>
               <li>{t("play.how.advice")}</li>
             </ul>
-            <p className="mt-2 text-xs text-ink-3">{t("play.keys")}</p>
           </Disclosure>
+          <p className="mt-2 text-xs text-ink-3">{t("play.keys")}</p>
         </div>
 
         <SetupPanel
@@ -300,7 +331,7 @@ export default function PlayApp() {
           <div className="card mt-4 p-6 text-sm text-ink-3 pulse-soft">{t("play.evalBar.waiting")}</div>
         ) : (
           <>
-            <Banner position={live} boardCheck={!!line && line.turns.length > 1 && !!line.turns[line.turns.length - 2]?.black?.check} />
+            <Banner position={live} atStart={game.moves.length === 0} boardCheck={!!line && line.turns.length > 1 && !!line.turns[line.turns.length - 2]?.black?.check} />
             <div className="mt-4 grid gap-4 lg:grid-cols-12">
               <div className="space-y-4 lg:col-span-7">
                 {line && (
@@ -314,6 +345,7 @@ export default function PlayApp() {
                     hand={hand}
                     seed={game.settings.seed}
                     onPlay={onPlay}
+                    preview={view === null ? previewCard : null}
                   />
                 )}
                 <EvalCard
@@ -345,6 +377,7 @@ export default function PlayApp() {
                   onWhatIf={(card) => view !== null && whatIf(view, card)}
                   over={over && view === null}
                   thinking={view === null && !liveAnalysis && !over}
+                  onPreview={setPreviewCard}
                 />
               </div>
               <div className="space-y-4 lg:col-span-5">

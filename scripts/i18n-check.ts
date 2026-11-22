@@ -300,6 +300,24 @@ function matches(ops: Op[] | null, expected: ExpectedOp) {
   return Object.entries(expected).every(([key, value]) => Object.prototype.hasOwnProperty.call(op, key) && (op as unknown as Record<string, unknown>)[key] === value);
 }
 
+/**
+ * Life-decision and economy examples (`life.examples.*`): each language's sentence must give exactly one local op
+ * with the expected decision, and the English sentence must still parse when another language is active.
+ */
+type AddOp = Extract<Op, { op: "add" }>;
+const decisionOf = (ops: Op[] | null) => (ops?.length === 1 && ops[0].op === "add" ? (ops[0] as AddOp).decision : undefined) as Record<string, unknown> | undefined;
+const july2027 = 18;
+const lifeExamples: Record<string, (ops: Op[] | null) => boolean> = {
+  car: (ops) => decisionOf(ops)?.kind === "car" && decisionOf(ops)?.mode === "owned" && decisionOf(ops)?.price === 35_000 && (ops![0] as AddOp).month === july2027,
+  lease: (ops) => decisionOf(ops)?.kind === "car" && decisionOf(ops)?.mode === "leased" && decisionOf(ops)?.leaseMonthly === 500,
+  child: (ops) => decisionOf(ops)?.kind === "child" && (ops![0] as AddOp).type === "child" && (ops![0] as AddOp).month === july2028,
+  workload: (ops) => decisionOf(ops)?.kind === "workload" && decisionOf(ops)?.percent === 80,
+  move: (ops) => decisionOf(ops)?.kind === "move" && decisionOf(ops)?.canton === "ZG",
+  marry: (ops) => decisionOf(ops)?.kind === "partner" && decisionOf(ops)?.married === true && (ops![0] as AddOp).month === july2027,
+  master: (ops) => decisionOf(ops)?.kind === "education" && decisionOf(ops)?.program === "master" && (ops![0] as AddOp).month === july2027,
+  economy: (ops) => ops?.length === 1 && ops[0].op === "set" && ops[0].key === "economy" && ops[0].value === "high_inflation",
+};
+
 const percent: Record<Locale, string> = { en: "40%", de: "40%", fr: "40\u202f%", tr: "%40" };
 const english = flatten(DICTIONARIES.en, []);
 const expected = new Map([...english].map(([key, value]) => [key, placeholders(value, key, [])]));
@@ -342,6 +360,13 @@ for (const locale of LOCALES) {
   }
   for (const [text, op] of intentCases.en) {
     if (!matches(localParseCommand(text, events, now, locale), op)) errors.push("English fallback failed for " + text);
+  }
+  for (const [id, ok] of Object.entries(lifeExamples)) {
+    const key = "life.examples." + id;
+    const text = values.get(key) ?? "";
+    const result = localParseCommand(text, events, now, locale);
+    if (!ok(result)) errors.push("Life example " + id + " does not produce the expected local intent: " + text + " → " + JSON.stringify(result));
+    if (!ok(localParseCommand(english.get(key) ?? "", events, now, locale))) errors.push("English fallback failed for life example " + id);
   }
 
   const untranslatedErrors = allowUntranslated ? 0 : same.length;

@@ -6,8 +6,9 @@ import { callTwin, type LlmResponse } from "@/lib/llm";
 import { compressForVision, cropToInk, enhanceForOcr, imageFingerprint, jpegBytes, loadImage, toCanvas } from "./image";
 import type { OcrResult } from "./ocr";
 import { parseQrBill, qrBillToExtraction } from "./qrBill";
+import { canAcceptLocalExtraction, shouldCache } from "./accept";
 import { heuristicExtract } from "./heuristics";
-import { hasReadableReceiptItems, canAcceptLocalReceipt, receiptExtractionStatus, receiptModelText, receiptSum, validatedReceiptItems } from "./receipt";
+import { hasReadableReceiptItems, receiptExtractionStatus, receiptModelText, receiptSum, validatedReceiptItems } from "./receipt";
 import { DOC_KINDS, extractionStatus, isAmount, type Extraction, type PipelineStep, type SnapResult, type Usage } from "./types";
 
 export const OCR_CONFIDENCE_THRESHOLD = 65;
@@ -20,6 +21,8 @@ interface CacheEntry {
   hash: string;
   signature: string;
   tier: SnapResult["tier"];
+  /** The path that produced the entry. Entries written before this field existed are not replayed. */
+  route: SnapResult["route"];
   extraction: Extraction;
 }
 
@@ -35,6 +38,7 @@ function readCache(): CacheEntry[] {
     const cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "[]");
     return Array.isArray(cache) ? cache.filter((entry): entry is CacheEntry =>
       entry && typeof entry.hash === "string" && typeof entry.signature === "string" && [0, 1, 2].includes(entry.tier)
+      && typeof entry.route === "string" && shouldCache(entry.route, "ok")
       && DOC_KINDS.includes(entry.extraction?.kind)
       && ((entry.extraction.kind !== "other" && isAmount(entry.extraction.amount)) || entry.extraction.vision?.kind === "chart")
       && (entry.extraction.kind !== "receipt" || (validatedReceiptItems(entry.extraction.items)
@@ -159,10 +163,10 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
       steps.push({ name: msg("step.receiptCheck"), ms: performance.now() - start,
         detail: msg(matches ? "receipt.matched" : "receipt.mismatch") });
     }
-    if (route !== "cache" && status.outcome === "ok") {
+    if (shouldCache(route, status.outcome)) {
       try {
         const rest = readCache().filter((entry) => entry.hash !== fingerprint.hash || entry.signature !== fingerprint.signature);
-        localStorage.setItem(CACHE_KEY, JSON.stringify([{ ...fingerprint, tier, extraction }, ...rest.slice(0, 31)]));
+        localStorage.setItem(CACHE_KEY, JSON.stringify([{ ...fingerprint, tier, route, extraction }, ...rest.slice(0, 31)]));
       } catch {
         // The cascade still works when storage is unavailable.
       }
@@ -224,10 +228,7 @@ export async function runSnap(src: Blob | string, { forceLlm = forceFromStorage(
     const { confidence } = ocr;
     const text = receipt ? receiptModelText(ocr.rawText) : ocr.compact || ocr.rawText.trim().slice(0, 600);
     const local = receipt ?? heuristicExtract(text);
-    const extraField = local.merchant || local.rooms || local.location || local.date;
-    const canAccept = local.kind === "receipt"
-      ? !looksLikePayslip(ocr.rawText) && canAcceptLocalReceipt(local, confidence)
-      : confidence >= 80 && local.kind !== "other" && isAmount(local.amount) && extraField;
+    const canAccept = canAcceptLocalExtraction(local, confidence, receipt ? ocr.rawText : text, looksLikePayslip(ocr.rawText));
     if (!forceLlm && canAccept) {
       steps.push({ name: msg("step.regex"), ms: performance.now() - start, bytes: utf8(text), detail: msg("step.regexAccepted") });
       return finish(1, "local-regex", local, { usage: { ...LOCAL_USAGE, model: "Regex (local)" }, ocrConfidence: confidence });

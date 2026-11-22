@@ -1,6 +1,6 @@
 # Doppel Play: the life game
 
-Status: phase 1 implemented (`/play`, `src/lib/game`, `npm run play:check`); phases 2 and 3 open. Owner decisions: 2026-11-22. Implementation notes: §13.
+Status: phase 1 implemented (`/play`, `src/lib/game`, `npm run play:check`); phases 2 and 3 open. Owner decisions: 2026-11-22. Implementation notes: §13. Where §13–§19 and §20–§21 disagree, §20 (the audit of 2026-11-22) and §21 (the engine merge) are current.
 
 Doppel gets a second face. The existing dashboard stays as it is. A separate page, `/play`, turns the same twin into a game. The game is chess-themed in the way a chess engine is: positions are financial states, moves are decisions, and the engine **searches the space of possible futures** to judge each move. Situations are not mapped onto pieces. What gets labelled is the **move** (`!!`, `!`, `?!`, `?`, `??`, sacrifice, drain), as in chess game review.
 
@@ -159,7 +159,7 @@ Rules:
   - `sideboards`
   - `notation`
 - UI in `src/app/play/` and `src/components/play/*`, in the existing visual style and i18n system (EN/DE/FR/TR).
-- **Controls:** large targets and keyboard shortcuts (←/→ year, 1–4 pick a card, H hold, Tab compare lines). This prepares the TKT hand-control bridge (`docs/INTEGRATION.md`).
+- **Controls:** large targets and keyboard shortcuts (←/→ year, 1–4 pick a card, H hold, C compare lines; Tab is left to the browser, see §20). This prepares the TKT hand-control bridge (`docs/INTEGRATION.md`).
 - **Tests:**
   - same seed → same game
   - E never computed by the LLM
@@ -180,8 +180,8 @@ Rules:
 - **Simulator:** `simulate()` gained optional inputs (regime assumptions, income phases, a starting home, loans, regime shocks on a separate random stream). Without them it behaves exactly as before (`scripts/engine-check.ts` output unchanged).
 - **Turn:** Life's card (seeded by game seed and turn) → check test (buffer < 3 months, or P(cash crunch in 12 months) > 20% on 200 paths) → one card from a dealt hand of four (responses only in check) or hold → one market bucket (quintile of the regime's returns) → `stepYear`, twelve monthly steps that mirror `simulate()` and write a ledger. Mate = cash below the CHF 2'000 credit line after selling investments. Win = goal at the goal age with a 3-month buffer.
 - **E:** as in §3, with W = clamp(0.5 + 0.25·log2(median/target), 0, 1.5) and S = clamp((target − p10)/target, 0, 1); presets Balanced 0.4/0.3/0.2/0.1, Safety first 0.25/0.45/0.1/0.2, Growth 0.35/0.15/0.4/0.1. A mated line scores −w_down.
-- **Search:** open-loop MCTS. 40 pre-drawn futures (market bucket + Life's card per year, common random numbers), every root candidate on every future, UCT (c = 0.04) below the root, at most 2 realised years in the tree, then a 96-path simulator rollout to the horizon. Afterwards each candidate is re-scored with its own principal variation on all 40 futures. About 0.3–0.9 s per review in Node.
-- **Labels (loss in points):** best ≤ 0.05 (brilliant if also a sacrifice), good < 0.5, inaccuracy < 2, mistake < 6, blunder ≥ 6. Life choices (child, partner, sabbatical) are scored and shown but never graded and never named as the best move. Accuracy uses the Lichess formula on the loss.
+- **Search:** open-loop MCTS. Pre-drawn futures (market bucket + Life's card per year, common random numbers), every root candidate on every future, UCT (c = 0.04) below the root, at most 2 realised turns in the tree, then a simulator rollout to the horizon. Afterwards each candidate is re-scored with its own principal variation on all futures. Budget and sampling: §20.
+- **Labels (loss in points):** best ≤ 0.05 (brilliant if also a sacrifice), good < 0.5, inaccuracy < 2, mistake < 6, blunder ≥ 6, applied to the loss the futures support (§20). Life decisions (child, partner, sabbatical, any declared preference) are scored and shown but never best or brilliant, never named as the best move and never part of the accuracy. Accuracy uses the Lichess formula on the loss.
 - **Checks:** `npm run play:check` (determinism and replay, best-move loss 0, sacrifice at goal depth only, mate, MCTS = brute force on a tiny tree, no model or network code, ledger identity for every card and year, stepper vs simulator within 3%, budget).
 
 ## 14. The chessboard (phase 1b)
@@ -189,11 +189,11 @@ Rules:
 The game is also shown as a legal chess game: `src/lib/game/board.ts` (rendering rules, chess.js for legal moves and attack maps) and `src/components/play/ChessBoard.tsx`. The financial engine stays the only source of numbers and labels; the board only shows them.
 
 - **Pieces = domains.** King: liquidity. Queen: human capital (education, career path). Knights: income moves. Bishops: investments (light square: equities, dark square: bonds, 3a, pension). Rooks: housing (castling = buying a home). Pawns: habits and life choices. Black is Life: pawns inflation and rent, knights sudden costs and job loss, bishops markets and rates, rooks housing costs, queen recessions.
-- **Choosing a move.** Tap a ringed piece, then one of its decisions. A decision sits on every piece of its domain, even a blocked one; another piece then plays it (preferring the move that frees the domain piece) and the panel says so. Holding sits on the king.
-- **Quality on the board.** Best/good moves are safe and active; an inaccuracy is passive; a mistake or blunder leaves material en prise, and Life's next hit takes it. Positive Life events (windfall, promotion) leave a piece for the player to take. Every capture is explained (lost / taken, with the domain).
-- **Check and mate follow the money.** Life never gives check outside a financial check, and gives one whenever the board has a checking move. Early in a game the king is often shielded, so after the opening only about half of the financial checks can be shown as chess checks (`npm run play:board` measures it: ≥ 45%, and 0 misses while a check was available). Then the king carries an amber ring and the panel says that no Life piece can give check yet; the red check glow is reserved for a real chess check. The board never ends the game on its own; when the financial game ends, Life mates (or the player resigns) on a financial mate, and Life resigns (or is mated) on a win.
+- **Choosing a move: what you click is what moves.** Every decision of the hand is one chess move, computed before it is offered (`offersFor`), and it sits on the piece that makes it. Tap a ringed piece: its decisions are listed with their target square, and an arrow shows the move before it is confirmed. Hovering or focusing a decision in the card list shows the same arrow. The move played is exactly the one offered; a review never changes a move afterwards.
+- **One selector for both sides** (`pickMove`, deterministic, tie-break by the game seed). Every legal move is scored: referee rules (never ends the game on its own, no third repetition, no king move in the first 12 moves unless castling or in check), material (static exchange on the target square and on what is left behind: a safe move always beats an unsafe one), chess (centre pawns, knights and bishops out, castling, rooks to open files, no second move of a piece without a reason, no early queen), then the decision's meaning as a bonus: its domain piece and its direction. When the domain piece is shut in (the queen on move 1), the move that frees it is preferred. The label of a move is shown as a badge, not as a deliberately bad chess move.
+- **Check and mate follow the money.** Life never gives check outside a financial check, and prefers a checking move in one when it is safe (`npm run play:board` reports the share). Then the king carries an amber ring and the panel says that no Life piece can give check yet; the red check glow is reserved for a real chess check. The board never ends the game on its own; when the financial game ends, Life mates (or the player resigns) on a financial mate, and Life resigns (or is mated) on a win.
 - **Review.** Selecting a past move shows the position after it, its label badge, and a green arrow for the move the engine's best decision would have been.
-- **Checks:** `npm run play:board` (legal plies, no early game over, no false check, check rate, blunders hang material, determinism, render time).
+- **Checks:** `npm run play:board` (240 seeded board games and 10 simulator games: legal plies, no early game over, no false check, no king walk in the opening, offered move = played move, no piece lost for less while a safe move existed, replay determinism, opening shape, render time).
 
 ## 15. Canton costs (shared with the dashboard)
 
@@ -229,3 +229,81 @@ The game is also shown as a legal chess game: `src/lib/game/board.ts` (rendering
 - **Rollouts.** The game's simulator has no business: its capital rides with the portfolio (equity-like risk and return). The tree's realised years use the business model itself.
 - **Board.** Business moves push the business pawn (tracked from move to move; captures that open its way are preferred) and Life keeps its path clear. A shop or factory is bought financially at once; its pawn promotes (rook = shop, queen = factory) only when it really reaches the last rank, by a legal move. Until then the panel says that Life's pieces block the way. Every ply on the board is a legal chess move.
 
+## 20. Audit of 2026-11-22: what changed and why
+
+An audit of `/play` found ten defects and five suspicions; all were fixed, each with a check in `npm run play:check` (27 → 46 checks; most new ones are in `auditChecks`, run alone with `PLAY_CHECK=audit`).
+
+- **One simulator, checked.** `src/lib/game/sim.ts` is the dashboard's `simulate()` plus the game's optional inputs: a regime, the game's phases (`incomePhases`), a home and loans that exist at the start, random shocks, and three bookkeeping conventions. With none of them it returns exactly what `src/lib/finance/monteCarlo.ts` returns; the check compares 20 runs (built-in accounts, Alexia, loans, no pension fund, retired, behaviour, optimiser, home purchase, phases, accounting mode). **If the dashboard engine changes, mirror the change in `sim.ts` or this check fails.** The assumptions are the dashboard's own object.
+- **What the game does differently, on purpose** (the year stepper `stepYear` does the same, and the stepper-vs-simulator checks pin it):
+  - the game's phases (study, leave, part-time, abroad) are indexed with wages and prices, never fall below the rent, and end for good; the dashboard's phases are nominal and the last one continues;
+  - health premiums step up once a year, at the turn of the game year (`premiumYearly`);
+  - a pension fund that became an annuity is income, not capital: it leaves net worth (`annuityNotCapital`). The dashboard keeps counting its remaining capital; in the game that made every retiree's goal odds 100% and every move look alike;
+  - savings that run out in retirement are a cash crunch (`crunchWhenRetired`).
+- **Retirees.** A profile that is already retired is not cut to 80% of its spending a second time. Stepper and simulator now agree for retirees within 1% of net worth. A player who started working and then retires is measured against the liquid capital still needed until 95 (`targetAt`), not against the old target that included the pension fund.
+- **Openings.** A profile's own loans are used with their rate and payment (UBS data and accounts alike; before, UBS loans became 5% over 60 months and an account's loans were dropped). `bvgInsured: false` means no pillar 2 credits. Hand-made accounts with every optional `Profile` field missing play to the end. A working-age opening that is already financially independent is won before the first move, and the banner says so.
+- **Sampling.** 160 futures × 16 rollout paths (before: 40 × 96), about the same cost. Each future has its own rollout seed (before, all leaves shared one set of 96 market paths, so the futures were not independent samples), and the futures are a Latin hypercube: every market quintile and Life card appears in its exact share. Measured on the same position with 8 different sets of futures, a move's loss now varies by about 0.2 points (before: 1.6).
+- **Labels.** Every loss comes with its standard error (the futures are paired across candidates). A harsher label needs the loss to clear its threshold by two standard errors; the review shows the loss as "1.5 points (± 0.1 from the sampled futures)". Rare ruinous futures (a student loan followed by a job loss) keep a large error, and the label is then lenient rather than random.
+- **Turns in the tree.** A ply of the search is a turn of the game: after year ten a turn is five years, with Life's card every year and no move for the player in between. Before, the engine re-decided every year inside a five-year turn.
+- **Luck.** Luck of a turn = the position Life really left minus the positions it leaves on average after the same move, both valued the same way at the review's horizon (`turnLuck`). It averages zero by construction. The old measure (evaluation after minus evaluation before) was positive in almost every turn: resolved uncertainty raises E on its own.
+- **Game record (DGN version 2).** The record holds the opening position, the declared preferences, every market year, Life's cards inside five-year turns, each move's review, and the depth and weights the reviews were made with. `replay(record)` needs nothing else and checks the result.
+- **Keyboard.** Tab is no longer taken (it trapped keyboard users on the page): compare lines is **C**. A held key plays once. 1–4, H and C do nothing while a button, link or field has the focus. The rules are in `src/components/play/keys.ts`. `docs/TKT.md` still maps a swipe to Tab; it has to send C.
+- **Engine worker.** A new game terminates the worker and starts a fresh one, so a review of the old game no longer delays the new one (six quick restarts: first review after 1.5 s, before 6 s). A cancelled request is not recorded as a failure.
+- **Not changed:** the phase rules above stay different from the dashboard's by design. The rollouts still treat a business as part of the portfolio (§19).
+
+## 21. After the engine merge: one simulator, one cost model, two vocabularies for the economy
+
+The dashboard engine gained a sourced parameter table (`params.ts`), economic scenarios (`economy.ts`), life decisions (`life.ts`) and the outlook (`outlook.ts`); see `docs/ENGINE_API.md`. The game follows it as below. `npm run play:check` has a check for every statement (49 checks).
+
+### 21.1 The simulator
+
+`src/lib/game/sim.ts` is again the engine's `simulate()` plus the blocks marked "Doppel Play". Without a game extension the two return identical results; the parity check now runs 29 cases, including life decisions, the four economic scenarios, a custom economy and the budget detail.
+
+- **Imported, not copied:** the assumptions object, the parameter tables, `economyYears` / `resolveEconomy`, `compileLife`, the pension, debt, canton and mortgage rules.
+- **Mirrored (the monthly loop itself):** it cannot be imported, because the game's extensions sit inside it. The check is what keeps the copy honest.
+- **The same rules in the stepper (`stepYear`):** the pillar 3a ceiling in the CHF of its date, the large ceiling without a pension fund (20% of earned income), income never below zero. The game's scheduled one-offs are marked `nominal`, as the engine now expects.
+- **Game extensions, all named options:** `assumptions` (the regime), `incomePhases`, `home`, `debts`, `shocks`, and `conventions` (`premiumYearly`, `annuityNotCapital`, `crunchWhenRetired`, and new: `priceLevel`). A game position is in the CHF of its own year, while the pillar 3a ceilings and the AHV scale are in the CHF of the game's start; `priceLevel` scales them, as the stepper always did for AHV.
+- **Job losses of a regime** now run through the engine's own job-loss mechanism (benefit = 70% of the insured salary with the insured maximum, no pension-fund credits), with the regime's yearly risk and spell length. Crashes of a regime keep their own random stream. A crash month no longer shifts the other random draws (the engine's fix).
+
+### 21.2 Regimes and economic scenarios
+
+They are two vocabularies and stay two.
+
+| | Game: regime | Dashboard: economic scenario |
+|---|---|---|
+| What it is | How strong Life is, for the whole game: calm, normal, stress | A dated phase of the economy, then back to the baseline: high inflation, recession, low rates, climate transition |
+| What it sets | Market means and volatilities, inflation, wage growth, how often and how hard Life's cards hit, random job losses and crashes | Inflation, wages, interest and mortgage rates, a job-loss risk, an equity shock, per phase |
+| Source | Normal = the engine's `BASELINE` table. Calm and stress are Doppel defaults (game design, no source) | `REGIMES` in `params.ts` (estimates anchored on Swiss episodes) |
+
+- **Normal is the baseline.** `REGIME.normal` reads its market constants from `BASELINE` (`regime.ts`); the check compares the numbers and a whole simulation run with the dashboard's baseline economy.
+- **In the simulator** a regime is the *base* regime of every year of the engine's economy. A scenario could be laid on top of it (`economy` is passed through unchanged), but the game does not do that yet: Life's cards (inflation, recession, rate shock) play that role in the game.
+- **Do not compare** a stress game with a recession scenario: stress lasts the whole game and has no source; a recession is two years and sourced.
+
+### 21.3 Life decisions: the same cost model
+
+A card that corresponds to an engine decision uses the engine's model (`src/lib/game/lifeCosts.ts` calls `compileLife`), so it costs in the game what it costs on the dashboard for the same person.
+
+| Card | Engine decision | In the game |
+|---|---|---|
+| Have a child | `child` | **Same model.** Direct costs by age, daycare (3 days) from six months to four and a half, family allowances of the canton, tax relief, then apprenticeship or university. Checked against `outlook()`: Barlas CHF 710/month in the first year and CHF 726/month over ten years, in both. A second child costs less, as in the engine. |
+| Buy a car / sell the car | `car` (owned) | **Same model.** The TCS reference car (CHF 45'000), CHF 586/month to run, a replacement every ten years net of the trade-in, until 80. Checked: CHF 4'336/month in the first year (the purchase included) and CHF 961/month over ten years, in both. |
+| Part time / full time | `workload` | **Same rule:** salary and take-home pay scale with the percentage. |
+| Sabbatical | `workload` 0% | Same rule for the pay; the CHF 7'000 of travel is the UBS catalog's (S044). |
+| Master's (student paths) | `education` | UBS figures (S001, Alexia's paths) where the data has them; otherwise the engine's sourced tuition (CHF 1'460/year) and length (24 months). |
+| Buy a home | `house` event | Same bank test (`tragbarkeit`, pillar 2 above the 20% minimum) and closing costs; the game buys at once at 95% of the highest affordable price. |
+| Move in with a partner | `partner` | **Different on purpose.** The engine has no sourced default for a partner's income, costs or rent and asks the user. A card cannot ask, so it keeps its Doppel defaults (rent −45%, other costs −15%) and no partner income. |
+| Flatmates, smaller flat, nicer flat | `move` | **Different on purpose.** Same reason: the new rent is a user input in the engine. No change of canton in the game. |
+| Start a business | `selfEmployed` | **Different model.** The card is the UBS catalog's venture with capital, a failure hazard and promotion (§19), not a change of the person's salary. |
+
+Deliberate differences inside the two shared models:
+
+- **A schedule per year, fixed when the card is played.** The engine's monthly lines become one net amount per year (their mean), in CHF of the game's start, indexed with prices each year. The yearly sums are the engine's; within a year the timing is flattened (daycare starts in month six on the dashboard, the game spreads that year's cost over twelve months). Salary or canton changes after the card do not re-price the daycare tariff or the allowances.
+- **Expected value instead of a draw.** From 16 the engine draws per future whether the child goes to university (43%); the game charges the expected cost, so a position stays one state.
+- **No pay cut during parental leave.** The old card had one (three months at 80%); the engine has none, so the card has none.
+- **The car loan is the game's.** If cash is short the card takes a 48-month loan at 6.9%; the dashboard has no car loan and shows a cash crunch instead. The comparison in the check pays cash.
+- **Selling the car** ends its costs and the planned replacements; the engine has no such decision.
+
+### 21.4 Engine round 2 and the plan behind a move
+
+- **Simulator:** re-forked again after the engine's car loan, the crash reaction on its own coin and `healthPremiumOf()`; an opening uses the same premium rule (the profile's, else its statements', else the canton's mean). Parity holds on the same 29 runs.
+- **The move after next is chosen on paired futures.** The search proposes continuations; its statistics for two second replies come from different futures and cannot separate plans that differ by a fraction of a point. A weaker plan for the best move then made every other move look better (all losses of a position moved by 0.25 points between sets of futures). Now the two most visited second replies are compared on the same futures (an eighth of them) before the full scoring, and the proposal search runs on half the futures, so the cost is unchanged.
+- **The stability check states its rule:** on 8 sets of futures the best move is the same, no loss varies by more than 0.15 points, and every move whose graded loss is further than 0.15 from a threshold keeps its label. A move closer to a threshold than that is listed, not asserted.

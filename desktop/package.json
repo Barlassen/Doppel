@@ -1,0 +1,23 @@
+{
+  "name": "doppel-desktop",
+  "productName": "Doppel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Doppel as a desktop app: an Electron shell around the Doppel production server.",
+  "author": "Doppel team",
+  "license": "MIT",
+  "main": "app/main.mjs",
+  "scripts": {
+    "stage": "node ../scripts/desktop-stage.mjs",
+    "start": "electron .",
+    "dev": "npm run stage && electron .",
+    "build": "npm run stage && electron-builder",
+    "build:mac": "npm run stage && electron-builder --mac",
+    "build:win": "npm run stage && electron-builder --win --x64",
+    "icons": "node ../scripts/desktop-icon.mjs"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  }
+}

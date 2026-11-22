@@ -15,6 +15,7 @@
  */
 import type { RiskProfile } from "@/lib/finance/types";
 import type { Op } from "../actions";
+import { lifeOps, type LifeVocab } from "./life";
 import { AMOUNT, amountValue, eventLabel, largestAmountAbove, monthOfYear, normalizeText, type IntentContext, type IntentParser } from "./shared";
 
 const PER_MONTH = String.raw`(?:(?:par|chaque|\/|tous\s+les)\s*mois\b|mensuel\w*\b|p\.\s?m\.?)`;
@@ -23,6 +24,47 @@ const HOME = /\b(?:maison|appart(?:ement)?|logement|bien|propriete|villa|studio|
 const RISK_WORDS = "conservat\\w*|defensi\\w*|prudent\\w*|securitaire|plus sur|moins (?:de risques?|d'actions)|equilibr\\w*|moder\\w*|croissance|dynamique\\w*|agressi\\w*|offensi\\w*|audacieu\\w*|plus (?:de risques?|d'actions)";
 const SPENDING = "depenses?|couts?|frais(?: fixes)?|charges?(?: fixes)?|budget|train de vie";
 const re = (s: string) => new RegExp(s, "u");
+
+/** Life decisions and economic scenarios (see `life.ts`); patterns run on the accent-folded text. */
+const LIFE: LifeVocab = {
+  perMonth: PER_MONTH,
+  forAmount: String.raw`\b(?:pour|a)`,
+  car: /\b(?:voiture|auto|vehicule|bagnole|tesla|moto)\b/,
+  lease: /\bleas\w*|\ben\s+location\s+longue/,
+  buy: /\bachet\w*|\bachat\b|\bacquer\w*|\bacquisition\b/,
+  ga: /\b(?:abonnement|abo)\s+general\b|\b(?:prendre|acheter|passer\s+a)\s+(?:un\s+|l')?ag\b/,
+  home: /\b(?:maison|appart(?:ement)?|logement|propriete|villa|studio|duplex|chalet|immobilier)\b/,
+  child: /^bebe\b|\benceinte\b|\bnaissance\s+d'\w+\s+(?:enfant|bebe)\b|\b(?:avoir|a|aur\w*|attend\w*)\s+(?:(?:un|une|notre)\s+)?(?:autre\s+)?(?:enfant|bebe)\b|\bbebe\s+arriv\w*\b|\bdev(?:en|ien)\w*\s+parents?\b/,
+  university: /\b(?:universite|uni|epfl|eth|hes|etud\w+|gymnase|college|maturite)\b/,
+  apprenticeship: /\bapprenti\w*/,
+  kitaDays: /\b(\d)\s*jours?\b[^.]{0,25}?\b(?:creche|garderie)\b/,
+  workload: /\b(?:travaill\w*|temps\s+partiel|taux\s+d'(?:activite|occupation)|taux\s+de\s+travail|pensum|poste)\b[^.%\d]{0,25}?(\d{1,3})\s*(?:%|pour\s*cent)|\b(\d{1,3})\s*(?:%|pour\s*cent)\s*(?:de\s+)?(?:taux|temps|travail|poste)/,
+  halfTime: /\bmi-temps\b|\ba\s+mi\s+temps\b/,
+  sabbatical: /\b(?:sabbatique|conge\s+sans\s+solde|pause\s+carriere|annee\s+de\s+pause)\b/,
+  forMonths: /\b(?:pendant|pour|durant|de)\s+(\d+)\s*mois\b/,
+  forYears: /\b(?:pendant|pour|durant|de)\s+(\d+(?:[.,]5)?)\s*an(?:s|nees?)?\b/,
+  moveTo: /\b[Dd][ée]m[ée]nag\p{L}*\s+(?:[àa]|au|en|dans\s+le\s+canton\s+de|pour)\s+((?:St\.\s+|Saint-)?\p{Lu}[\p{L}’'.-]+)|\b[Mm]'install\p{L}*\s+(?:[àa]|au|en)\s+((?:St\.\s+)?\p{Lu}[\p{L}’'.-]+)/u,
+  move: /\bdemenag\w*/,
+  rent: String.raw`\bloyer\s+(?:de\s+|a\s+)?`,
+  marry: /\b(?:mari(?:er|age|es|ons)|me\s+marie|nous\s+marier|epous\w*|noces)\b/,
+  partner: /\bemmenag\w*\s+(?:ensemble|avec)|\b(?:vivre|habiter)\s+ensemble\b/,
+  partnerEarns: String.raw`\b(?:partenaire|conjoint\w*|femme|mari|epou\w+|copain|copine|compagn\w+)\s+(?:gagne|avec)\s+`,
+  master: /\b(?:master|mba|msc)\b/,
+  bachelor: /\b(?:bachelor|bsc)\b/,
+  education: /\b(?:doctorat|these|formation\s+continue|reprendre\s+(?:mes|des|les)\s+etudes|reconversion|brevet\s+federal)\b/,
+  fullTime: /\b(?:plein\s+temps|temps\s+plein)\b/,
+  selfEmployed: /\b(?:independant\w*|a\s+mon\s+compte|freelance|(?:creer|monter|lancer|fonder)\s+(?:mon|ma|une)\s+(?:entreprise|boite|societe|startup))\b/,
+  earning: String.raw`\b(?:gagn\w+|revenu\s+de|salaire\s+de)\s+`,
+  inherit: /\b(?:herit\w*|donation|loterie)\b/,
+  heatPump: /\bpompe\s+a\s+chaleur\b|\bpac\b/,
+  economy: {
+    high_inflation: /\b(?:forte|haute)\s+inflation\b|\binflation\s+(?:elevee|forte|monte|grimpe|reste|a\s+\d)|\btaux\s+(?:hypothecaires?\s+)?(?:montent|grimpent|augmentent|remontent|a\s+\d)/,
+    recession: /\bscenario\s+(?:de\s+)?(?:recession|crise)\b|\bcrise\s+economique\b/,
+    low_rates: /\btaux\s+(?:bas|negatifs?|zero)\b/,
+    climate_transition: /\b(?:transition|scenario|stress|choc)\s+climatique\b/,
+    baseline: /\bscenario\s+de\s+base\b/,
+  },
+};
 
 /** Strip combining accents after NFD so accented and unaccented user input match the same patterns. */
 function foldAccents(s: string): string {
@@ -41,7 +83,8 @@ function monthFrom(t: string, now: Date): number | undefined {
   return undefined;
 }
 
-function parse({ text, house, now }: IntentContext): Op[] {
+function parse(ctx: IntentContext): Op[] {
+  const { text, house, now } = ctx;
   const normalized = normalizeText(text, "fr")
     .replace(/(\d),[-–—]{1,2}/g, "$1")
     .replace(/(?<![\p{L}])fr\.?(?![\p{L}])/gu, " ")
@@ -128,13 +171,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
   }
 
   // krach boursier / effondrement des marchés / chute de la bourse / récession
-  if (/\b(?:krach|crash|recession|crise boursiere)\b|\b(?:effondrement|chute|baisse)\s+(?:des marches|de la bourse|boursiere)\b|\b(?:bourse|marches)\s+(?:s'effondr|chut|degringol|decroch)\w*\b/.test(t)) {
+  if (/\b(?:krach|crash|recession|crise boursiere)\b|\b(?:effondrement|chute|baisse)\s+(?:des marches|de la bourse|boursiere)\b|\b(?:bourse|marches)\s+(?:s'effondr|chut|degringol|decroch)\w*\b/.test(t) && !/\bscenario\b|\bcrise\s+economique\b/.test(t)) {
     ops.push({ op: "add", type: "crash", ...eventLabel({ key: "event.crash" }), month: when ?? 12, amount: 0 });
-  }
-
-  // un bébé / un enfant / naissance
-  if (/^bebe\b|\benceinte\b|\bnaissance\s+d'\w+\s+(?:enfant|bebe)\b|\b(?:avoir|a|aur\w*|attend\w*)\s+(?:(?:un|une|notre)\s+)?(?:autre\s+)?(?:enfant|bebe)\b|\bbebe\s+arriv\w*\b|\bdev(?:en|ien)\w*\s+parents?\b/.test(t)) {
-    ops.push({ op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: when ?? 18, amount: 1500, duration: 216 });
   }
 
   // The engine uses annual gross income. Convert explicit monthly amounts.
@@ -151,6 +189,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
     }
   }
 
+  // enfant, voiture, taux d'activité, déménagement, mariage, formation, indépendance, héritage, achat, conjoncture
+  ops.push(...lifeOps(LIFE, t, ctx, when, ops));
   return ops;
 }
 

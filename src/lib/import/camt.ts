@@ -102,8 +102,9 @@ const dateOf = (el: XEl | undefined) => parseDate(text(el, "Dt") ?? text(el, "Dt
 export const isCamt = (xml: string) => /<(?:\w+:)?(?:BkToCstmrStmt|BkToCstmrDbtCdtNtfctn|BkToCstmrAcctRpt)\b/.test(xml);
 
 /**
- * camt.053 / .054 → statement rows. Each `Ntry` becomes one row; a batch entry with several `TxDtls` that carry their
- * own amounts becomes one row per transaction. `AcctSvcrRef` (entry or transaction) is kept for dedupe.
+ * camt.053 / .054 → statement rows. Each `Ntry` becomes one row; a batch entry whose `TxDtls` carry their own
+ * amounts in the account currency, adding up to the entry, becomes one row per transaction. `AcctSvcrRef` (entry or
+ * transaction) is kept for dedupe against earlier imports. `RvslInd` marks the row as a reversal.
  */
 export function parseCamt(xml: string): ParsedStatement | undefined {
   const doc = parseXml(xml);
@@ -130,11 +131,24 @@ export function parseCamt(xml: string): ParsedStatement | undefined {
     const credit = text(ntry, "CdtDbtInd") === "CRDT";
     const entryRef = text(ntry, "AcctSvcrRef");
     const entryInfo = text(ntry, "AddtlNtryInf");
-    const txs = kids(kid(ntry, "NtryDtls"), "TxDtls").concat(...kids(ntry, "NtryDtls").slice(1).map((d) => kids(d, "TxDtls")));
-    const withOwnAmount = txs.filter((tx) => kid(tx, "Amt") ?? path(tx, "AmtDtls", "TxAmt", "Amt"));
-    const split = txs.length > 1 && withOwnAmount.length === txs.length;
+    const reversal = /^(?:true|1)$/i.test(text(ntry, "RvslInd") ?? "");
+    const txs = kids(ntry, "NtryDtls").flatMap((d) => kids(d, "TxDtls"));
+    // A transaction's own amount in the account currency: `Amt` (SPS 2022+), else `AmtDtls/TxAmt/Amt`. An amount
+    // in another currency (the instructed amount of a card payment abroad) is not what was booked.
+    const ownAmount = (tx: XEl) => [kid(tx, "Amt"), path(tx, "AmtDtls", "TxAmt", "Amt")]
+      .find((el) => el && (el.attrs.Ccy ?? entryCcy).toUpperCase() === entryCcy.toUpperCase() && parseAmount(el.text) !== undefined);
+    const txSign = (tx: XEl) => {
+      const ind = text(tx, "CdtDbtInd");
+      return (ind ? ind === "CRDT" : credit) ? 1 : -1;
+    };
+    const own = txs.map(ownAmount);
+    const batchSum = txs.reduce((sum, tx, i) => sum + txSign(tx) * Math.abs(parseAmount(own[i]?.text) ?? 0), 0);
+    // Split a batch only when every transaction has its amount and they add up to the booked entry. Otherwise
+    // (bank charges inside the entry, foreign-currency details) the entry amount is the booked truth: one row.
+    const split = txs.length > 1 && own.every(Boolean) && entryAmount !== undefined
+      && Math.abs(Math.abs(batchSum) - Math.abs(entryAmount)) < 0.005;
 
-    const push = (amountEl: XEl | undefined, fallback: number | undefined, ccyFallback: string, tx: XEl | undefined, ref: string | undefined, isCredit: boolean) => {
+    const push = (amountEl: XEl | undefined, fallback: number | undefined, ccyFallback: string, tx: XEl | undefined, ref: string | undefined, isCredit: boolean, whole: boolean) => {
       const amount = amountEl ? parseAmount(amountEl.text) : fallback;
       const currency = (amountEl?.attrs.Ccy ?? ccyFallback).toUpperCase();
       if (amount === undefined) {
@@ -146,12 +160,19 @@ export function parseCamt(xml: string): ParsedStatement | undefined {
         return;
       }
       const parties = kid(tx, "RltdPties");
-      const counterparty = isCredit ? partyName(parties, "Dbtr") : partyName(parties, "Cdtr");
+      // The related parties describe the original payment. On a reversal the money flows back, so the other side
+      // of a returned debit is still its creditor (the shop), not the account holder.
+      const payee = isCredit !== reversal;
+      // One row for a whole batch of different payees has no single counterparty.
+      const names = whole && txs.length > 1 ? new Set(txs.map((t) => partyName(kid(t, "RltdPties"), payee ? "Dbtr" : "Cdtr") ?? "")) : undefined;
+      const counterparty = names && names.size > 1 ? undefined : payee ? partyName(parties, "Dbtr") : partyName(parties, "Cdtr");
       const rmt = kid(tx, "RmtInf");
-      const ustrd = kids(rmt, "Ustrd").map((u) => u.text).filter(Boolean).join(" ");
-      const strdRef = text(rmt, "Strd", "CdtrRefInf", "Ref");
-      const info = text(tx, "AddtlTxInf") ?? entryInfo;
-      const parts = [counterparty, ustrd, info].filter((p): p is string => !!p);
+      const ustrd = names && names.size > 1 ? "" : kids(rmt, "Ustrd").map((u) => u.text).filter(Boolean).join(" ");
+      const strdRef = names && names.size > 1 ? undefined : text(rmt, "Strd", "CdtrRefInf", "Ref");
+      const info = (names && names.size > 1 ? undefined : text(tx, "AddtlTxInf")) ?? entryInfo;
+      // A mixed batch is described by the bank's own text, else by its first payees.
+      const mixed = names && names.size > 1 && !info ? [...names].filter(Boolean).slice(0, 3).join(", ") : undefined;
+      const parts = [counterparty, ustrd, info, mixed].filter((p): p is string => !!p);
       rows.push({
         line,
         date,
@@ -160,19 +181,18 @@ export function parseCamt(xml: string): ParsedStatement | undefined {
         signed: round2(isCredit ? Math.abs(amount) : -Math.abs(amount)),
         currency,
         ref: ref || (strdRef ? `${date}/${strdRef}` : undefined),
+        ...(reversal ? { reversal: true } : {}),
       });
     };
 
     if (split) {
       txs.forEach((tx, i) => {
-        const amt = kid(tx, "Amt") ?? path(tx, "AmtDtls", "TxAmt", "Amt");
-        const ind = text(tx, "CdtDbtInd");
         const txRef = text(tx, "Refs", "AcctSvcrRef") ?? (entryRef ? `${entryRef}/${i + 1}` : undefined);
-        push(amt, undefined, entryCcy, tx, txRef, ind ? ind === "CRDT" : credit);
+        push(own[i], undefined, entryCcy, tx, txRef, txSign(tx) > 0, false);
       });
     } else {
       const tx = txs[0];
-      push(entryAmt, entryAmount, entryCcy, tx, entryRef ?? text(tx, "Refs", "AcctSvcrRef"), credit);
+      push(entryAmt, entryAmount, entryCcy, tx, entryRef ?? text(tx, "Refs", "AcctSvcrRef"), credit, true);
     }
   });
   return { format, profile: format, rows, trades: [], skipped, notes: [] };

@@ -1,5 +1,5 @@
 import { PAYSLIP_SALARIES, SOCIAL_DEDUCTIONS, payslipToIncome } from "@/lib/finance/pension";
-import { monthlySpend, withDerivedBehavior } from "@/lib/finance/investBehavior";
+import { monthlySpend, observedHealthPremium, withDerivedBehavior } from "@/lib/finance/investBehavior";
 import type { Goal, InvestmentTrade, Profile } from "@/lib/finance/types";
 import { translate } from "@/lib/i18n";
 import type { Msg } from "@/lib/i18n/types";
@@ -28,13 +28,19 @@ type Persona = Omit<Profile, "netIncomeMonth" | "expensesMonth" | "rentMonth" | 
   balances: Balances;
 };
 
-/** Fills in what the history determines: take-home pay, spending, rent and the behavioural inputs. */
+/**
+ * Fills in what the history determines: take-home pay, spending, rent, the person's own health premium and the
+ * behavioural inputs.
+ */
 export function fromHistory(p: Persona): Profile {
   const spend = monthlySpend(p.transactions);
+  const premium = observedHealthPremium(p.transactions);
   const { balances, ...rest } = p;
   return withDerivedBehavior({
     ...rest,
     ...balances,
+    // The premium the statements show wins over the canton's mean (which is only the fallback).
+    ...(premium !== undefined ? { healthPremiumMonth: premium, provenance: { ...rest.provenance, healthPremiumMonth: "derived" as const } } : {}),
     netIncomeMonth: takeHomeMonth(p.grossIncomeYear, p.marginalTaxRate),
     expensesMonth: Math.round(spend.average / 10) * 10,
     rentMonth: Math.round(spend.rent),
@@ -181,7 +187,7 @@ const meric = fromHistory({
   retirementAge: 65,
   goal: goal(400_000, 40),
   events: [
-    { id: "ev-house", type: "house", ...labelled({ key: "event.flatIn", params: { place: "Renens" } }), month: 60, amount: 540_000, source: "profile" },
+    { id: "ev-house", type: "house", ...labelled({ key: "event.flatIn", params: { place: "Renens" } }), month: 60, amount: 510_000, source: "profile" },
   ],
   balances: { cash: 14_800, portfolio: 2_900, pillar2: 2_300, pillar3a: 0 },
   transactions: generateTransactions(mericSpend),

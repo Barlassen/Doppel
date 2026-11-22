@@ -1,4 +1,4 @@
-import { msg } from "@/lib/i18n/types";
+import { msg, type Msg } from "@/lib/i18n/types";
 import { column, hasMarker, readTable, type CsvTable } from "./table";
 import { headerKey, parseAmount, parseDate, round2 } from "./text";
 import type { ParsedStatement, SkippedRow, StatementRow } from "./types";
@@ -162,9 +162,14 @@ function resolveProfile(table: CsvTable, p: BankProfile): Resolved {
   };
 }
 
-function rowsFrom(table: CsvTable, r: Resolved): { rows: StatementRow[]; skipped: SkippedRow[] } {
+function rowsFrom(table: CsvTable, r: Resolved): { rows: StatementRow[]; skipped: SkippedRow[]; notes: Msg[] } {
   const rows: StatementRow[] = [];
   const skipped: SkippedRow[] = [];
+  // Layouts with debit / credit columns AND a single-amount column (UBS "Einzelbetrag") print a collective order as
+  // one booked total followed by its detail rows. `orders` remembers which rows belong together.
+  const hasDetails = r.amount >= 0 && (r.debit >= 0 || r.credit >= 0);
+  const orders: { parent: StatementRow; children: StatementRow[] }[] = [];
+  let open: (typeof orders)[number] | undefined;
   table.rows.forEach((cells, i) => {
     const line = table.firstLine + i + 1;
     const cell = (idx: number) => (idx >= 0 ? (cells[idx] ?? "").trim() : "");
@@ -172,15 +177,21 @@ function rowsFrom(table: CsvTable, r: Resolved): { rows: StatementRow[]; skipped
       skipped.push({ line, reason: "pending" });
       return;
     }
-    const date = parseDate(cell(r.date));
+    let signed: number | undefined;
+    const debit = parseAmount(cell(r.debit));
+    const credit = parseAmount(cell(r.credit));
+    const booked = debit !== undefined || credit !== undefined;
+    const ref = cell(r.ref) || undefined;
+    // A booked row closes the order above it, whether or not the row itself can be read.
+    if (booked) open = undefined;
+    // A detail row has only the single amount and continues the open order (same reference when both have one).
+    const order = hasDetails && !booked && open && (!ref || !open.parent.ref || ref === open.parent.ref) ? open : undefined;
+    const date = parseDate(cell(r.date)) ?? order?.parent.date;
     if (!date) {
       skipped.push({ line, reason: "badDate" });
       return;
     }
-    let signed: number | undefined;
-    const debit = parseAmount(cell(r.debit));
-    const credit = parseAmount(cell(r.credit));
-    if (debit !== undefined || credit !== undefined) signed = (credit !== undefined ? Math.abs(credit) : 0) - (debit !== undefined ? Math.abs(debit) : 0);
+    if (booked) signed = (credit !== undefined ? Math.abs(credit) : 0) - (debit !== undefined ? Math.abs(debit) : 0);
     else if (r.amount >= 0) {
       const a = parseAmount(cell(r.amount));
       if (a !== undefined) signed = r.invert ? -a : a;
@@ -206,18 +217,43 @@ function rowsFrom(table: CsvTable, r: Resolved): { rows: StatementRow[]; skipped
       const v = cell(idx);
       if (v && !parts.includes(v)) parts.push(v);
     }
-    rows.push({
+    const row: StatementRow = {
       line,
       date,
       description: parts.join(" · "),
       counterparty: cell(r.counterparty) || undefined,
       signed,
       currency,
-      ref: cell(r.ref) || undefined,
+      ref: ref ?? order?.parent.ref,
       type: cell(r.type) || undefined,
-    });
+    };
+    rows.push(row);
+    if (order) order.children.push(row);
+    else if (hasDetails && booked) orders.push((open = { parent: row, children: [] }));
   });
-  return { rows, skipped };
+
+  // The booked total and its details are the same money. When the details add up to the total they replace it
+  // (each payee is categorised on its own); when they do not, the booked total stays and the details go.
+  const drop = new Set<StatementRow>();
+  let split = 0;
+  let kept = 0;
+  for (const { parent, children } of orders) {
+    if (!children.length) continue;
+    const sum = children.reduce((total, child) => total + Math.abs(child.signed), 0);
+    if (Math.abs(sum - Math.abs(parent.signed)) < 0.005) {
+      drop.add(parent);
+      // Some exports print the details unsigned: they take the direction of the booked total.
+      for (const child of children) child.signed = round2(Math.sign(parent.signed) * Math.abs(child.signed));
+      split += 1;
+    } else {
+      for (const child of children) drop.add(child);
+      kept += 1;
+    }
+  }
+  const notes: Msg[] = [];
+  if (split) notes.push(msg("statement.collectiveSplit", { count: split }));
+  if (kept) notes.push(msg("statement.collectiveKept", { count: kept }));
+  return { rows: drop.size ? rows.filter((row) => !drop.has(row)) : rows, skipped, notes };
 }
 
 /** Parses a bank CSV with a detected profile. Returns undefined when no profile matches (→ manual mapping). */
@@ -225,12 +261,12 @@ export function parseBankCsv(text: string): (ParsedStatement & { table: CsvTable
   const table = readTable(text);
   const profile = detectBankProfile(table);
   if (!profile) return undefined;
-  const { rows, skipped } = rowsFrom(table, resolveProfile(table, profile));
-  return { format: "bank-csv", profile: profile.id, rows, trades: [], skipped, notes: [], table };
+  const { rows, skipped, notes } = rowsFrom(table, resolveProfile(table, profile));
+  return { format: "bank-csv", profile: profile.id, rows, trades: [], skipped, notes, table };
 }
 
 export function parseBankManual(table: CsvTable, m: BankMapping): ParsedStatement {
-  const { rows, skipped } = rowsFrom(table, {
+  const { rows, skipped, notes } = rowsFrom(table, {
     date: m.date,
     description: m.description,
     counterparty: -1,
@@ -243,7 +279,7 @@ export function parseBankManual(table: CsvTable, m: BankMapping): ParsedStatemen
     type: -1,
     invert: !!m.invert,
   });
-  return { format: "bank-csv", profile: "manual", rows, trades: [], skipped, notes: rows.length ? [] : [msg("data.noRows")] };
+  return { format: "bank-csv", profile: "manual", rows, trades: [], skipped, notes: rows.length ? notes : [msg("data.noRows")] };
 }
 
 const GUESS = {

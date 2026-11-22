@@ -9,7 +9,7 @@
  *   key_one / key_other → plural family, chosen with Intl.PluralRules on `params.count`
  * Param values may be nested messages ({ key, params }) or lists (joined with " · ").
  */
-import { groupCh, usd } from "@/lib/format";
+import { chf as chfText, groupCh, MINUS, usd } from "@/lib/format";
 import { de } from "./de";
 import { en } from "./en";
 import { fr } from "./fr";
@@ -49,7 +49,7 @@ const DECIMAL: Record<Locale, string> = { en: ".", de: ".", fr: ",", tr: "," };
 
 export interface Fmt {
   locale: Locale;
-  /** CHF with Swiss grouping in every locale: "CHF 1’234". */
+  /** CHF with Swiss grouping in every locale: "CHF 1’234" (negative: "−CHF 1’234"). */
   chf: (n: number) => string;
   usd: (n: number) => string;
   /** "+CHF 400" / "−CHF 400". */
@@ -79,7 +79,7 @@ export function createFmt(locale: Locale): Fmt {
   if (cached) return cached;
   const dec = (s: string) => (DECIMAL[locale] === "." ? s : s.replace(".", DECIMAL[locale]));
   const num = (n: number, digits?: number) => dec(digits === undefined ? String(Math.round(n * 100) / 100) : n.toFixed(digits));
-  const chf = (n: number) => `CHF ${groupCh(Math.round(n))}`;
+  const chf = chfText;
   let month: Intl.DateTimeFormat | undefined;
   const percents = new Map<number, Intl.NumberFormat>();
   const pct = (value: number, digits = 0) => {
@@ -103,9 +103,10 @@ export function createFmt(locale: Locale): Fmt {
     chfSigned: (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${chf(Math.abs(n))}`,
     chfShort: (n) => {
       const a = Math.abs(n);
-      if (a >= 1e6) return `${dec((n / 1e6).toFixed(a >= 1e7 ? 0 : 2))}M`;
-      if (a >= 1e3) return `${Math.round(n / 1e3)}k`;
-      return `${Math.round(n)}`;
+      const sign = n < 0 ? MINUS : "";
+      if (a >= 1e6) return `${sign}${dec((a / 1e6).toFixed(a >= 1e7 ? 0 : 2))}M`;
+      if (a >= 1e3) return `${Math.round(a / 1e3) === 0 ? "" : sign}${Math.round(a / 1e3)}k`;
+      return `${Math.round(a) === 0 ? "" : sign}${Math.round(a)}`;
     },
     mio: (n) => num(Math.round((n / 1e6) * 100) / 100),
     pct,

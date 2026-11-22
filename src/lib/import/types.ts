@@ -1,7 +1,7 @@
 import type { InvestmentTrade, TransactionCategory } from "@/lib/finance/types";
 import type { Msg } from "@/lib/i18n/types";
 
-export type StatementFormat = "bank-csv" | "camt.053" | "camt.054" | "broker-csv";
+export type StatementFormat = "bank-csv" | "camt.053" | "camt.054" | "broker-csv" | "mt940";
 
 /** One booking as read from a bank file, before categorisation. `signed` follows the bank: negative = money out. */
 export interface StatementRow {
@@ -18,6 +18,8 @@ export interface StatementRow {
   ref?: string;
   /** Transaction type column, e.g. Revolut `TOPUP`, Yuh `ACTIVITY TYPE`. */
   type?: string;
+  /** camt `RvslInd`: the booking takes back an earlier one (a credit is money returned, not income). */
+  reversal?: boolean;
 }
 
 export type SkipReason = "badDate" | "badAmount" | "foreignCurrency" | "zero" | "notATrade" | "pending";

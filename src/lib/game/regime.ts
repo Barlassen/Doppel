@@ -6,7 +6,8 @@
  *  - market year: one of five equally likely quintile buckets of a normal draw (z = conditional quintile means)
  *  - life event: "quiet year" or one applicable Life card, weighted by the regime
  */
-import { ASSUMPTIONS, type SimAssumptions } from "./sim";
+import { BASELINE } from "@/lib/finance/params";
+import type { SimAssumptions } from "./sim";
 
 export type RegimeId = "calm" | "normal" | "stress";
 export const REGIMES: RegimeId[] = ["calm", "normal", "stress"];
@@ -28,7 +29,20 @@ export interface Regime {
   lifeWeights: Record<string, number>;
 }
 
-const base = ASSUMPTIONS;
+/**
+ * "Normal" is the engine's baseline: its market values are read from the engine's dated, sourced parameter table
+ * (`BASELINE` in src/lib/finance/params.ts), not copied, so the game and the dashboard cannot drift apart.
+ * Calm and Stress are the game's own regimes (Doppel defaults). They are a different vocabulary from the
+ * dashboard's economic scenarios (`economy.ts`): a regime is how strong Life is for the whole game, a scenario is
+ * a dated phase of the economy. See docs/PLAY.md §21.
+ */
+const normalMarket = {
+  equity: { mu: BASELINE.equityMu.value, sigma: BASELINE.equitySigma.value },
+  bonds: { mu: BASELINE.bondMu.value, sigma: BASELINE.bondSigma.value },
+  home: { mu: BASELINE.homeMu.value, sigma: BASELINE.homeSigma.value },
+  inflation: BASELINE.inflation.value,
+  wageGrowth: BASELINE.wageGrowth.value,
+};
 
 export const REGIME: Record<RegimeId, Regime> = {
   calm: {
@@ -50,11 +64,7 @@ export const REGIME: Record<RegimeId, Regime> = {
     id: "normal",
     eventProb: 0.5,
     severity: 1,
-    equity: { ...base.equity },
-    bonds: { ...base.bonds },
-    home: { ...base.home },
-    inflation: base.inflation,
-    wageGrowth: base.wageGrowth,
+    ...normalMarket,
     shocks: { jobLossProbYear: 0.04, jobLossMonths: 6, crashProbYear: 0.05 },
     lifeWeights: {
       "lifeWindfall": 1.5, "lifePromotion": 2, "lifeEmergency": 2, "lifeClaim": 2, "lifeRent": 2, "lifeMaintenance": 1.5,

@@ -17,10 +17,8 @@
  * Uses chess.js only for legal move generation and attack maps. No numbers from here are shown as financial results.
  */
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from "chess.js";
-import type { MoveLabel } from "./evaluate";
 import type { Game } from "./game";
 
-export type Quality = "strong" | "passive" | "loose" | "blunder" | "neutral";
 export type LifeTone = "hit" | "gift" | "quiet";
 
 /** The domain each piece stands for (both colours). */
@@ -98,6 +96,9 @@ const CARD_INTENT: Record<string, PieceIntent> = {
   buildFactory: { piece: "p", motion: "build", business: true, promote: "q" },
 };
 
+/** Every decision and every Life event the board knows (checks play random sequences of them). */
+export const boardCards = () => ({ player: Object.keys(CARD_INTENT), life: Object.keys(LIFE_INTENT) });
+
 /** How a decision moves on the board (for the legend and the panel). */
 export const motionForCard = (card: string): Motion => CARD_INTENT[card]?.motion ?? "neutral";
 
@@ -121,23 +122,6 @@ const LIFE_INTENT: Record<string, { piece: PieceSymbol; tone: LifeTone }> = {
 
 /** The piece a decision card moves (null = any quiet move, e.g. holding). */
 export const pieceForCard = (card: string): PieceSymbol | null => CARD_INTENT[card]?.piece ?? null;
-
-export function qualityFor(label: MoveLabel | null | undefined): Quality {
-  switch (label) {
-    case "brilliant":
-    case "best":
-    case "good":
-      return "strong";
-    case "inaccuracy":
-      return "passive";
-    case "mistake":
-      return "loose";
-    case "blunder":
-      return "blunder";
-    default:
-      return "neutral";
-  }
-}
 
 export interface BoardPly {
   side: Color;
@@ -163,6 +147,8 @@ export interface BoardPly {
 export interface BoardTurn {
   /** Position at the start of the turn (after Life's ply), as FEN. */
   fen: string;
+  /** What the selector remembers at the start of the turn (repetition, last moves, the business pawn). */
+  ctx: TurnCtx;
   /** Player's ply of this turn (absent while the turn is live). */
   white?: BoardPly;
   /** Life's reply (the event at the start of the next turn). */
@@ -192,41 +178,47 @@ function hash(...parts: (string | number)[]): number {
 const other = (c: Color): Color => (c === "w" ? "b" : "w");
 const ALL_SQUARES: Square[] = "abcdefgh".split("").flatMap((f) => "12345678".split("").map((r) => (f + r) as Square));
 
-/** Largest value the side `c` leaves en prise: attacked and undefended, or attacked by a cheaper piece. */
+/** Value of a piece as a capturer or a prize in an exchange (the king can take, but is never given up). */
+const xv = (p: PieceSymbol) => (p === "k" ? 100 : VALUE[p]);
+
+/**
+ * Static exchange on one square: the material the owner of the piece on `sq` loses there when the other side
+ * starts taking (0 = safe). Cheapest attacker first on both sides; pins and x-rays are not looked at.
+ */
+export function exchangeLoss(ch: Chess, sq: Square): number {
+  const p = ch.get(sq);
+  if (!p || p.type === "k") return 0;
+  const att = ch.attackers(sq, other(p.color)).map((a) => xv(ch.get(a)!.type)).sort((x, y) => x - y);
+  if (!att.length) return 0;
+  const def = ch.attackers(sq, p.color).map((a) => xv(ch.get(a)!.type)).sort((x, y) => x - y);
+  const gains: number[] = [];
+  let on = VALUE[p.type];
+  for (let i = 0, j = 0, side = 0; ; side ^= 1) {
+    if (side === 0) {
+      if (i >= att.length) break;
+      gains.push(on);
+      on = att[i++];
+    } else {
+      if (j >= def.length) break;
+      gains.push(on);
+      on = def[j++];
+    }
+  }
+  let v = 0;
+  for (let k = gains.length - 1; k >= 0; k--) v = Math.max(0, gains[k] - v);
+  return v;
+}
+
+/** Largest value the side `c` leaves en prise (by static exchange), and where. */
 function hanging(ch: Chess, c: Color): { value: number; square: Square | null } {
   let best = { value: 0, square: null as Square | null };
   for (const sq of ALL_SQUARES) {
     const p = ch.get(sq);
     if (!p || p.color !== c || p.type === "k") continue;
-    const attackers = ch.attackers(sq, other(c));
-    if (!attackers.length) continue;
-    const defended = ch.attackers(sq, c).length > 0;
-    const cheapest = Math.min(...attackers.map((a) => VALUE[ch.get(a)!.type] || 100));
-    const loss = defended ? Math.max(0, VALUE[p.type] - cheapest) : VALUE[p.type];
+    const loss = exchangeLoss(ch, sq);
     if (loss > best.value) best = { value: loss, square: sq };
   }
   return best;
-}
-
-/** Was the captured piece free (the capturer is not lost back for more)? */
-function captureGain(ch: Chess, m: Move): number {
-  if (!m.captured) return 0;
-  const gain = VALUE[m.captured];
-  const recapture = ch.attackers(m.to, other(m.color)).length > 0 ? VALUE[m.piece] : 0;
-  return gain - (ch.attackers(m.to, m.color).length > 0 ? Math.min(recapture, gain) : recapture);
-}
-
-/** How many checking moves `c` would have if it could move again now (Life's pressure on the player's king). */
-function pressure(ch: Chess, c: Color): number {
-  const parts = ch.fen().split(" ");
-  parts[1] = c;
-  parts[3] = "-";
-  try {
-    const probe = new Chess(parts.join(" "), { skipValidation: true });
-    return probe.moves().filter((s) => /[+#]/.test(s)).length;
-  } catch {
-    return 0;
-  }
 }
 
 /** Legal moves the piece type of side `c` would have if `c` were to move now. */
@@ -240,9 +232,6 @@ function mobility(ch: Chess, c: Color, piece: PieceSymbol): number {
     return 0;
   }
 }
-
-/** Mate, stalemate or dead position. Repetition is tracked by `seen` (scanning chess.js' history is slow). */
-const mateOrDraw = (ch: Chess) => ch.isCheckmate() || ch.isStalemate() || ch.isInsufficientMaterial();
 
 /** The white pawn with the best way to promotion: advanced, no pawn ahead on its file, a long free run. */
 function chooseBusinessPawn(ch: Chess): Square | null {
@@ -304,140 +293,196 @@ interface Want {
   shield?: Square[];
   bishop?: "light" | "dark";
   castle?: boolean;
-  quality?: Quality;
-  tone?: LifeTone;
   /** Life must give check (financial check). */
   check?: boolean;
   /** This side should deliver mate (financial game over). */
   mate?: boolean;
-  /** Square of a piece the opponent left hanging (prefer taking it). */
-  target?: Square | null;
 }
 
-function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): Move | null {
+/** What the selector remembers between plies: positions seen (repetition) and each side's last two destinations. */
+interface Ctx {
+  seen: Map<string, number>;
+  recent: { w: Square[]; b: Square[] };
+}
+
+/** No king walks in the opening: for this many full moves the king only moves to castle or out of check. */
+export const QUIET_KING_MOVES = 12;
+
+const rel = (sq: Square, c: Color) => (c === "w" ? Number(sq[1]) : 9 - Number(sq[1]));
+const isCastle = (m: Move) => m.flags.includes("k") || m.flags.includes("q");
+const posKey = (ch: Chess) => ch.fen().split(" ").slice(0, 2).join(" ");
+
+/** Material the mover loses on the destination square beyond what the move took (0 = a safe move). */
+export function moveRisk(ch: Chess, m: Move): number {
+  ch.move(m);
+  const loss = exchangeLoss(ch, m.to);
+  ch.undo();
+  return Math.max(0, loss - (m.captured ? VALUE[m.captured] : 0));
+}
+
+/**
+ * The move selector, the same for both sides. Every legal move is scored and the best one is played:
+ *  - referee: never ends the game on its own, no third repetition, no king move in the opening unless in check;
+ *  - material: static exchange on the target square and on every piece left behind (a safe move always beats
+ *    an unsafe one), captures that win material;
+ *  - chess: centre pawns, knights and bishops out, castling, rooks to open files, no second move of a piece
+ *    without a reason, no early queen, no pawn pushes in front of the castled king;
+ *  - meaning: the decision's piece and direction (a bonus, never above the terms before);
+ *  - ties: a hash of the game seed, the ply and the move.
+ */
+function pickMove(ch: Chess, w: Want, salt: string, ctx: Ctx): Move | null {
   const all = ch.moves({ verbose: true }) as Move[];
   if (!all.length) return null;
-  const typed = w.piece ? all.filter((m) => m.piece === w.piece) : all;
-  // Fall back to a related piece when the domain's piece is gone or stuck: pawns, then minor pieces.
-  let pool = typed.length ? typed : all.filter((m) => m.piece !== "k").length ? all.filter((m) => m.piece !== "k") : all;
-  // A business move pushes the business pawn when it can move (forward, or a capture that opens its way).
-  if (w.business && w.bizSquare) {
-    const own = all.filter((m) => m.from === w.bizSquare);
-    if (own.length) pool = own;
+  const c = w.side;
+  const fenParts = ch.fen().split(" ");
+  const clock = Number(fenParts[4]);
+  const full = Number(fenParts[5]);
+  const opening = full <= QUIET_KING_MOVES;
+  const inCheck = ch.inCheck();
+  const recent = ctx.recent[c];
+  const back = c === "w" ? "1" : "8";
+  // Minor pieces still at home: while two or more wait, the queen and the rooks stay back.
+  let minorsHome = 0;
+  for (const f of "bcfg") {
+    const p = ch.get((f + back) as Square);
+    if (p && p.color === c && (p.type === "n" || p.type === "b")) minorsHome++;
   }
-  // Check and mate follow the financial state, so any piece may deliver them when the domain's piece cannot.
-  if ((w.check || w.mate) && !pool.some((m) => /[+#]/.test(m.san)) && all.some((m) => /[+#]/.test(m.san))) pool = all;
-  // Phase 1 scores every candidate cheaply; phase 2 adds the expensive terms (pressure, freeing a blocked
-  // piece: both need a fresh move generation) to the best few only.
-  const scored: { m: Move; score: number; check: boolean }[] = [];
-  for (const m of pool) {
+  let kingFile = "e";
+  const ownPawnFiles = new Set<string>();
+  for (const sq of ALL_SQUARES) {
+    const p = ch.get(sq);
+    if (!p || p.color !== c) continue;
+    if (p.type === "k") kingFile = sq[0];
+    if (p.type === "p") ownPawnFiles.add(sq[0]);
+  }
+  const shelter = kingFile >= "f" ? "fgh" : kingFile <= "c" ? "abc" : "";
+  const domainFree = w.piece ? all.some((m) => m.piece === w.piece) : true;
+
+  const scored: { m: Move; score: number }[] = [];
+  for (const m of all) {
+    const threatened = exchangeLoss(ch, m.from) > 0;
     ch.move(m);
-    const gameOver = mateOrDraw(ch);
-    const mate = ch.isCheckmate();
     const check = ch.inCheck();
-    const key = ch.fen().split(" ").slice(0, 2).join(" ");
-    const rep = seen.get(key) ?? 0;
-    const hang = hanging(ch, w.side).value;
-    const gain = m.captured ? captureGain(ch, m) : 0;
+    const stuck = ch.moves().length === 0;
+    const mate = check && stuck;
+    const gameOver = stuck || ch.isInsufficientMaterial();
+    const rep = ctx.seen.get(posKey(ch)) ?? 0;
+    const risk = Math.max(0, exchangeLoss(ch, m.to) - (m.captured ? VALUE[m.captured] : 0));
+    const worst = hanging(ch, c).value;
     ch.undo();
 
     let s = 0;
-    if (gameOver && !(w.mate && mate)) s -= 1000;
-    if (w.mate) s += mate ? 500 : check ? 40 : 0;
-    if (w.check) s += check ? 200 : -50;
-    else if (check && !w.mate) s -= 120;
-    s -= rep * 30;
-    if (w.piece && m.piece !== w.piece) s -= 15;
-    if (w.bishop && m.piece === "b") s += (ch.squareColor(m.from) === w.bishop ? 6 : -6);
-    if (w.castle) s += m.flags.includes("k") || m.flags.includes("q") ? 60 : 0;
-    else if (m.flags.includes("k") || m.flags.includes("q")) s += 3;
-    if (m.piece === "k" && !m.flags.match(/[kq]/)) s -= 8;
-    if (w.target && m.to === w.target) s += 25;
+    // Referee.
+    if (gameOver && !(w.mate && mate)) s -= 100000;
+    if (w.mate && mate) s += 90000;
+    if (rep >= 2) s -= 50000;
+    else if (rep === 1) s -= 45;
+    const castle = isCastle(m);
+    if (m.piece === "k" && !castle && !inCheck) s -= opening ? 20000 : 28;
+    if (c === "b" && check && !w.check && !w.mate) s -= 10000;
+    if (w.check && check) s += 400;
+    if (clock >= 60 && (m.piece === "p" || m.captured)) s += clock >= 90 ? 5000 : 300;
+
+    // Material.
+    if (risk > 0) s -= 2000 + 100 * risk;
+    s += 100 * (m.captured ? VALUE[m.captured] : 0) - 100 * worst;
+
+    // Chess.
+    const rank = rel(m.to, c);
+    const fromRank = rel(m.from, c);
+    const file = m.to[0];
+    const forward = rank - fromRank;
     const act = centre(m.to) - centre(m.from);
-    // Direction follows the decision: building moves forward, protecting moves back towards the own king,
-    // spending pushes a pawn or piece forward loosely (it does not develop, it only advances).
-    const forward = (Number(m.to[1]) - Number(m.from[1])) * (w.side === "w" ? 1 : -1);
-    // Promotion: only the business promotes, and to the asset chosen (rook = shop, queen = factory).
-    if (m.promotion) s += w.promote ? (m.promotion === w.promote ? 300 : -300) : m.promotion === "q" ? -20 : -60;
-    if (w.business && m.piece === "p") s += 3 * pawnRun(ch, m) + (w.side === "w" ? Number(m.to[1]) : 9 - Number(m.to[1])) + (m.captured ? 10 : 0);
+    if (castle) s += 45;
+    if (opening && recent.includes(m.from) && !m.captured && !threatened) s -= 24;
+    switch (m.piece) {
+      case "p":
+        if (m.promotion) s += w.promote ? (m.promotion === w.promote ? 300 : -300) : m.promotion === "q" ? -20 : -60;
+        if (opening && !m.captured) {
+          if (file === "d" || file === "e") s += rank === 4 ? 30 : rank === 3 ? 14 : -6;
+          else if (file === "c") s += rank === 4 ? 12 : rank === 3 ? 6 : -8;
+          else s -= file === "f" ? 14 : 16;
+        } else if (!opening) s += 3 + (rank >= 6 ? 4 : 0);
+        if (shelter.includes(m.from[0]) && fromRank <= 3) s -= 16;
+        break;
+      case "n":
+        if (opening && fromRank === 1) s += rank === 3 && (file === "c" || file === "f") ? 28 : file === "a" || file === "h" ? -18 : 14;
+        s += 3 * act;
+        break;
+      case "b":
+        if (opening && fromRank === 1) s += 22;
+        // Do not shut the own centre pawn in.
+        if (rank === 3 && (file === "d" || file === "e") && ch.get((file + (c === "w" ? "2" : "7")) as Square)?.type === "p") s -= 20;
+        s += 2 * act;
+        break;
+      case "r":
+        if (!castle) {
+          if (opening && fromRank === 1 && (m.from[0] === "a" || m.from[0] === "h") && kingFile === "e") s -= 26;
+          if (!ownPawnFiles.has(file) && m.from[0] !== file) s += 14;
+          if (minorsHome >= 2) s -= 10;
+        }
+        break;
+      case "q":
+        if (minorsHome >= 2) s -= 26;
+        s += act;
+        break;
+    }
+
+    // Meaning: the decision's piece and direction.
+    const domainMove = !!w.piece && (m.piece === w.piece || (w.piece === "r" && castle));
+    if (domainMove) s += 38;
+    if (w.bishop && m.piece === "b") s += ch.squareColor(m.from) === w.bishop ? 8 : -8;
+    if (w.castle && castle) s += 200;
+    if (w.business && w.bizSquare && m.from === w.bizSquare) s += 60 + 3 * pawnRun(ch, m) + rank + (m.captured ? 10 : 0);
     // Life keeps the business pawn's way clear: it does not block it, and gets out of it when it can.
     if (w.shield?.length) {
       if (w.shield.includes(m.to)) s -= 40;
       if (w.shield.includes(m.from)) s += 30;
     }
-    if (w.motion === "build") s += 4 * Math.sign(forward) + forward;
-    else if (w.motion === "protect") s += forward < 0 ? 8 : forward === 0 ? 2 : -6;
-    else if (w.motion === "spend") s += forward > 0 ? 3 : 0;
-
-    if (w.side === "w") {
-      switch (w.quality ?? "neutral") {
-        case "strong":
-          s += 8 * gain + 2 * act - 25 * hang + (m.from[1] === "1" ? 3 : 0);
-          break;
-        case "neutral":
-          s += 2 * gain + act - 25 * hang;
-          break;
-        case "passive":
-          s += -2 * act - 25 * hang - (m.captured ? 10 : 0);
-          break;
-        case "loose":
-          s += (hang >= 1 && hang <= 3 ? 40 : hang > 3 ? 10 : -10) - (m.captured ? 10 : 0);
-          break;
-        case "blunder":
-          s += (hang >= 3 ? 40 + 2 * hang : hang > 0 ? 15 : -10) - (m.captured ? 10 : 0);
-          break;
-      }
-    } else {
-      switch (w.tone ?? "quiet") {
-        case "hit":
-          s += 10 * (m.captured ? Math.max(VALUE[m.captured], gain) : 0) + act - 6 * hang;
-          break;
-        case "gift":
-          s += (hang >= 1 && hang <= 3 ? 30 : -5) - (m.captured ? 20 : 0);
-          break;
-        case "quiet":
-          s += act - 15 * hang - (m.captured ? 20 : 0);
-          break;
-      }
+    if (m.piece === "p") {
+      // A pawn cannot step back: a protecting pawn takes one careful step, a building or spending one strides.
+      if (w.motion === "protect") s += forward === 1 ? 5 : -5;
+      else if (w.motion === "build" || w.motion === "spend") s += forward === 2 ? 4 : 0;
+    } else if (!castle) {
+      if (w.motion === "build") s += forward > 0 ? 6 : forward < 0 ? -4 : 0;
+      else if (w.motion === "protect") s += forward < 0 ? 8 : forward === 0 ? 3 : -4;
+      else if (w.motion === "spend") s += forward > 0 ? 3 : 0;
     }
     s += hash(salt, m.san) * 0.9;
-    scored.push({ m, score: s, check });
+    scored.push({ m, score: s });
   }
   scored.sort((a, b) => b.score - a.score);
+  // The decision's piece is shut in (a queen or a bishop behind its pawns): prefer the move that frees it.
   let best: { m: Move; score: number } | null = null;
-  for (const c of scored.slice(0, REFINE)) {
-    let s = c.score;
-    const lifePress = w.side === "b" && !c.check && !w.mate;
-    const blocked = !typed.length && !!w.piece && c.m.piece !== w.piece;
-    if (lifePress || blocked) {
-      ch.move(c.m);
-      // Life keeps pieces aimed at the king, so a financial check can show as a board check when it comes.
-      if (lifePress) s += (w.check ? 15 : 2) * Math.min(3, pressure(ch, "b"));
-      // A blocked domain piece: prefer the move that frees it (e.g. a pawn opens the queen's diagonal).
-      if (blocked && mobility(ch, w.side, w.piece!) > 0) s += 12;
+  for (const cand of scored.slice(0, REFINE)) {
+    let s = cand.score;
+    if (!domainFree && w.piece && cand.m.piece !== w.piece) {
+      ch.move(cand.m);
+      if (mobility(ch, c, w.piece) > 0) s += 18;
       ch.undo();
     }
-    if (!best || s > best.score) best = { m: c.m, score: s };
+    if (!best || s > best.score) best = { m: cand.m, score: s };
   }
   return best?.m ?? null;
 }
 
-/** Candidates that get the expensive scoring terms. */
+/** Candidates that get the expensive scoring term. */
 const REFINE = 6;
 
-function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card: string | null): BoardPly | null {
-  const m = pickMove(ch, w, salt, seen);
+function doPly(ch: Chess, w: Want, salt: string, ctx: Ctx, card: string | null): BoardPly | null {
+  const m = pickMove(ch, w, salt, ctx);
   if (!m) return null;
   ch.move(m);
-  const key = ch.fen().split(" ").slice(0, 2).join(" ");
-  seen.set(key, (seen.get(key) ?? 0) + 1);
+  const key = posKey(ch);
+  ctx.seen.set(key, (ctx.seen.get(key) ?? 0) + 1);
+  ctx.recent[m.color] = [...ctx.recent[m.color], m.to].slice(-2);
   return {
     side: m.color,
     san: m.san,
     from: m.from,
     to: m.to,
     piece: m.piece,
-    wanted: w.piece && w.piece !== m.piece ? w.piece : null,
+    wanted: w.piece && w.piece !== m.piece && !(w.piece === "r" && isCastle(m)) ? w.piece : null,
     captured: m.captured ?? null,
     promotion: m.promotion ?? null,
     check: ch.inCheck(),
@@ -448,39 +493,62 @@ function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card
   };
 }
 
-function whiteWant(card: string, label: MoveLabel | null | undefined, target: Square | null, mate = false): Want {
+/** The business pawn of this turn: the tracked one while it stands, otherwise the pawn with the best run. */
+function businessPawn(ch: Chess, tracked: Square | null): Square | null {
+  const p = tracked ? ch.get(tracked) : null;
+  return p && p.type === "p" && p.color === "w" ? tracked : chooseBusinessPawn(ch);
+}
+
+/** The player's ply for a decision: only the position, the decision, the turn and the seed decide it. */
+function playerPly(ch: Chess, card: string, k: number, seed: number, ctx: Ctx, biz: Square | null, bizKind: string | null | undefined): { ply: BoardPly | null; biz: Square | null } {
   const intent = CARD_INTENT[card] ?? { piece: null };
-  return { side: "w", piece: intent.piece, motion: intent.motion, business: intent.business, promote: intent.promote, bishop: intent.bishop, castle: intent.castle, quality: qualityFor(label), target, mate };
+  const want: Want = { side: "w", piece: intent.piece, motion: intent.motion, business: intent.business, promote: intent.promote, bishop: intent.bishop, castle: intent.castle };
+  // A shop or a factory bought earlier: the business pawn promotes to it once it really reaches the last rank.
+  if (want.business && !want.promote) want.promote = bizKind === "shop" ? "r" : bizKind === "factory" ? "q" : undefined;
+  if (want.business) {
+    biz = businessPawn(ch, biz);
+    want.bizSquare = biz;
+  }
+  const ply = doPly(ch, want, `${seed}:w${k}`, ctx, card);
+  if (ply && biz && ply.from === biz) biz = ply.promotion ? null : ply.to;
+  return { ply, biz };
 }
 
 // ---------------------------------------------------------------- public API
 
+/** What a turn starts from besides the position (kept so a decision can be previewed exactly as it will be played). */
+export interface TurnCtx {
+  seen: [string, number][];
+  recent: { w: Square[]; b: Square[] };
+  biz: Square | null;
+}
+
 /** The board after a completed turn (both plies), for incremental rendering. */
 interface Snapshot {
   fen: string;
-  seen: [string, number][];
+  ctx: TurnCtx;
   turns: BoardTurn[];
   captured: { w: PieceSymbol[]; b: PieceSymbol[] };
-  lifeTarget: Square | null;
-  playerTarget: Square | null;
-  bizSquare: Square | null;
 }
 const LINE_CACHE = new Map<string, Snapshot>();
+/** Forgets the rendered lines (checks use it to prove that a replay renders the same moves from scratch). */
+export const clearBoardCache = () => LINE_CACHE.clear();
+const freeze = (ctx: Ctx, biz: Square | null): TurnCtx => ({ seen: [...ctx.seen], recent: { w: [...ctx.recent.w], b: [...ctx.recent.b] }, biz });
+const thaw = (t: TurnCtx | undefined): Ctx => ({ seen: new Map(t?.seen ?? []), recent: { w: [...(t?.recent.w ?? [])], b: [...(t?.recent.b ?? [])] } });
 
 /**
- * Renders a game as a chess line. `labels[k]` is the engine's label of move k (null while it is not reviewed yet;
- * the move is then played as a neutral move and re-rendered when the review arrives).
+ * Renders a game as a chess line. The line depends on the game only (its decisions, Life's events and the seed),
+ * never on the engine's review: a move does not change after it was played.
  */
-export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]): BoardLine {
-  const salt = String(game.settings.seed);
-  // Incremental: completed turns are cached by everything that shaped them, so a new review or a new move
-  // only renders what changed (a long game re-renders in milliseconds instead of a few hundred).
+export function boardLine(game: Game): BoardLine {
+  const seed = game.settings.seed;
+  // Incremental: completed turns are cached by everything that shaped them, so a new move only renders itself.
   const keys: string[] = [];
-  let key = salt + "|" + game.positions[0].profileId + "|" + game.positions[0].turn;
+  let key = seed + "|" + game.positions[0].profileId + "|" + game.positions[0].turn;
   for (let k = 0; k < game.moves.length; k++) {
     const life = game.lifeEvents[k + 1];
     const next = game.positions[k + 1];
-    key += `|${game.moves[k].card}:${labels[k] ?? ""}:${life?.card ?? ""}:${life?.earlier?.map((e) => e.card).join("+") ?? ""}:${next.status}:${next.check ? 1 : 0}`;
+    key += `|${game.moves[k].card}:${game.positions[k].business?.kind ?? ""}:${life?.card ?? ""}:${life?.earlier?.map((e) => e.card).join("+") ?? ""}:${next.status}:${next.check ? 1 : 0}:${next.business ? 1 : 0}`;
     keys.push(key);
   }
   let start = 0;
@@ -493,52 +561,34 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
     }
   }
   const ch = new Chess(snap?.fen);
-  const seen = new Map<string, number>(snap?.seen ?? []);
+  const ctx = thaw(snap?.ctx);
+  let bizSquare: Square | null = snap?.ctx.biz ?? null;
   const turns: BoardTurn[] = snap ? snap.turns.slice() : [];
   const captured = { w: snap ? [...snap.captured.w] : ([] as PieceSymbol[]), b: snap ? [...snap.captured.b] : ([] as PieceSymbol[]) };
-  let lifeTarget: Square | null = snap?.lifeTarget ?? null;
-  let playerTarget: Square | null = snap?.playerTarget ?? null;
-  let bizSquare: Square | null = snap?.bizSquare ?? null;
   let result: BoardLine["result"] = null;
+  const end = (r: BoardLine["result"]) => {
+    result = r;
+    turns.push({ fen: ch.fen(), ctx: freeze(ctx, bizSquare) });
+  };
 
   for (let k = start; k < game.positions.length; k++) {
-    const turn: BoardTurn = { fen: ch.fen() };
+    const turn: BoardTurn = { fen: ch.fen(), ctx: freeze(ctx, bizSquare) };
     turns.push(turn);
     const move = game.moves[k];
     if (!move) break;
     const next = game.positions[k + 1];
-    const ww = whiteWant(move.card, labels[k], playerTarget, next.status === "won");
-    // A shop or a factory bought earlier: the business pawn promotes to it once it really reaches the last rank.
-    if (ww.business && !ww.promote) {
-      const kind = next.business?.kind ?? game.positions[k].business?.kind;
-      if (kind === "shop") ww.promote = "r";
-      else if (kind === "factory") ww.promote = "q";
-    }
-    if (ww.business) {
-      const p = bizSquare ? ch.get(bizSquare) : null;
-      if (!p || p.type !== "p" || p.color !== "w") bizSquare = chooseBusinessPawn(ch);
-      ww.bizSquare = bizSquare;
-    }
-    const white = doPly(ch, ww, salt + ":w" + k, seen, move.card);
+    const played = playerPly(ch, move.card, k, seed, ctx, bizSquare, game.positions[k].business?.kind);
+    const white = played.ply;
     if (!white) break;
-    if (bizSquare && white.from === bizSquare) bizSquare = white.promotion ? null : white.to;
+    bizSquare = played.biz;
     turn.white = white;
     if (white.captured) captured.w.push(white.captured);
-    const h = hanging(ch, "w");
-    lifeTarget = white.hangs > 0 ? h.square : null;
-    if (white.mate) {
-      result = "playerMates";
-      turns.push({ fen: ch.fen() });
-      break;
-    }
     if (next.status === "won") {
-      result = "lifeResigns";
-      turns.push({ fen: ch.fen() });
+      end("lifeResigns");
       break;
     }
     if (next.status === "ended") {
-      result = "timeUp";
-      turns.push({ fen: ch.fen() });
+      end("timeUp");
       break;
     }
     const life = game.lifeEvents[k + 1];
@@ -547,65 +597,55 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
     const want: Want = {
       side: "b",
       piece: li?.piece ?? null,
-      tone: next.status === "mate" ? "hit" : li?.tone ?? (lifeTarget ? "hit" : "quiet"),
+      motion: li ? (li.tone === "hit" ? "build" : "protect") : "neutral",
       check: next.status === "playing" && !!next.check,
       mate: next.status === "mate",
-      target: li?.tone === "gift" ? null : lifeTarget,
       shield: next.business && bizSquare ? pathAhead(bizSquare) : undefined,
     };
-    const black = doPly(ch, want, salt + ":b" + k, seen, lifeCard);
+    const black = doPly(ch, want, `${seed}:b${k}`, ctx, lifeCard);
     if (!black) break;
     turn.black = black;
     if (black.captured) captured.b.push(black.captured);
     if (bizSquare && black.to === bizSquare) bizSquare = null;
-    playerTarget = black.hangs > 0 ? hanging(ch, "b").square : null;
     if (next.status === "mate") {
-      result = black.mate ? "lifeMates" : "playerResigns";
-      turns.push({ fen: ch.fen() });
+      end(black.mate ? "lifeMates" : "playerResigns");
       break;
     }
     if (LINE_CACHE.size > 600) LINE_CACHE.clear();
-    LINE_CACHE.set(keys[k], { fen: ch.fen(), seen: [...seen], turns: turns.slice(), captured: { w: [...captured.w], b: [...captured.b] }, lifeTarget, playerTarget, bizSquare });
+    LINE_CACHE.set(keys[k], { fen: ch.fen(), ctx: freeze(ctx, bizSquare), turns: turns.slice(), captured: { w: [...captured.w], b: [...captured.b] } });
   }
   return { startFen: turns[0]?.fen ?? new Chess().fen(), turns, captured, result };
 }
 
-/**
- * The move a card *would* be played as from a turn's start position (for the engine's best-move arrow).
- * Uses the same rules as `boardLine`, with the given label.
- */
-export function previewMove(fen: string, card: string, label: MoveLabel | null, seed: number): BoardPly | null {
-  const ch = new Chess(fen);
-  return doPly(ch, whiteWant(card, label, null), String(seed) + ":preview", new Map(), card);
+/** A decision as the board offers it: the piece that will move and where it lands. */
+export interface Offer {
+  card: string;
+  from: Square;
+  to: Square;
+  san: string;
+  piece: PieceSymbol;
+  promotion: PieceSymbol | null;
 }
 
 /**
- * Squares of the player's pieces that hold the given decisions (for choosing a decision on the board).
- * A decision sits on every piece of its domain, even a blocked one (another piece then plays it, see `pickMove`);
- * when the domain has no piece left, it sits on the king. Holding sits on the king.
+ * The chess move each decision would be played as in turn `k` of the line: exactly the ply `boardLine` renders
+ * when the decision is taken (same position, same memory, same seed). A decision has one move, so it sits on
+ * one piece: the one that moves.
  */
-export function piecesForCards(fen: string, cards: string[]): Map<Square, string[]> {
-  const ch = new Chess(fen);
-  const own = ALL_SQUARES.filter((sq) => ch.get(sq)?.color === "w");
-  const king = own.find((sq) => ch.get(sq)?.type === "k");
-  const out = new Map<Square, string[]>();
+export function offersFor(line: BoardLine, k: number, cards: string[], seed: number, bizKind?: string | null): Offer[] {
+  const turn = line.turns[k];
+  if (!turn) return [];
+  const out: Offer[] = [];
   for (const card of cards) {
-    const want = pieceForCard(card);
-    const intent = CARD_INTENT[card];
-    let froms = want ? own.filter((sq) => ch.get(sq)?.type === want) : [];
-    if (intent?.bishop) {
-      const same = froms.filter((f) => ch.squareColor(f) === intent.bishop);
-      if (same.length) froms = same;
-    }
-    if (want === "p") {
-      // Eight pawns would all ring: keep the ones that can move, at most two.
-      const mobile = froms.filter((f) => ch.moves({ square: f }).length > 0);
-      froms = (mobile.length ? mobile : froms).sort((a, b) => Math.abs(a.charCodeAt(0) - 100.5) - Math.abs(b.charCodeAt(0) - 100.5)).slice(0, 2);
-    }
-    if (!froms.length && king) froms = [king];
-    for (const f of froms) out.set(f, [...(out.get(f) ?? []), card]);
+    const { ply } = playerPly(new Chess(turn.fen), card, k, seed, thaw(turn.ctx), turn.ctx.biz, bizKind);
+    if (ply) out.push({ card, from: ply.from, to: ply.to, san: ply.san, piece: ply.piece, promotion: ply.promotion });
   }
   return out;
+}
+
+/** The move a decision would be played as from a bare position (no game memory). */
+export function previewMove(fen: string, card: string, seed: number, bizKind?: string | null): BoardPly | null {
+  return playerPly(new Chess(fen), card, 0, seed, thaw(undefined), null, bizKind).ply;
 }
 
 /** 8×8 board for rendering, rank 8 first. */

@@ -5,74 +5,11 @@ import { MAX_COST_TO_INCOME } from "@/lib/finance/swissRules";
 import type { BehaviorProfile } from "@/lib/finance/behavioralEngine";
 import type { Recipe } from "@/lib/finance/goalSolver";
 import type { HabitCosts } from "@/lib/finance/scenario";
-import type { LifeEvent } from "@/lib/finance/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Text } from "@/lib/i18n/types";
 import type { FloorPlanVerification } from "@/lib/snap/vision";
 import { FloorPlanAffordabilitySummary } from "./VisionReview";
-import { CardHeader, Disclosure } from "./ui";
-
-const EVENT_ICON: Record<LifeEvent["type"], string> = {
-  house: "🏠",
-  child: "👶",
-  jobloss: "💼",
-  crash: "📉",
-  raise: "📈",
-  expense: "🎯",
-  income: "💰",
-};
-
-export function Timeline({
-  events,
-  age,
-  onShift,
-  onRemove,
-  start,
-}: {
-  events: LifeEvent[];
-  age: number;
-  onShift: (id: string, m: number) => void;
-  onRemove: (id: string) => void;
-  /** Month 0 of the profile (a dataset's as-of date); default today. */
-  start?: Date;
-}) {
-  const { t, fmt, tm, mounted } = useI18n();
-  const sorted = [...events].sort((a, b) => a.month - b.month);
-  return (
-    <div>
-      <h3 className="label mb-2">{t("timeline.title")}</h3>
-      {sorted.length === 0 && <p className="text-sm text-ink-2">{t("timeline.empty")}</p>}
-      <ul className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {sorted.map((e) => (
-          <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
-            <span>{EVENT_ICON[e.type]}</span>
-            <div className="min-w-0 flex-1 basis-32">
-              <div className="font-medium break-words">{tm(e.labelMsg ?? e.label)}</div>
-              <div className="num text-xs text-ink-2">
-                {(mounted || start) && t("timeline.when", { date: fmt.monthYear(e.month, start), age: age + Math.floor(e.month / 12) })}
-                {e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
-                {e.durationMonths && e.type === "jobloss" ? t("timeline.duration", { months: e.durationMonths }) : ""}
-              </div>
-            </div>
-            <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
-              <IconBtn onClick={() => onShift(e.id, -6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })}>{t("timeline.earlierShort")}</IconBtn>
-              <IconBtn onClick={() => onShift(e.id, 6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })}>{t("timeline.laterShort")}</IconBtn>
-              <IconBtn onClick={() => onRemove(e.id)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })}>✕</IconBtn>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function IconBtn({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button {...p} className="num rounded-md px-1.5 py-0.5 text-[11px] text-ink-2 transition hover:bg-surface hover:text-ink">
-      {children}
-    </button>
-  );
-}
+import { CardHeader, Disclosure, ON_TRACK } from "./ui";
 
 /**
  * Bank test for the planned home. `result` must be computed from the simulator's median future at the purchase
@@ -257,8 +194,10 @@ export function RecipesCard({
   onApply: (r: Recipe) => void;
 }) {
   const { t, fmt, tm, rich } = useI18n();
-  const onTrack = baseProb >= 0.8 && recipes.length === 0;
-  const anyFix = recipes.some((r) => r.reaches);
+  // A lever that leaves the rounded odds where they are is not a next step: it is left out.
+  const useful = recipes.filter((r) => r.reaches || Math.round(r.newProb * 100) > Math.round(baseProb * 100));
+  const onTrack = baseProb >= ON_TRACK && useful.length === 0;
+  const anyFix = useful.some((r) => r.reaches);
   return (
     <section className="card p-5 sm:p-6">
       <CardHeader
@@ -270,10 +209,10 @@ export function RecipesCard({
       ) : (
         <>
           <ul className={`divide-y divide-line ${loading ? "opacity-60" : ""}`}>
-            {recipes.map((r) => (
+            {useful.map((r) => (
               <li key={r.id} className="flex items-center gap-4 py-3 first:pt-0">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{tm(r.title)}</div>
+                  <div className="text-sm font-medium">{tm(recipeTitle(r))}</div>
                   <div className="mt-0.5 text-xs text-ink-2">{tm(r.detail)}</div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -288,7 +227,7 @@ export function RecipesCard({
                   <button
                     onClick={() => onApply(r)}
                     disabled={loading}
-                    aria-label={t("recipes.applyAria", { title: r.title })}
+                    aria-label={t("recipes.applyAria", { title: recipeTitle(r) })}
                     className="rounded-full border border-line px-3 py-1 text-xs font-medium text-s1 transition enabled:hover:border-s1 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {t("recipes.apply")}
@@ -309,36 +248,7 @@ export function RecipesCard({
   );
 }
 
-/** "Your private banker": one button, then the narration (cloud text in the current locale, else the local template). */
-export function BankerCard({
-  text,
-  loading,
-  started,
-  onExplain,
-}: {
-  text?: string;
-  loading: boolean;
-  started: boolean;
-  onExplain: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <section className="card p-5 sm:p-6">
-      <CardHeader
-        title={t("banker.title")}
-        aside={
-          <button
-            onClick={onExplain}
-            disabled={loading}
-            className="rounded-full border border-line px-3 py-1 text-xs font-medium transition hover:border-ink-3 disabled:opacity-50"
-          >
-            {t(started ? "banker.refresh" : "banker.explain")}
-          </button>
-        }
-      />
-      {loading && <p className="pulse-soft text-sm text-ink-2">{t("banker.loading")}</p>}
-      {!loading && text !== undefined && <p className="font-serif text-xl leading-snug">{t("common.quote", { text })}</p>}
-      {!started && <p className="text-sm text-ink-2">{t("banker.hint")}</p>}
-    </section>
-  );
+/** "Invest CHF 0k idle cash + max out 3a" has nothing idle to invest: what is left of that lever is the 3a part. */
+function recipeTitle(r: Recipe): Recipe["title"] {
+  return r.id === "invest" && r.title.params?.k === 0 ? { key: "ux.recipeMax3a" } : r.title;
 }

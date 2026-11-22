@@ -2,9 +2,18 @@
 
 # Doppel
 
-A Swiss personal-finance twin you feed with photos. Built at LauzHack 2026 for the UBS "AI Financial Twin" track and the AXA "Frugal use of Multimodal AI" track.
+A Swiss personal-finance twin you feed with a bank statement. Built at LauzHack 2026 for the UBS "AI Financial Twin" track and the AXA "Frugal use of Multimodal AI" track.
 
-You can upload a photo of a shop receipt, review the total and items, and add the purchase as one transaction. Doppel also scans QR-bills, payslips, property listings and handwritten notes. Confirmed scans feed a simulation of your finances with 1,000 Monte Carlo paths run in the browser.
+The dashboard, top to bottom:
+
+- **Headline and economy.** The odds of your goal, always next to the economic scenario they were simulated in (baseline, high inflation, recession, low rates, climate transition). The dated, sourced assumptions are one click away.
+- **Chart.** Net worth over the years to the goal (or to the end age): the middle future, the band 8 of 10 futures land in, the goal, the dated markers of your decisions, and your plan before the changes as a dotted line. Three lines under the chart read it in plain words, including the month of the lowest cash point.
+- **Bank statement.** Upload a CSV, camt.053/054 or MT940 file (or a broker / 3a export). "What the twin learned" shows income, fixed costs with their recurring payees, variable spending, the saving and investing rate, and the life facts the statement implies (a car, a child, rent, a loan), each with its evidence and a confirm / reject control. Receipts, QR-bills, payslips, listings and notes are under "Other documents".
+- **Decisions and what happens next.** "Add a decision" opens a picker (child, car or GA, home, partner or marriage, move, education, workload or sabbatical, self-employment, job loss, inheritance, large purchase). Each form shows the engine's sourced defaults; inputs without a source are required. The outlook then shows goal odds, monthly surplus, lowest cash point and cash-crunch risk before and after, and each decision's own cost lines. The what-if bar feeds the same list.
+- **Ask your twin.** Shows whether an assistant is connected. A question is answered only from the engine's figures; without an assistant the summary is a local template.
+- **Token badge.** Opens the Inspector: calls, tokens, bytes sent, and the saving against a naive baseline (labelled estimated unless measured live).
+
+All of it runs on a simulation with 1,000 Monte Carlo paths in the browser.
 
 Two rules shaped the code:
 
@@ -25,13 +34,49 @@ Start everything for the demo with `scripts/demo-with-tkt.ps1` (Windows) or `scr
 
 ```bash
 npm ci
-cp .env.example .env.local   # optional: OPENROUTER_API_KEY
+cp .env.example .env.local   # optional: a model endpoint (see below)
 npm run dev                  # http://localhost:3000
 ```
 
-Without a key, QR-bills, local OCR, regex extraction, the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
+**Connecting a model is optional and takes one of two forms** (all in `.env.local`, never committed):
+
+| | Set | Notes |
+|---|---|---|
+| OpenRouter (default) | `OPENROUTER_API_KEY` | Text, vision and the opt-in GPT-4o comparison work with the default models. |
+| Any OpenAI-compatible endpoint | `DOPPEL_LLM_BASE_URL`, `DOPPEL_TEXT_MODEL`, optionally `DOPPEL_LLM_API_KEY` and `DOPPEL_VISION_MODEL` | Groq, LM Studio, vLLM, or a local Ollama: `DOPPEL_LLM_BASE_URL=http://localhost:11434/v1` and `DOPPEL_TEXT_MODEL=llama3.2`, no key. A task family without a model stays offline. |
+
+`GET /api/twin` (or `twinStatus()` in `src/lib/llm.ts`) tells whether an assistant is connected: `{ configured, provider, textModel, visionModel, naiveModel }`, host and model names only. Providers without JSON mode or without usage figures work too: the gateway retries once without `response_format`, and token counts a provider does not report are estimated, labelled as estimates and kept out of the measured savings.
+
+The gateway is rate-limited (12 requests a minute per client, 60 in total) and stops spending for the day at `DOPPEL_DAILY_BUDGET_USD` (default 1) or `DOPPEL_DAILY_TOKEN_BUDGET` (default 2'000'000), whichever comes first. Behind your own reverse proxy set `DOPPEL_TRUSTED_PROXIES=1`, otherwise the client address cannot be trusted and all clients share the total. The counters live in the server process, so put a spending limit on the key itself as well. `.env.example` lists every variable.
+
+Without a model, QR-bills, local OCR, regex extraction, statement import (bank CSV, camt.053/054, MT940, broker and 3a files), the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
 
 The OpenRouter defaults are Qwen3 30B A3B Instruct 2507 for text and Qwen3-VL 30B A3B Instruct for vision. To use the previous Gemini setup, set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` in `.env.local` and restart the app. The opt-in naive comparison defaults to `openai/gpt-4o`. See the [model selection and dated rates](docs/DECISIONS.md#16-open-weight-defaults-for-text-and-vision).
+
+## Mobile app
+
+`mobile/` is an Expo app for Android that runs in Expo Go: a native shell (server address by QR code or by hand, Dashboard / Play bar, loading and failure states in four languages) around this web app in a WebView. It has no finance code of its own, so the phone always shows the current twin.
+
+```bash
+npm run build && npm start         # Doppel on http://localhost:3000 and on the computer's LAN address
+cd mobile && npm install
+npx expo start                     # scan the QR code with Expo Go (phone and computer on the same Wi-Fi)
+npm run qr                         # second terminal: the server address as a QR code for the app's scanner
+```
+
+It has not been run on a phone yet. [mobile/README.md](mobile/README.md) has the full steps, including networks that isolate clients; [docs/MOBILE.md](docs/MOBILE.md) explains the choice, compares it with a PWA, an EAS build and `pocket/`, and lists what is not verified.
+
+## Desktop app
+
+Doppel also runs as a desktop app that starts with a double-click, with no terminal and no Node installed. It is an Electron shell (`desktop/`) around the same web app: it starts the production server inside the app on a local port, opens one window on it, and keeps your data between launches. A key is optional and set under **Assistant settings…** in the app's menu; none is bundled.
+
+```bash
+npm ci && npm run desktop:install
+npm run desktop:dev      # run it unpackaged
+npm run desktop:build    # macOS: desktop/dist/mac/Doppel.app and .dmg files (x64, arm64)
+```
+
+The builds are unsigned, so a downloaded copy needs one extra step on first launch. That step, the Windows installer, where the data lives and what was and was not verified are in [docs/DESKTOP.md](docs/DESKTOP.md).
 
 ## How it works
 
@@ -68,7 +113,7 @@ The separate live vision report used Gemini 2.5 Flash-Lite on seven floor plans 
 
 The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, borderline) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 
-The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from payday spending, and the CHF 940k listing failing the bank test at 66.0%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 24.7k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 458,214 − CHF 433,481 = CHF 24,733`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
+The finance numbers used in the pitch (Meriç 58.7% vs 75.3%, −16.8 pp from payday spending, and the CHF 940k listing failing the bank test at 72.6%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 33.0k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 453,994 − CHF 420,992`, CHF 33,001 before rounding, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
 ## Scripts
 
@@ -89,7 +134,7 @@ All people, companies and documents in the demo are fictional.
 Contributors and coding agents: start with [AGENTS.md](AGENTS.md) and [docs/WORKPLAN.md](docs/WORKPLAN.md).
 Doppel Play (`/play`) turns the same twin into a chess-review life game: Life plays White, you play Black, and a Monte Carlo tree search over possible futures reviews every move. See [docs/PLAY.md](docs/PLAY.md).
 
-More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
+More: [docs/ENGINE_API.md](docs/ENGINE_API.md) (life decisions, economic scenarios, outlook), [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
 
 Contributor demo guides: [Judging and evidence](docs/JUDGING.md), [Hand control](docs/TKT.md).
 

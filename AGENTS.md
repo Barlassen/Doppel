@@ -59,12 +59,20 @@ src/app/
   play/                         the /play life game
 src/components/
   DoppelApp.tsx                 dashboard state machine: accounts, scenario, mutate() + impact, simulations,
-                                Plan A pin, snaps, ledger, solver
+                                outlook, Plan A pin, snaps, ledger, solver, assistant status and ask
   Hero, Cards, ConeChart, RetirementCard, PlanCompare, InvestControls, CommandBar
-  SnapPanel, ReceiptDetails, VisionReview   document capture and review
+  Decisions                     "Add a decision": picker, one short form per decision kind (sourced defaults,
+                                required inputs from the life model), the list of the plan's events
+  OutlookCard                   "What happens next": outlook() as before -> after figures and itemised costs
+  EconomyControl                economic scenario picker and the dated, sourced assumptions table
+  AskCard                       assistant connected / not connected, ask box, situation summary
+  ImportPanel, Learned, statementMemory   bank statement upload and review (the first data action), "What the
+                                twin learned" (summarizeStatement + confirm / reject of inferred facts), and
+                                what the browser remembers about statements (income rows, fact answers)
+  SnapPanel, ReceiptDetails, VisionReview   document photos, collapsed under "Other documents"
   Inspector                     token ledger, "why vision was needed", naive GPT-4o cost comparison
-  AccountSwitcher, AccountWizard, ImportPanel, TransactionsPanel   accounts and "data in"
-  ui.tsx                        CardHeader, Section and other layout primitives
+  AccountSwitcher, AccountWizard, TransactionsPanel   accounts, new-account wizard (statement first), bookings
+  ui.tsx, cantons.ts            CardHeader, Section, Disclosure and shared constants
 src/lib/
   finance/                      the engine: types, monteCarlo, scenario, swissRules, pension, goalSolver,
                                 behavioralEngine, investBehavior (behaviour derived from trades)
@@ -87,6 +95,10 @@ tkt/                            Hand control (Python, MediaPipe): a camera as a 
                                 hand. Its own rules are in tkt/AGENTS.md. See docs/TKT.md.
 pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android + Desktop) with an engine
                                 parity test against the TS engine. Owned by a separate workstream.
+mobile/                         Doppel for Expo Go (Android): a native shell around this web app in a WebView.
+                                No finance code. Its own rules are in mobile/AGENTS.md. See docs/MOBILE.md.
+desktop/                        Doppel as a desktop app: an Electron shell that runs the production server inside the
+                                app and opens one window on it. Changes nothing under src/. See docs/DESKTOP.md.
 ```
 
 Further reading:
@@ -98,6 +110,7 @@ Further reading:
 - [docs/I18N.md](docs/I18N.md): translation rules.
 - [docs/BENCHMARK.md](docs/BENCHMARK.md) and [docs/VISION_BENCHMARK.md](docs/VISION_BENCHMARK.md): measured results.
 - [docs/PLAY.md](docs/PLAY.md): the life game.
+- [docs/MOBILE.md](docs/MOBILE.md): the Expo Go app, the options compared, and what was not verified on a device.
 - [docs/REAL_WORLD_FACTORS.md](docs/REAL_WORLD_FACTORS.md): sourced Swiss factors to add next.
 - [docs/WORKPLAN.md](docs/WORKPLAN.md): what is in flight and the merge order.
 - `docs/tasks/`: self-contained task briefs.
@@ -129,6 +142,9 @@ npm run dev                    # http://localhost:3000
 | i18n (strict) | `npx tsx scripts/i18n-check.ts` |
 | Engine numbers | `npx tsx scripts/engine-check.ts`. Barlas / Meriç / Oktay numbers must stay unchanged unless you change the engine on purpose. |
 | Imports round trip | `npx tsx scripts/import-check.ts` |
+| Engine regressions | `npm run engine:regression`. One check per fixed engine or parser bug. |
+| Model gateway | `npm run api:check`. Guards, caps, provider layer and snap heuristics against a stubbed model. |
+| Life game | `npm run play:check`. Includes parity between the game simulator and the dashboard engine. |
 | Vision (offline) | `npx tsx scripts/vision-benchmark.ts` |
 | Vision (live) | `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`. Uses the key; costs well under a cent. |
 | Browser smoke | `DOPPEL_SMOKE_PORT=<your port> npm run smoke:browser`. **Run `npm run build` first**; a stale `.next` build fails unrelated steps. |

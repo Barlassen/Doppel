@@ -25,6 +25,8 @@ export function paramValue({ t, fmt }: T, p: CardParam): string {
       return t("play.unit.months", { count: p.value });
     case "years":
       return t("play.unit.years", { count: p.value });
+    case "daysWeek":
+      return t("play.unit.daysWeek", { count: p.value });
     case "age":
       return t("play.position.age", { age: p.value });
   }
@@ -51,6 +53,9 @@ export function explain(i: T, a: Analysis, r: MoveReview): string[] {
   const move = cardTitle(i, r.card);
   if (mine.lifeChoice) {
     out.push(t("play.explain.lifeChoice", { best: cardTitle(i, best.card), loss: r.loss }));
+  } else if (r.label === "lifeChoice") {
+    // An undeclared life decision that costs no points: shown with its numbers, never named the best move.
+    out.push(t("play.explain.lifeDecision", { best: cardTitle(i, best.card), gain: Math.max(0, (mine.e - best.e) * 100) }));
   } else if (r.card === best.card) {
     out.push(t("play.explain.best", { move, goal: mine.parts.pGoal, crunch: mine.parts.pCrunch, age: a.horizonAge, median: mine.parts.median }));
   } else {

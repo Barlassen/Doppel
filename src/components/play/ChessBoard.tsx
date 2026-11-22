@@ -6,7 +6,7 @@
  */
 import { useMemo, useState } from "react";
 import type { Color, PieceSymbol, Square } from "chess.js";
-import { type BoardLine, type BoardPly, boardSquares, kingSquare, pieceForCard, piecesForCards, previewMove } from "@/lib/game/board";
+import { type BoardLine, type BoardPly, type Offer, boardSquares, kingSquare, offersFor, pieceForCard } from "@/lib/game/board";
 import { LABEL_GLYPH, type MoveLabel } from "@/lib/game/evaluate";
 import type { GameState } from "@/lib/game/state";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -81,12 +81,15 @@ export interface ChessBoardProps {
   hand: string[];
   seed: number;
   onPlay: (card: string) => void;
+  /** A decision hovered or focused in the card list: its piece and target square are shown on the board. */
+  preview?: string | null;
 }
 
-export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, onPlay }: ChessBoardProps) {
+export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, onPlay, preview = null }: ChessBoardProps) {
   const i = useI18n();
   const { t } = i;
   const [selected, setSelected] = useState<Square | null>(null);
+  const [armed, setArmed] = useState<string | null>(null);
 
   const reviewing = view !== null;
   const turn = reviewing ? line.turns[view] : line.turns[line.turns.length - 1];
@@ -110,24 +113,30 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
 
   const squares = useMemo(() => (fen ? boardSquares(fen) : []), [fen]);
   const cards = useMemo(() => hand.filter((c) => c !== "hold"), [hand]);
-  const holdAllowed = hand.includes("hold");
+  // Every decision of the hand as the chess move it will be played as: it sits on the piece that moves.
+  const offers = useMemo(() => (reviewing || over ? [] : offersFor(line, line.turns.length - 1, hand, seed, live.business?.kind)), [reviewing, over, line, hand, seed, live.business?.kind]);
   const playable = useMemo(() => {
-    if (reviewing || over || !fen) return new Map<Square, string[]>();
-    const map = piecesForCards(fen, cards);
-    const king = kingSquare(fen, "w");
-    if (holdAllowed && king) map.set(king, [...(map.get(king) ?? []), "hold"]);
+    const map = new Map<Square, Offer[]>();
+    for (const o of offers) map.set(o.from, [...(map.get(o.from) ?? []), o]);
     return map;
-  }, [reviewing, over, fen, cards, holdAllowed]);
+  }, [offers]);
   const sel = selected && playable.has(selected) ? selected : null;
   const selType: PieceSymbol = (sel && squares.flat().find((c) => c.square === sel)?.piece?.type) || "p";
+  // The move shown before it is played: the decision under the pointer or the focus, else the selected piece's.
+  const shownOffers: Offer[] = (() => {
+    const one = offers.find((o) => o.card === (armed ?? preview));
+    if (one) return [one];
+    return sel ? playable.get(sel) ?? [] : [];
+  })();
+  const targets = new Set(shownOffers.map((o) => o.to));
 
   const best = useMemo(() => {
-    if (!reviewing || !info?.review || !turn?.fen) return null;
+    if (!reviewing || !info?.review || !turn?.white) return null;
     if (info.review.best === info.move.card) return null;
-    const p = previewMove(turn.fen, info.review.best, "best", seed);
-    // Two decisions can land on the same chess move (a blocked piece freed by the same pawn): no arrow then.
-    return p ? { ...p, sameSquares: !!turn.white && p.from === turn.white.from && p.to === turn.white.to } : null;
-  }, [reviewing, info, turn, seed]);
+    // The move the engine's best decision would have been in that turn (same rules as the played one).
+    const p = offersFor(line, view, [info.review.best], seed)[0];
+    return p ? { ...p, sameSquares: p.from === turn.white.from && p.to === turn.white.to } : null;
+  }, [reviewing, info, turn, seed, line, view]);
 
   const finCheck = !reviewing && live.status === "playing" && !!live.check;
   const boardCheck = !reviewing && lastPly?.side === "b" && lastPly.check;
@@ -140,11 +149,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
   function plyNotes(ply: BoardPly) {
     const notes: { text: string; tone: "bad" | "good" | "warn" }[] = [];
     if (ply.captured) notes.push(ply.side === "w" ? { text: t("board.took", { piece: pieceName(ply.captured), domain: domain(ply.captured) }), tone: "good" } : { text: t("board.lost", { piece: pieceName(ply.captured), domain: domain(ply.captured) }), tone: "bad" });
-    if (ply.side === "w" && ply.wanted) notes.push({ text: t("board.substituted", { wanted: pieceName(ply.wanted), piece: pieceName(ply.piece) }), tone: "warn" });
-    if (ply.side === "w" && ply.hangs > 0) notes.push({ text: t("board.hangs"), tone: "warn" });
     if (ply.promotion) notes.push({ text: t("biz.promoted", { piece: pieceName(ply.promotion), asset: t(ply.promotion === "q" ? "biz.factory" : ply.promotion === "r" ? "biz.shop" : "biz.venture") }), tone: "good" });
-    if (ply.side === "w" && !ply.promotion && (ply.card === "openShop" || ply.card === "buildFactory"))
-      notes.push({ text: t(ply.card === "openShop" ? "biz.pendingShop" : "biz.pendingFactory"), tone: "warn" });
     return notes;
   }
 
@@ -166,8 +171,8 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
           </span>
           <Tray pieces={taken.b} color="w" lead={material < 0 ? -material : 0} />
         </div>
-        <div className="flex gap-1.5">
-          <div className="relative w-3.5 shrink-0 overflow-hidden rounded border border-line bg-[#2b2a27]" role="img" aria-label={t("board.evalLabel")}>
+        <div className="-mx-3.5 flex gap-1.5 sm:mx-0">
+          <div className="relative hidden w-3.5 shrink-0 sm:block overflow-hidden rounded border border-line bg-[#2b2a27]" role="img" aria-label={t("board.evalLabel")}>
             <div className="absolute inset-x-0 bottom-0 bg-[#f3f1ea] transition-[height] duration-300" style={{ height: `${pct}%` }} />
           </div>
           <div className="relative grid flex-1 grid-cols-8 grid-rows-8 overflow-hidden rounded-md border border-line select-none" style={{ aspectRatio: "1", containerType: "inline-size" }} role="grid" aria-label={t("board.boardLabel")} data-testid="play-board">
@@ -191,6 +196,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
                 >
                   {last && <span aria-hidden="true" className="absolute inset-0 bg-[#f1c84b]/45" />}
                   {isSel && <span aria-hidden="true" className="absolute inset-0 bg-s1/35" />}
+                  {targets.has(square) && <span aria-hidden="true" data-testid="play-board-target" data-square={square} className={`absolute z-[2] rounded-full ${piece ? "inset-[5%] border-[3px] border-s1" : "inset-[34%] bg-s1/80"}`} />}
                   {isKingInCheck && <span aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle,rgba(220,40,30,.85)_0,transparent_70%)]" />}
                   {isKingWarned && <span aria-hidden="true" className="absolute inset-[6%] rounded-full border-[3px] border-dashed border-warn" />}
                   {f === 0 && <span aria-hidden="true" className={`absolute top-0.5 left-0.5 text-[9px] font-semibold ${light ? "text-[#a98d6b]" : "text-[#ebe4d3]"}`}>{r}</span>}
@@ -199,7 +205,12 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
                     (canSelect ? (
                       <button
                         type="button"
-                        onClick={() => setSelected(isSel ? null : square)}
+                        data-testid="play-board-piece"
+                        data-square={square}
+                        onClick={() => {
+                          setArmed(null);
+                          setSelected(isSel ? null : square);
+                        }}
                         aria-label={t("board.selectPiece", { piece: pieceName(piece.type), domain: domain(piece.type) })}
                         aria-pressed={isSel}
                         className={`relative z-[1] grid h-full w-full place-items-center rounded-full ring-2 ring-inset ring-s1/70 hover:bg-s1/15 ${piece.color === "w" ? "piece-w" : "piece-b"} chess-glyph`}
@@ -221,6 +232,9 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
             })}
             <svg aria-hidden="true" className="pointer-events-none absolute inset-0 z-[4] h-full w-full" viewBox="0 0 8 8" preserveAspectRatio="none">
               {best && !best.sameSquares && <Arrow from={best.from} to={best.to} color="var(--good)" />}
+              {shownOffers.map((o) => (
+                <Arrow key={o.card} from={o.from} to={o.to} color="var(--series-1)" />
+              ))}
               {reviewing && label && lastPly && best && !best.sameSquares && <Arrow from={lastPly.from} to={lastPly.to} color={LABEL_STROKE[label]} />}
             </svg>
             {resultKey && (
@@ -248,32 +262,27 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
               {boardCheck ? t("board.finCheck") : t("threat.board")}
             </p>
           )}
-          {shownPlies.map((ply) => {
-            const isWhite = ply.side === "w";
-            const title = ply.card ? cardTitle(i, ply.card) : t("board.quiet");
-            return (
-              <div key={ply.side + ply.san} className="rounded-lg bg-surface-2 px-3 py-2">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="num font-semibold text-ink">{isWhite ? "" : "… "}{ply.san}</span>
-                  {isWhite && plyLabel && <span className={`num rounded-full px-1.5 text-[11px] font-bold text-white ${LABEL_BG[plyLabel]}`}>{LABEL_GLYPH[plyLabel]}</span>}
-                  <span className="text-ink">{isWhite ? t("board.yourMove", { card: title }) : t("board.lifeMove", { card: title })}</span>
-                </div>
-                <div className="text-[11px] text-ink-3">
-                  {GLYPH[ply.piece]} {pieceName(ply.piece)} · {domain(ply.piece)}
-                </div>
-                {plyNotes(ply).map((n) => (
-                  <p key={n.text} className={`mt-1 text-xs ${n.tone === "bad" ? "text-bad" : n.tone === "good" ? "text-good" : "text-warn"}`}>
-                    {n.text}
-                  </p>
-                ))}
-              </div>
-            );
-          })}
-          {!reviewing && lastInfo?.review && (
-            <p className="text-xs text-ink-2" data-testid="play-board-verdict">
-              {lastInfo.review.loss > 0.005 ? t("play.review.loss", { loss: lastInfo.review.loss }) : t("play.review.noLoss")}
-              {lastInfo.review.best !== lastInfo.move.card && <> · {t("play.review.bestIs", { move: cardTitle(i, lastInfo.review.best) })}</>}{" "}
-              <a href="#play-review" className="font-medium text-s1 underline-offset-2 hover:underline lg:hidden">{t("board.details")}</a>
+          {shownPlies.length > 0 && (
+            <p className="text-xs text-ink-2" data-testid="play-board-last">
+              {shownPlies.map((ply) => {
+                const isWhite = ply.side === "w";
+                return (
+                  <span key={ply.side} data-side={ply.side} data-san={ply.san} data-from={ply.from} data-to={ply.to} className="mr-2 inline-block">
+                    <span className="num font-semibold text-ink">{isWhite ? "" : "… "}{ply.san}</span>{" "}
+                    {isWhite && plyLabel && <span className={`num rounded-full px-1.5 text-[11px] font-bold text-white ${LABEL_BG[plyLabel]}`}>{LABEL_GLYPH[plyLabel]}</span>}{" "}
+                    {ply.card ? cardTitle(i, ply.card) : t("board.quiet")}
+                    {plyNotes(ply).map((n) => (
+                      <span key={n.text} className={`ml-1 ${n.tone === "bad" ? "text-bad" : n.tone === "good" ? "text-good" : "text-warn"}`}>· {n.text}</span>
+                    ))}
+                  </span>
+                );
+              })}
+              {!reviewing && lastInfo?.review && lastInfo.review.best !== lastInfo.move.card && (
+                <span data-testid="play-board-verdict" className="inline-block">
+                  {t("play.review.bestIs", { move: cardTitle(i, lastInfo.review.best) })}{" "}
+                  <a href="#play-review" className="font-medium text-s1 underline-offset-2 hover:underline lg:hidden">{t("board.details")}</a>
+                </span>
+              )}
             </p>
           )}
           {best && info?.review && (
@@ -298,27 +307,33 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
                   </button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {playable.get(sel)!.map((card) => (
+                  {playable.get(sel)!.map(({ card, from, to, san }) => (
                     <button
                       key={card}
                       type="button"
                       data-testid="play-board-card"
                       data-card={card}
+                      data-from={from}
+                      data-to={to}
+                      onMouseEnter={() => setArmed(card)}
+                      onMouseLeave={() => setArmed(null)}
+                      onFocus={() => setArmed(card)}
+                      onBlur={() => setArmed(null)}
                       onClick={() => {
                         setSelected(null);
+                        setArmed(null);
                         onPlay(card);
                       }}
                       className="flex min-h-11 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:bg-surface-2"
                     >
                       <span aria-hidden="true" className="num grid h-6 w-6 shrink-0 place-items-center rounded-md bg-ink text-xs font-semibold text-bg">{card === "hold" ? "H" : cards.indexOf(card) + 1}</span>
-                      <span className="font-serif leading-tight text-ink">{cardTitle(i, card)}</span>
+                      <span className="min-w-0 flex-1 font-serif leading-tight text-ink">{cardTitle(i, card)}</span>
+                      <span className="num shrink-0 text-xs text-ink-3">{san}</span>
                     </button>
                   ))}
                 </div>
               </div>
-            ) : (
-              playable.size > 0 && <p className="text-xs text-ink-3">{t("board.pick")}</p>
-            )}
+            ) : null}
           </div>
         )}
 

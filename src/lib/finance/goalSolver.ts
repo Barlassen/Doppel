@@ -2,7 +2,8 @@ import { simulate } from "./monteCarlo";
 import { HEADLINE } from "./scenario";
 import { debtSchedule, totalDebt } from "./debt";
 import { BUFFER_MONTHS, PILLAR_3A_MAX } from "./swissRules";
-import type { SimInput, SimResult } from "./types";
+import { carVsTransit } from "./life";
+import type { LifeEvent, Scenario, SimInput, SimResult } from "./types";
 import type { Msg } from "@/lib/i18n/types";
 
 export interface Recipe {
@@ -22,11 +23,37 @@ export interface Recipe {
     | { kind: "debtExtra"; value: number };
 }
 
+/**
+ * The mobility lever: every car of the plan (bought or leased) is replaced by a GA travelcard from the same month.
+ * Kept apart from `recipes` (its patch replaces events, which the `Recipe.apply` kinds cannot express); apply it
+ * with `applyCarToGa()`.
+ */
+export interface CarToGaLever {
+  id: "car_to_ga";
+  title: Msg;
+  detail: Msg;
+  /** Goal odds with the lever — scored exactly like the headline (seed 42, 1,000 paths). */
+  newProb: number;
+  reaches: boolean;
+  /** Monthly cost of the car(s) and of the GA(s) that replace them, today's CHF (TCS / SBB figures or the user's). */
+  carMonthly: number;
+  gaMonthly: number;
+  /** The scenario's events with the cars replaced. */
+  events: LifeEvent[];
+}
+
 export interface SolverResult {
   /** Headline odds of the scenario the solver started from (identical to the hero number). */
   baseProb: number;
   recipes: Recipe[];
+  /** Only when the plan has a car and replacing it by a GA raises the odds. */
+  carToGa?: CarToGaLever;
   ms: number;
+}
+
+/** The scenario with a `CarToGaLever` applied. Pure. */
+export function applyCarToGa(s: Scenario, lever: CarToGaLever): Scenario {
+  return { ...s, events: lever.events };
 }
 
 export const TARGET = 0.8;
@@ -47,7 +74,8 @@ export function solveGoal(base: SimInput, opts: { spendTip?: Msg } = {}): Solver
   const baseRun = score({});
   const baseProb = baseRun.successProb;
   const recipes: Recipe[] = [];
-  const done = () => ({ baseProb, recipes, ms: (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0 });
+  let carToGa: CarToGaLever | undefined;
+  const done = (): SolverResult => ({ baseProb, recipes, ...(carToGa ? { carToGa } : {}), ms: (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0 });
   if (baseProb >= TARGET) return done();
 
   const ed0 = base.expenseDelta ?? 0;
@@ -188,6 +216,42 @@ export function solveGoal(base: SimInput, opts: { spendTip?: Msg } = {}): Solver
         }
       }
       break;
+    }
+  }
+
+  // 4) Mobility lever: a GA travelcard instead of the plan's car(s).
+  const cars = base.events.filter((e) => e.decision?.kind === "car" && e.decision.mode !== "ga");
+  if (cars.length) {
+    let carMonthly = 0;
+    let gaMonthly = 0;
+    const events = base.events.map((e): LifeEvent => {
+      if (e.decision?.kind !== "car" || e.decision.mode === "ga") return e;
+      const cost = carVsTransit(e.decision);
+      carMonthly += cost.carMonthly;
+      gaMonthly += cost.gaMonthly;
+      const { replacesMonthly, durationMonths } = e.decision;
+      return {
+        ...e,
+        type: "expense",
+        amount: 0,
+        label: "GA travelcard",
+        labelMsg: { key: "life.event.ga" },
+        source: "solver",
+        decision: { kind: "car", mode: "ga", ...(replacesMonthly !== undefined ? { replacesMonthly } : {}), ...(durationMonths !== undefined ? { durationMonths } : {}) },
+      };
+    });
+    const prob = score({ events }).successProb;
+    if (prob > baseProb) {
+      carToGa = {
+        id: "car_to_ga",
+        title: { key: "life.recipe.carToGaTitle" },
+        detail: { key: "life.recipe.carToGaDetail", params: { car: Math.round(carMonthly), ga: Math.round(gaMonthly), saving: Math.round(carMonthly - gaMonthly) } },
+        newProb: prob,
+        reaches: prob >= TARGET,
+        carMonthly,
+        gaMonthly,
+        events,
+      };
     }
   }
 

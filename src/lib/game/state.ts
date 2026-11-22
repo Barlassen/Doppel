@@ -22,11 +22,13 @@ import {
   coordinatedSalary,
   effectiveTaxRate,
 } from "@/lib/finance/pension";
-import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "@/lib/finance/canton";
+import { HEALTH_EXCESS_GROWTH, cantonMarginalRate } from "@/lib/finance/canton";
+import { healthPremiumOf } from "@/lib/finance/investBehavior";
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
-import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX } from "@/lib/finance/swissRules";
+import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX, PILLAR_3A_MAX_NO_PENSION_FUND, PILLAR_3A_NO_PENSION_FUND_SHARE } from "@/lib/finance/swissRules";
 import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
-import type { IncomePhase, SimInput } from "./sim";
+import type { IncomePhase, PlayConventions, SimInput } from "./sim";
+import { DEFAULT_LOAN_TERM_MONTHS, annuityPayment } from "@/lib/finance/debt";
 import type { Text } from "@/lib/i18n/types";
 import type { AlexiaPath } from "@/lib/ubs";
 import { type MarketYear, type Regime, simAssumptions, uniform } from "./regime";
@@ -102,6 +104,22 @@ export interface Home {
   amortMonthly: number;
 }
 
+/**
+ * The cash flows of a life decision (a child, a car) as the engine's life-cost model gives them (`compileLife`,
+ * src/lib/finance/life.ts), fixed when the card is played. Amounts are in CHF of the game's start, like the goal;
+ * the stepper and the rollouts pay them at the price level of each year.
+ */
+export interface LifeCost {
+  id: string;
+  kind: "child" | "car";
+  /** Turn (year of the game) the decision was taken. */
+  sinceTurn: number;
+  /** Net cost per month in each coming year (index 0 = the coming year): costs − allowances − tax saved. */
+  monthly: number[];
+  /** One-off payments still to come: months from now; negative = cost (a car's replacement), positive = income (its sale). */
+  oneOffs: { month: number; amount: number }[];
+}
+
 /** What the UBS layer contributed to this game, resolved once at the start (the worker never calls the UBS API). */
 export interface UbsContext {
   alexiaPaths: AlexiaPath[] | null;
@@ -116,6 +134,12 @@ export interface GameGoal {
   age: number;
   startNetWorth: number;
   startAge: number;
+  /**
+   * Working-age starts only: how the target splits at the goal age. Once the player retires the pension fund is an
+   * annuity (income, no longer in net worth), so the target becomes the liquid capital that still covers the gap
+   * between spending and pensions until `endAge` at `rate` real (see `targetAt`).
+   */
+  retired?: { liquid: number; endAge: number; rate: number };
 }
 
 export type GameStatus = "playing" | "won" | "mate" | "ended";
@@ -128,6 +152,8 @@ export interface GameState {
   canton: string;
   marginalTaxRate: number;
   retirementAge: number;
+  /** false = no pension fund (self-employed, unemployed: `Profile.bvgInsured`): no pillar 2 credits. Absent = insured. */
+  bvgInsured?: boolean;
   /**
    * Pensions once retired (nominal CHF/month): the pension-fund annuity (fixed) and the AHV pension (from 65,
    * indexed with prices). `formerGross` is the last salary, kept for the simulator's AHV rule. null = still working.
@@ -154,8 +180,10 @@ export interface GameState {
   pillar3a: number;
   home: Home | null;
   debts: Debt[];
-  /** Car: value is not counted in net worth (consumption); running costs are in `expenseDelta`. */
+  /** Car: value is not counted in net worth (consumption); its costs are a `lifeCosts` entry. */
   car: { value: number; monthly: number } | null;
+  /** Running life decisions with the engine's sourced cost model (children, a car). Absent = none. */
+  lifeCosts?: LifeCost[];
 
   /** Regular job (CHF/year gross, CHF/month take-home). */
   gross: number;
@@ -254,14 +282,18 @@ export function incomeAt(s: GameState, month: number): { net: number; gross: num
     return { net: pensionNet(s) + (work?.net ?? 0), gross: 0, bvg: false };
   }
   const ph = phaseAt(s, month);
-  return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg } : { net: s.net, gross: s.gross, bvg: !s.abroad };
+  const insured = s.bvgInsured !== false;
+  return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg && insured } : { net: s.net, gross: s.gross, bvg: !s.abroad && insured };
 }
 
 /** Monthly living costs (incl. rent, excl. ownership and loan costs) at a month from now. */
 export function livingAt(s: GameState, month: number): number {
   const ph = phaseAt(s, month);
-  return Math.max(s.rent, (ph?.expenses ?? s.expenses) + s.expenseDelta);
+  return Math.max(s.rent, (ph?.expenses ?? s.expenses) + s.expenseDelta) + lifeCostMonthly(s, month);
 }
+
+/** Net monthly cost of the running life decisions at a month from now, in this year's CHF. */
+export const lifeCostMonthly = (s: GameState, month = 0) => (s.lifeCosts ?? []).reduce((sum, c) => sum + (c.monthly[Math.floor(month / 12)] ?? 0), 0) * s.priceIndex;
 
 export function ownershipMonthly(h: Home | null): number {
   if (!h) return 0;
@@ -290,6 +322,21 @@ export function glideTarget(g: GameGoal, age: number): number {
   if (age >= g.age || g.age <= g.startAge) return g.target;
   const f = (age - g.startAge) / (g.age - g.startAge);
   return g.startNetWorth + (g.target - g.startNetWorth) * Math.max(0, f);
+}
+
+const annuity = (years: number, rate: number) => (years <= 0 ? 0 : rate > 0 ? (1 - Math.pow(1 + rate, -years)) / rate : years);
+
+/**
+ * The target a position is measured against at `age` (start-year CHF). While working: the glide path to the goal
+ * (liquid capital plus the pension fund). Once a player who started working is retired, the pension fund has become
+ * an annuity and left the net worth, so the target is the liquid capital that still covers the pension gap from
+ * `age` to the end age (more than the goal's liquid part before the goal age, less after it).
+ */
+export function targetAt(s: GameState, age: number): number {
+  const r = s.goal.retired;
+  if (!s.pension || !r) return glideTarget(s.goal, age);
+  const full = annuity(r.endAge - s.goal.age, r.rate);
+  return full > 0 ? (r.liquid * annuity(r.endAge - age, r.rate)) / full : r.liquid;
 }
 
 // ---------------- the ledger ----------------
@@ -366,6 +413,7 @@ export const cloneState = (s: GameState): GameState => ({
   home: s.home ? { ...s.home } : null,
   debts: s.debts.map((d) => ({ ...d })),
   car: s.car ? { ...s.car } : null,
+  ...(s.lifeCosts ? { lifeCosts: s.lifeCosts.map((c) => ({ ...c, monthly: [...c.monthly], oneOffs: c.oneOffs.map((o) => ({ ...o })) })) } : {}),
   phases: s.phases.map((p) => ({ ...p })),
   oneOffs: s.oneOffs.map((o) => ({ ...o })),
   played: { ...s.played },
@@ -394,16 +442,31 @@ export interface StartOptions {
   /** Years to play; default: to the end age (80 for working-age players). */
   lengthTurns?: number;
   ubs: UbsContext;
-  /** Opening debt from the UBS summary (rate unknown there → engine default 5%, 5-year repayment). */
+  /**
+   * Opening debt when the profile lists no `liabilities` (a total without terms → engine default 5%, 5-year
+   * repayment). A profile's own liabilities (UBS data, the dashboard) always win: their rates and payments are used.
+   */
   openingDebt?: number;
   /** "student" makes the first decision the study / work / abroad choice. */
   student?: boolean;
 }
 
 export function initialState(p: Profile, o: StartOptions): GameState {
-  const debts: Debt[] = o.openingDebt && o.openingDebt > 0
-    ? [{ id: "debt-opening", kind: "personal", principal: o.openingDebt, rate: 0.05, monthlyPayment: Math.round(o.openingDebt / 60), startMonth: 0 }]
-    : [];
+  // Loans: the profile's own (principal, rate and contractual payment as in the data and on the dashboard). A loan
+  // without a usable payment gets the annuity over the default term, so it is always repaid.
+  const owed = (p.liabilities ?? []).filter((l) => l.principal > 0);
+  const debts: Debt[] = owed.length
+    ? owed.map((l, i) => ({
+        id: "debt-" + (l.id || i),
+        kind: "personal" as const,
+        principal: l.principal,
+        rate: Math.max(0, l.annualRate || 0),
+        monthlyPayment: l.monthlyPayment > 0 ? l.monthlyPayment : annuityPayment(l.principal, Math.max(0, l.annualRate || 0), l.termMonths ?? DEFAULT_LOAN_TERM_MONTHS),
+        startMonth: 0,
+      }))
+    : o.openingDebt && o.openingDebt > 0
+      ? [{ id: "debt-opening", kind: "personal", principal: o.openingDebt, rate: 0.05, monthlyPayment: Math.round(o.openingDebt / 60), startMonth: 0 }]
+      : [];
   const s: GameState = {
     profileId: p.id,
     name: p.name,
@@ -411,6 +474,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     canton: p.canton,
     marginalTaxRate: p.marginalTaxRate,
     retirementAge: p.retirementAge,
+    ...(p.bvgInsured === false ? { bvgInsured: false } : {}),
     startAge: p.age,
     age: p.age,
     turn: 0,
@@ -431,7 +495,8 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     gross: p.grossIncomeYear,
     net: p.netIncomeMonth,
     expenses: p.expensesMonth,
-    healthPremium: p.healthPremiumMonth ?? defaultHealthPremium(p),
+    // The engine's one rule for the premium: the profile's, else what its statements show, else the canton's mean.
+    healthPremium: healthPremiumOf(p).value,
     rent: p.rentMonth,
     expenseDelta: 0,
     phases: [],
@@ -464,16 +529,31 @@ export function initialState(p: Profile, o: StartOptions): GameState {
  * The existing simulator, started from this position: profile values become "today", phases and loans keep their
  * remaining months, the goal is the glide-path target at the horizon (in this year's CHF).
  */
+/** The stepper's bookkeeping rules, which the game's rollouts follow (see `PlayConventions` in sim.ts). */
+export const PLAY_CONVENTIONS: PlayConventions = { premiumYearly: true, annuityNotCapital: true, crunchWhenRetired: true, priceLevel: 1 };
+
 export function toSimInput(s: GameState, horizonAge: number, regime: Regime, paths: number, seed: number): SimInput {
-  const target = glideTarget(s.goal, horizonAge) * s.priceIndex;
+  const target = targetAt(s, horizonAge) * s.priceIndex;
   const events: LifeEvent[] = s.oneOffs
     .filter((o) => o.month >= 0)
-    .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount }));
+    // The game schedules one-offs in the CHF of their date (`nominal`), as `stepYear` pays them.
+    .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount, nominal: true }));
   // Work in retirement: the simulator pays pensions only once retired, so the extra pay goes in as monthly income.
   if (s.pension) {
     for (const ph of s.phases.filter((p) => p.kind === "retiredWork")) {
-      for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net });
+      for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net, nominal: true });
     }
+  }
+  // Life decisions: the engine's flat "cost per month for a period" events carry the yearly schedule, its one-off
+  // events the replacements and the sale (both in today's CHF, indexed with prices by the simulator).
+  for (const c of s.lifeCosts ?? []) {
+    for (let y = 0; y < c.monthly.length; ) {
+      let n = 1;
+      while (y + n < c.monthly.length && c.monthly[y + n] === c.monthly[y]) n++;
+      if (c.monthly[y] !== 0) events.push({ id: `life-${c.id}-${y}`, type: "child", label: "Life decision", month: y * 12, amount: c.monthly[y] * s.priceIndex, durationMonths: n * 12 });
+      y += n;
+    }
+    c.oneOffs.forEach((o, i) => events.push({ id: `life-${c.id}-one-${i}`, type: o.amount < 0 ? "expense" : "income", label: "Life decision", month: o.month, amount: Math.abs(o.amount) * s.priceIndex }));
   }
   const phases: IncomePhase[] = s.phases.map((p) => ({
     startMonth: p.start,
@@ -508,6 +588,7 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     marginalTaxRate: s.marginalTaxRate,
     riskProfile: s.riskProfile,
     retirementAge: s.pension ? Math.min(s.retirementAge, s.age) : s.retirementAge,
+    ...(s.bvgInsured === false ? { bvgInsured: false } : {}),
     goal: { label: { key: "profile.user.tagline" }, target, age: Math.max(horizonAge, s.age + 1) },
     events,
     transactions: [],
@@ -524,7 +605,8 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     monthlyInvest: s.monthlyInvest,
     assumptions: simAssumptions(regime),
     shocks: regime.shocks,
-    phases,
+    incomePhases: phases,
+    conventions: { ...PLAY_CONVENTIONS, priceLevel: s.priceIndex },
     home: s.home ? { value: s.home.value, mortgage: s.home.mortgage, floor: s.home.floor, rate: s.home.rate } : undefined,
     debts: s.debts.map((d) => ({ principal: d.principal, rate: d.rate, monthlyPayment: d.monthlyPayment, startMonth: d.startMonth })),
   };
@@ -573,6 +655,8 @@ export interface YearResult {
   minCash: number;
   /** A hard constraint broke: cash below the credit line with nothing left to sell. */
   mate: boolean;
+  /** A cash crunch: in some month the account stayed below zero with nothing left to sell (the simulator's rule). */
+  crunch: boolean;
 }
 
 /**
@@ -593,6 +677,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   let soldToCover = 0;
   let minCash = s.cash;
   let mate = false;
+  let crunch = false;
   let p3aYear = 0;
   if (!s.pension && s.age >= s.retirementAge) retireNow(s, L);
   const retired = !!s.pension;
@@ -623,7 +708,8 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
 
     // --- income and spending ---
     const inc = incomeAt(s, m);
-    const income = retired ? inc.net : inc.net * wage;
+    // Income cannot fall below zero (the engine's rule for a pay cut).
+    const income = Math.max(0, retired ? inc.net : inc.net * wage);
     s.cash += income;
     L.add("cash", "income", income);
     const living = livingAt(s, m) * price;
@@ -633,6 +719,17 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
       if (o.month === m) {
         s.cash -= o.amount;
         L.add("cash", "oneOff", -o.amount);
+      }
+    }
+    // One-offs of life decisions (a car's replacement or sale), in start CHF, paid at the price level of the month.
+    for (const c of s.lifeCosts ?? []) {
+      for (const o of c.oneOffs) {
+        if (o.month !== m) continue;
+        const amount = o.amount * s.priceIndex * (price / mInfl);
+        s.cash += amount;
+        L.add("cash", "oneOff", amount);
+        // A replacement puts a new car in the garage: what was paid on top of the trade-in restores its value.
+        if (c.kind === "car" && s.car && amount < 0) s.car = { ...s.car, value: s.car.value - amount };
       }
     }
     let outflow = living;
@@ -678,7 +775,13 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
         surplus -= order;
       }
       if (s.contributes3a && !s.abroad && inc.gross > 0 && surplus > 0) {
-        const c = Math.min(PILLAR_3A_MAX / 12, surplus);
+        // The ceiling of the year in the CHF of its date (the engine's rule): with a pension fund the small one;
+        // without, 20% of earned income after social deductions, up to the large one.
+        const level = s.priceIndex * price;
+        const cap = inc.bvg
+          ? PILLAR_3A_MAX * level
+          : Math.min(PILLAR_3A_MAX_NO_PENSION_FUND * level, PILLAR_3A_NO_PENSION_FUND_SHARE * inc.gross * wage * (1 - SOCIAL_DEDUCTIONS));
+        const c = Math.min(cap / 12, surplus);
         L.move("cash", "pillar3a", "contribution", c);
         s.cash -= c;
         s.pillar3a += c;
@@ -706,6 +809,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
       s.cash += sell;
       soldToCover += sell;
     }
+    if (s.cash < -1) crunch = true;
     if (s.cash < -CREDIT_LINE * price) {
       const need = -s.cash;
       const arrears = s.debts.find((d) => d.id === "debt-arrears");
@@ -746,6 +850,12 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   s.rent *= infl;
   s.expenseDelta *= infl;
   if (s.car) s.car = { value: s.car.value * 0.85, monthly: s.car.monthly * infl };
+  if (s.lifeCosts) {
+    s.lifeCosts = s.lifeCosts
+      .map((c) => ({ ...c, monthly: c.monthly.slice(1), oneOffs: c.oneOffs.map((o) => ({ ...o, month: o.month - 12 })).filter((o) => o.month >= 0) }))
+      .filter((c) => c.monthly.length > 0 || c.oneOffs.length > 0);
+    if (!s.lifeCosts.length) delete s.lifeCosts;
+  }
   s.phases = s.phases
     .map((p) => ({ ...p, start: p.start - 12, end: p.end - 12, net: p.net * g, gross: p.gross * g, expenses: p.expenses === undefined ? undefined : p.expenses * infl + premiumStep }))
     .filter((p) => p.end > 0)
@@ -760,7 +870,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   // Repaid loans leave the list: book the rounding remainder so the identity holds exactly.
   const drift = ledger.closing.debt - ledger.flows.filter((f) => f.account === "debt").reduce((a, f) => a + f.amount, ledger.opening.debt);
   if (Math.abs(drift) > 1e-9) ledger.flows.push({ account: "debt", kind: "loan", amount: drift });
-  return { state: s, ledger, soldToCover, minCash, mate };
+  return { state: s, ledger, soldToCover, minCash, mate, crunch };
 }
 
 /** Months of spending kept as the minimum cash buffer (dashboard and bank rule). Below it the king is in check. */

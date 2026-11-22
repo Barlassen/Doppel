@@ -17,6 +17,8 @@ import type { CategorySource, RowKind, StatementRow } from "./types";
 const DICTIONARY = new Map(Object.entries(MERCHANT_CATEGORIES).map(([name, c]) => [merchantKey(name), c]));
 
 const KEYWORDS: readonly [RegExp, TransactionCategory][] = [
+  // Before "rent" → housing: a rental car is travel.
+  [/\b(?:rent a car|car rental|autovermietung|mietwagen|location de voitures?|autonoleggio|europcar|hertz|sixt|avis budget)\b/, "travel"],
   [/\b(?:uber ?eats|just ?eat|eat\.ch|smood|deliveroo|take ?away|takeaway|lieferando|dominos?|mcdonald'?s?|burger ?king|starbucks|kfc|subway)\b/, "dining"],
   [/\b(?:restaurant|ristorante|resto|pizzeria|trattoria|osteria|cafe|caffe|kaffee|coffee|bistro|brasserie|bar|pub|kebab|doner|sushi|ramen|mensa|kantine|cantine|mensa|imbiss|baeckerei|backerei|bakery|boulangerie|confiserie|tea room|burger|grill|gelateria|glace)\b/, "dining"],
   [/\b(?:migros|coop|denner|aldi|lidl|volg|spar|landi|globus delicatessa|manor food|primo|topcc|prodega|alnatura|bio ?markt|farmy|migrolino|avec|k kiosk|kiosk|supermarket|supermarche|supermercato|lebensmittel|alimentation)\b/, "groceries"],
@@ -29,13 +31,23 @@ const KEYWORDS: readonly [RegExp, TransactionCategory][] = [
   [/\b(?:galaxus|digitec|zalando|manor|h ?& ?m|zara|uniqlo|ikea|decathlon|interdiscount|media ?markt|fust|ochsner|jumbo|hornbach|bauhaus|amazon|aliexpress|temu|shein|sephora|douglas|apotheke|pharmacie|farmacia|amavita|sun ?store|coop city|loeb|globus|pfister|brack|ricardo|tutti|sportxx|do it|micasa|apple store|fnac|orell fussli|thalia|kletterzentrum|bouldern)\b/, "shopping"],
 ];
 
-/** Credits that are pay: Lohn, Salär, Gehalt, salaire, stipendio, salary, payroll. */
-const SALARY = /(?:lohn|salar|salaer|gehalt|salaire|traitement|stipendio|salario|salary|payroll|wages|maas)/;
-/** Money between the user's own accounts (savings, card account top-ups, own broker / 3a / Revolut / neon). */
+/**
+ * Credits that are pay: Lohn, Monatslohn, Salär, Gehalt, salaire, stipendio, salary, payroll, maaş. Whole words of
+ * the normalised text, so "Kohlohner Metzg" or "Maas Bikes" are not salaries.
+ */
+const SALARY = /\b(?:(?:monats|jahres|netto|brutto)?lohn(?:zahlung|gutschrift|eingang|abrechnung)?|13 monatslohn|salar(?:zahlung)?|salaer(?:zahlung)?|gehalt(?:szahlung)?|salaires?|traitement|stipendio|salario|salary|payroll|wages|maas (?:odemesi|odeme)|maasi?$)\b/;
+/** Money between the user's own accounts (savings, own broker / 3a / Revolut / neon accounts). */
 const OWN_TRANSFER =
-  /(?:ubertrag|uebertrag|kontoubertrag|umbuchung|eigenes konto|eigene konten|own account|between (?:your|own) accounts|compte propre|propre compte|virement interne|giroconto|sparkonto|savings|epargne|top ?up|aufladung|recharge|ricarica|\bviac\b|frankly|finpension|swissquote|interactive brokers|\bibkr\b|true wealth|selma|saxo|yuh invest|neon invest|inyova|descartes|revolut|\bneon\b|\byuh\b)/;
-/** TWINT person-to-person payments ("TWINT an Max Muster", "TWINT von …", "TWINT à …"). */
-const TWINT_P2P = /twint\s*(?:p2p|an|von|to|from|a|de|send|sent|received|empfangen|gesendet|geld senden|money)\b/;
+  /(?:ubertrag|uebertrag|kontoubertrag|umbuchung|eigenes konto|eigene konten|own account|between (?:your|own) accounts|compte propre|propre compte|virement interne|giroconto|sparkonto|\bviac\b|frankly|finpension|swissquote|interactive brokers|\bibkr\b|true wealth|selma|saxo|yuh invest|neon invest|inyova|descartes|revolut|\bneon\b|\byuh\b)/;
+/**
+ * Words that mean "transfer" for an account but "purchase" at a shop: a prepaid "Recharge" at Salt is a phone bill,
+ * "Savings Bar" is a bar. They count as a transfer only when no merchant rule knows the counterparty.
+ */
+const WEAK_TRANSFER = /\b(?:savings|epargne|top ?up|aufladung|recharge|ricarica)\b/;
+/** TWINT person-to-person payments ("TWINT an Max Muster", "TWINT von …", "TWINT to …"). */
+const TWINT_P2P = /twint\s*(?:p2p|an|von|to|from|send|sent|received|empfangen|gesendet|geld senden|money)\b/;
+/** French "TWINT à Max" / "TWINT de Max", read from the original text: the accent tells "à" from an initial "A.". */
+const TWINT_P2P_FR = /\btwint\s+(?:à|de\s+(?!la\b|l[' ’]))\s*\p{Lu}/iu;
 const TRANSFER_TYPES = /^(?:topup|top-up|transfer|exchange|invest|invest_order|bank_auto_order|savings|vault|pocket)/i;
 
 export interface Classified {
@@ -65,13 +77,18 @@ export function ruleCategory(merchant: string): { category: TransactionCategory;
  */
 export function classifyRow(row: StatementRow, overrides: Readonly<Record<string, TransactionCategory>> = {}): Classified {
   const merchant = merchantOf(row);
-  const raw = merchantKey(`${row.description} ${row.counterparty ?? ""}`);
-  if ((row.type && TRANSFER_TYPES.test(row.type)) || TWINT_P2P.test(raw) || OWN_TRANSFER.test(raw)) return { merchant, kind: "transfer" };
+  const original = `${row.description} ${row.counterparty ?? ""}`;
+  const raw = merchantKey(original);
+  if ((row.type && TRANSFER_TYPES.test(row.type)) || TWINT_P2P.test(raw) || TWINT_P2P_FR.test(original) || OWN_TRANSFER.test(raw)) return { merchant, kind: "transfer" };
   const override = overrides[merchantKey(merchant)];
   const rule = override ? { category: override, source: "override" as const } : ruleCategory(merchant);
+  if (!rule && WEAK_TRANSFER.test(raw)) return { merchant, kind: "transfer" };
   if (row.signed > 0) {
     if (SALARY.test(raw)) return { merchant, kind: "income" };
-    return rule ? { merchant, kind: "refund", ...rule } : { merchant, kind: "income" };
+    // A reversal credit is money coming back from a payee: a refund to review, never income.
+    return rule || row.reversal ? { merchant, kind: "refund", ...rule } : { merchant, kind: "income" };
   }
+  // A reversed credit (e.g. a corrected salary run) lowers income; it is not a purchase.
+  if (row.reversal && SALARY.test(raw)) return { merchant, kind: "income" };
   return { merchant, kind: "spend", ...rule };
 }

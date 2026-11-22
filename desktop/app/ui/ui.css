@@ -1,0 +1,92 @@
+/* The shell's own pages (splash, settings, error), in the web app's palette (src/app/globals.css). */
+:root {
+  --bg: #f6f5f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0eee8;
+  --line: #e2dfd6;
+  --ink: #0f1115;
+  --ink-2: #52514e;
+  --ink-3: #6b6861;
+  --accent: #b3122e;
+  --good: #0a7a3d;
+  --bad: #c42b1c;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111110;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --line: #2f2e2b;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --ink-3: #8f8d84;
+    --accent: #e5484d;
+    --good: #3fb871;
+    --bad: #e5484d;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0; font: 400 26px/1.2 ui-serif, "Iowan Old Style", Georgia, serif; letter-spacing: -0.01em; }
+p { margin: 0; }
+.muted { color: var(--ink-2); }
+.small { font-size: 12px; color: var(--ink-3); }
+
+/* splash */
+.splash { height: 100%; display: grid; place-content: center; justify-items: center; gap: 14px; user-select: none; }
+.splash h1 { font-size: 40px; }
+.bar { width: 140px; height: 2px; background: var(--line); overflow: hidden; border-radius: 2px; }
+.bar::after { content: ""; display: block; width: 40%; height: 100%; background: var(--ink-3); animation: slide 1.6s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .bar::after { animation: none; width: 100%; } }
+
+/* settings and error */
+.page { min-height: 100%; display: flex; flex-direction: column; gap: 18px; padding: 24px 26px 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 14px; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
+legend, label.field > span { padding: 0; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+label.choice { display: flex; gap: 10px; align-items: baseline; cursor: default; }
+label.choice small { display: block; color: var(--ink-3); }
+label.field { display: grid; gap: 4px; }
+input[type="text"], input[type="password"], input[type="url"] {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--ink); font: inherit;
+}
+input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .row { grid-template-columns: 1fr; } }
+details > summary { cursor: default; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+details[open] > summary { margin-bottom: 12px; }
+details .inner { display: grid; gap: 12px; }
+/* The buttons stay in view when the form is taller than the window. */
+.actions {
+  display: flex; gap: 10px; justify-content: flex-end; align-items: center; flex-wrap: wrap; margin-top: auto;
+  position: sticky; bottom: 0; padding: 12px 0 18px; background: var(--bg);
+}
+.actions .grow { margin-right: auto; }
+button {
+  font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: default;
+}
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.link { border: 0; background: none; padding: 0; color: var(--ink-2); text-decoration: underline; }
+button:disabled { opacity: 0.55; }
+.status { display: flex; gap: 8px; align-items: baseline; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; transform: translateY(-1px); }
+.dot.on { background: var(--good); }
+.error { color: var(--bad); }
+pre {
+  margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word;
+  max-height: 150px; overflow: auto; user-select: text;
+}
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; user-select: text; }
+[hidden] { display: none !important; }

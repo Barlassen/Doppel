@@ -13,7 +13,8 @@ ledger and solver results.
 | Gross / take-home | CHF 66,000 / 4,310 a month | CHF 92,000 / 5,700 a month | CHF 72,000 / 4,570 a month |
 | Cash · portfolio · pillar 2 · 3a | 2,645 · 4,265 · 0 · 3,090 | 14,800 · 2,900 · 2,300 · 0 | 3,900 · 0 · 6,100 · 0 |
 | Net worth | CHF 10,000 | CHF 20,000 | CHF 10,000 |
-| Goal | CHF 450k by 40 | CHF 400k by 40, flat in Renens (CHF 540k) in 5 years | CHF 200k by 40, trip to Tokyo |
+| Health premium (from the statements) | CHF 318 a month | CHF 428 a month | CHF 372 a month |
+| Goal | CHF 450k by 40 | CHF 400k by 40, flat in Renens (CHF 510k in today's CHF, CHF 550k at the purchase date) in 5 years | CHF 200k by 40, trip to Tokyo |
 | Story | Standing order into a world ETF, bought extra in the dip, maxes 3a, spends little | Lump sums now and then, sold 37% in the Aug 2026 drawdown, bought a hyped stock at its top, idle cash, overlapping streaming, food delivery, payday shopping | Doesn't invest, delivery and dining, impulse shopping, 7 subscriptions, strong payday spike, thin cash buffer |
 
 Source: `src/lib/data/profiles.ts`. Run `npx tsx scripts/engine-check.ts` for the current engine results of each.
