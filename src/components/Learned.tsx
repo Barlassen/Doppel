@@ -82,63 +82,67 @@ export function LearnedPanel({
   const { summary, evidence, profileIncome } = learned;
   const facts = summary?.facts.filter((f) => memory.facts[f.id] !== "rejected") ?? [];
   const rejected = summary ? summary.facts.length - facts.length : 0;
+  const open = facts.filter((f) => memory.facts[f.id] === undefined).length;
   return (
     <div className={`rounded-xl px-3 py-2.5 ${fresh ? "bg-good/10" : "bg-surface-2"}`} data-testid="learned">
-      <h4 className="text-sm font-semibold">{t("ux.learned.title")}</h4>
+      <h4 className="flex items-center justify-between gap-2 text-sm font-semibold">
+        {t("ux.learned.title")}
+        {open > 0 && <span className="num rounded-full bg-ink px-2 py-0.5 text-[11px] font-medium text-bg" data-testid="learned-open">{open}</span>}
+      </h4>
       {!summary ? (
         <p className="mt-1 text-xs text-ink-2">{t("ux.learned.empty")}</p>
       ) : (
         <>
-          {facts.length > 0 && (
-            <ul className="mt-2.5 space-y-2 border-t border-line pt-2.5" data-testid="learned-facts">
-              {facts.map((f) => {
-                const answer = memory.facts[f.id];
-                return (
-                  <li key={f.id} data-fact={f.id} data-answer={answer ?? "open"} className="text-xs">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-                      <span className="font-medium">{f.confidence < SURE ? t("ux.learned.maybe", { fact: f.title }) : tm(f.title)}</span>
-                      <span className="num text-[11px] text-ink-2">
-                        {answer === "confirmed" ? t("ux.learned.confirmed") : f.confidence < SURE ? t("statement.confidence", { p: f.confidence }) : ""}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      {answer !== "confirmed" && (
-                        <button type="button" className={`${pill} bg-ink text-bg`} onClick={() => { setNoted(f.id); onAnswer(f, "confirmed"); }}
-                          aria-label={t("ux.learned.confirmAria", { fact: f.title })}>
-                          {t("statement.confirm")}
-                        </button>
-                      )}
-                      <button type="button" className={pill} onClick={() => onAnswer(f, "rejected")} aria-label={t("ux.learned.rejectAria", { fact: f.title })}>
-                        {t("statement.reject")}
-                      </button>
-                      <details className="disclosure min-w-0 flex-1 basis-full">
-                        <summary className="text-[11px] font-medium text-ink-2 hover:text-ink">{t("statement.evidence", { count: f.evidence.length })}</summary>
-                        <ul className="num mt-1.5 space-y-0.5 text-[11px] text-ink-2">
-                          {f.reasons.map((r, i) => <li key={`r${i}`} className="font-sans">{tm(r)}</li>)}
-                          {f.evidence.slice(0, EVIDENCE_SHOWN).map((id) => {
-                            const row = evidence.get(id);
-                            return row ? (
-                              <li key={id} className="flex justify-between gap-2">
-                                <span className="min-w-0 truncate">{dateCh(row.date)} · {tm(merchantText(row.merchant))}</span>
-                                <span className="shrink-0">{receiptMoney(row.signed)}</span>
-                              </li>
-                            ) : null;
-                          })}
-                          {f.evidence.length > EVIDENCE_SHOWN && <li>{t("ux.learned.more", { count: f.evidence.length - EVIDENCE_SHOWN })}</li>}
-                        </ul>
-                      </details>
-                    </div>
-                    <div role="status">
-                      {noted === f.id && answer === "confirmed" && <p className="mt-1 text-good">{t(`ux.learned.did.${f.id}` as MessageKey, { amount: f.monthlyAmount })}</p>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <Disclosure summary={t("common.details")} className="mt-2.5" testId="learned-details">
+          {/* One disclosure: the facts to confirm first, then what they rest on. Open right after an import. */}
+          <Disclosure summary={t("common.details")} className="mt-1.5" testId="learned-details" open={fresh ? true : undefined}>
             <div className="space-y-3 text-xs">
+              {facts.length > 0 && (
+                <ul className="space-y-2 border-b border-line pb-2.5" data-testid="learned-facts">
+                  {facts.map((f) => {
+                    const answer = memory.facts[f.id];
+                    return (
+                      <li key={f.id} data-fact={f.id} data-answer={answer ?? "open"} className="text-xs">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                          <span className="font-medium">{f.confidence < SURE ? t("ux.learned.maybe", { fact: f.title }) : tm(f.title)}</span>
+                          <span className="num text-[11px] text-ink-2">
+                            {answer === "confirmed" ? t("ux.learned.confirmed") : f.confidence < SURE ? t("statement.confidence", { p: f.confidence }) : ""}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {answer !== "confirmed" && (
+                            <button type="button" className={`${pill} bg-ink text-bg`} onClick={() => { setNoted(f.id); onAnswer(f, "confirmed"); }}
+                              aria-label={t("ux.learned.confirmAria", { fact: f.title })}>
+                              {t("statement.confirm")}
+                            </button>
+                          )}
+                          <button type="button" className={pill} onClick={() => onAnswer(f, "rejected")} aria-label={t("ux.learned.rejectAria", { fact: f.title })}>
+                            {t("statement.reject")}
+                          </button>
+                          <details className="disclosure min-w-0 flex-1 basis-full">
+                            <summary className="text-[11px] font-medium text-ink-2 hover:text-ink">{t("statement.evidence", { count: f.evidence.length })}</summary>
+                            <ul className="num mt-1.5 space-y-0.5 text-[11px] text-ink-2">
+                              {f.reasons.map((r, i) => <li key={`r${i}`} className="font-sans">{tm(r)}</li>)}
+                              {f.evidence.slice(0, EVIDENCE_SHOWN).map((id) => {
+                                const row = evidence.get(id);
+                                return row ? (
+                                  <li key={id} className="flex justify-between gap-2">
+                                    <span className="min-w-0 truncate">{dateCh(row.date)} · {tm(merchantText(row.merchant))}</span>
+                                    <span className="shrink-0">{receiptMoney(row.signed)}</span>
+                                  </li>
+                                ) : null;
+                              })}
+                              {f.evidence.length > EVIDENCE_SHOWN && <li>{t("ux.learned.more", { count: f.evidence.length - EVIDENCE_SHOWN })}</li>}
+                            </ul>
+                          </details>
+                        </div>
+                        <div role="status">
+                          {noted === f.id && answer === "confirmed" && <p className="mt-1 text-good">{t(`ux.learned.did.${f.id}` as MessageKey, { amount: f.monthlyAmount })}</p>}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               <ul className="space-y-1 text-ink" data-testid="learned-headline">
                 {summary.headline.map((line, i) => (
                   <li key={i} className={i === 0 ? "num text-[11px] text-ink-2" : ""}>{tm(line)}</li>
