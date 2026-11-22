@@ -60,6 +60,7 @@ import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
 import { Hero } from "./Hero";
 import { CardHeader, Section } from "./ui";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { SiteNav } from "./SiteNav";
 import { AccountWizard } from "./AccountWizard";
 import { ImportPanel } from "./ImportPanel";
 import { TransactionsPanel } from "./TransactionsPanel";
@@ -658,6 +659,7 @@ export default function DoppelApp() {
           <div className="flex items-center gap-2">
             <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
             <span className="font-serif text-2xl leading-none">Doppel</span>
+            <SiteNav current="dashboard" />
           </div>
           <div className="flex items-center justify-self-end rounded-full border border-line p-0.5" role="group" aria-label={t("lang.switcher")}>
             {LOCALES.map((option) => (
