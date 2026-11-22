@@ -2266,10 +2266,10 @@ export const tr = {
       preRetirement: "Emeklilik öncesi",
       retired: "Emekli",
     },
-    stat: { takeHome: "Net maaş", fixed: "Sabit giderler", free: "Serbest para", saved: "Biriken", perMonth: "aylık", rate: "maaşın {rate:pct} kadarı" },
+    stat: { takeHome: "Net maaş", fixed: "Sabit gider", free: "Serbest para", saved: "Biriken", perMonth: "aylık", rate: "maaşın {rate:pct} kadarı" },
     health: {
       title: "Finansal sağlık",
-      of: "üst sınır {max}",
+      of: "/ {max}",
       scoreAria: "Finansal sağlık puanı: {score}, üst sınır {max}",
       note: "Doppel pratik kuralı, resmi bir derecelendirme değil.",
       rowAria: "{label}: {points} puan, üst sınır {max}",

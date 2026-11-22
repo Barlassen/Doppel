@@ -2260,7 +2260,7 @@ export const de = {
       preRetirement: "Vor der Pensionierung",
       retired: "Pensioniert",
     },
-    stat: { takeHome: "Nettolohn", fixed: "Fixkosten", free: "Frei verfügbar", saved: "Gespart", perMonth: "pro Monat", rate: "{rate:pct} vom Lohn" },
+    stat: { takeHome: "Nettolohn", fixed: "Fixkosten", free: "Verfügbar", saved: "Gespart", perMonth: "pro Monat", rate: "{rate:pct} vom Lohn" },
     health: {
       title: "Finanzielle Gesundheit",
       of: "von {max}",

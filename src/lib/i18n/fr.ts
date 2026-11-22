@@ -2269,7 +2269,7 @@ export const fr = {
       preRetirement: "Avant la retraite",
       retired: "À la retraite",
     },
-    stat: { takeHome: "Salaire net", fixed: "Frais fixes", free: "Argent disponible", saved: "Épargné", perMonth: "par mois", rate: "{rate:pct} du salaire" },
+    stat: { takeHome: "Salaire net", fixed: "Frais fixes", free: "Disponible", saved: "Épargné", perMonth: "par mois", rate: "{rate:pct} du salaire" },
     health: {
       title: "Santé financière",
       of: "sur {max}",
