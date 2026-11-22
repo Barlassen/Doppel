@@ -94,12 +94,23 @@ export const LABEL_GLYPH: Record<MoveLabel, string> = {
   lifeChoice: "♡",
 };
 
-export function labelFor(lossPts: number, sacrifice: boolean, lifeChoice: boolean): MoveLabel {
+/**
+ * Standard errors a loss must clear a threshold by before the harsher label is given. The loss is an estimate
+ * from sampled futures, so a move is only called an inaccuracy, a mistake or a blunder when the futures support it.
+ */
+export const LABEL_CONFIDENCE = 2;
+
+/**
+ * The label of a move from its loss (points) and the standard error of that loss (points). "Best" is the engine's
+ * best move (or an exact tie). Every other move is graded on the loss the futures support, loss − 2 standard errors.
+ */
+export function labelFor(lossPts: number, sacrifice: boolean, lifeChoice: boolean, sePts = 0): MoveLabel {
   if (lifeChoice) return "lifeChoice";
   if (lossPts <= LABEL_THRESHOLDS.best) return sacrifice ? "brilliant" : "best";
-  if (lossPts < LABEL_THRESHOLDS.good) return "good";
-  if (lossPts < LABEL_THRESHOLDS.inaccuracy) return "inaccuracy";
-  if (lossPts < LABEL_THRESHOLDS.mistake) return "mistake";
+  const sure = lossPts - LABEL_CONFIDENCE * Math.max(0, sePts);
+  if (sure < LABEL_THRESHOLDS.good) return "good";
+  if (sure < LABEL_THRESHOLDS.inaccuracy) return "inaccuracy";
+  if (sure < LABEL_THRESHOLDS.mistake) return "mistake";
   return "blunder";
 }
 

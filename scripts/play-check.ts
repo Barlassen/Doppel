@@ -17,8 +17,8 @@ import { simulate, type SimInput } from "../src/lib/game/sim";
 import { simulate as dashboardSimulate } from "../src/lib/finance/monteCarlo";
 import type { Profile } from "../src/lib/finance/types";
 import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
-import { analyse, bruteForce, reviewMove } from "../src/lib/game/engine";
-import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib/game/evaluate";
+import { analyse, bruteForce, reviewMove, treeTurns, turnLuck } from "../src/lib/game/engine";
+import { WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
 import { FI_THRESHOLD, fiProbability } from "../src/lib/game/independence";
@@ -212,8 +212,152 @@ async function auditChecks(alexia: GameState, S: GameSettings) {
     ok &&= debtOpen.debts.length === 1 && debtOpen.debts[0].monthlyPayment > 0;
     check("openings: hand-made accounts with the optional Profile fields missing play to the end", ok, played.join(" · ") + ` · a loan without a payment gets the 60-month annuity CHF ${Math.round(debtOpen.debts[0]?.monthlyPayment ?? 0)}/month`);
   }
+
+  // ---------- A4. a life decision is never the best move ----------
+  {
+    // Moving in with a partner halves the rent: the simulated numbers improve, and it is still not "the best move".
+    let found = "";
+    let ok = false;
+    for (const p of PROFILES) {
+      const pos = { ...accountOpening(p), check: null };
+      if (!dealable(pos, "movePartner")) continue;
+      const a = analyse(pos, S, { candidates: ["movePartner", "subscriptions", "hold"], budget: { scenarios: 16, paths: 16 } });
+      const life = a.candidates.find((c) => c.card === "movePartner")!;
+      const r = reviewMove(a, "movePartner");
+      if (life.e <= a.candidates[0].e) continue;
+      ok = a.best !== "movePartner" && r.label === "lifeChoice" && r.accuracy === null && r.loss === 0 && a.candidates[a.candidates.length - 1].card === "movePartner";
+      found = `${p.name}: movePartner E ${pts(life.e)} > engine's best ${a.best} E ${pts(a.candidates[0].e)} → label ${r.label}, accuracy ${r.accuracy}`;
+      break;
+    }
+    check("a life decision that scores higher than every other move is ♡, never best or brilliant, and has no accuracy", ok, found || "no position where the life decision scores highest");
+  }
+
+  // ---------- A5. labels: noise-aware, and stable across the sampled futures ----------
+  {
+    const unit =
+      labelFor(2.5, false, false) === "mistake" && labelFor(2.5, false, false, 0.5) === "inaccuracy" && labelFor(0.6, false, false, 0.2) === "good" &&
+      labelFor(0.03, false, false, 5) === "best" && labelFor(9, false, false, 0.4) === "blunder" && labelFor(0, true, false) === "brilliant";
+    check("labels: a harsher label needs the loss to clear its threshold by two standard errors", unit, `2.5 ± 0 → ${labelFor(2.5, false, false)} · 2.5 ± 0.5 → ${labelFor(2.5, false, false, 0.5)} · 0.6 ± 0.2 → ${labelFor(0.6, false, false, 0.2)}`);
+
+    let g = newGame(accountOpening(PROFILES[0]), S);
+    for (let k = 0; k < 3; k++) g = advance(g, "hold");
+    const pos = currentPosition(g);
+    const cands = legalMoves(g);
+    const labels = new Map<string, Set<string>>();
+    const losses = new Map<string, number[]>();
+    const ses = new Map<string, number[]>();
+    const bests = new Set<string>();
+    for (let seed = 1; seed <= 8; seed++) {
+      const a = analyse(pos, S, { sampleSeed: seed });
+      bests.add(a.best);
+      for (const c of cands) {
+        const r = reviewMove(a, c);
+        labels.set(c, (labels.get(c) ?? new Set()).add(r.label));
+        losses.set(c, [...(losses.get(c) ?? []), r.loss]);
+        ses.set(c, [...(ses.get(c) ?? []), r.lossSe]);
+      }
+    }
+    const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
+    const worstSpread = Math.max(...cands.map((c) => spread(losses.get(c)!)));
+    const stable = bests.size === 1 && cands.every((c) => labels.get(c)!.size === 1);
+    const seReported = cands.every((c) => c === [...bests][0] || ses.get(c)!.every((x) => x > 0));
+    check(
+      "labels: the same position gets the same best move and the same labels on 8 different sets of futures",
+      stable && seReported && worstSpread < 0.6,
+      `${pos.name}, year ${pos.turn + 1}: ` + cands.map((c) => `${c} ${[...labels.get(c)!].join("/")} (loss ${Math.min(...losses.get(c)!).toFixed(2)}–${Math.max(...losses.get(c)!).toFixed(2)}, ± ${Math.max(...ses.get(c)!).toFixed(2)})`).join(" · "),
+    );
+  }
+
+  // ---------- A6. the tree plays the game's turns; mated futures do not distort the money shown ----------
+  {
+    let g = newGame(accountOpening(PROFILES[0]), S);
+    while (!isOver(g) && currentPosition(g).turn < 9) g = advance(g, "hold");
+    const year10 = currentPosition(g);
+    g = advance(g, "hold");
+    const long = currentPosition(g);
+    const schedule = JSON.stringify(treeTurns(year10, year10.age + 12, 2)) === "[1,5]" && JSON.stringify(treeTurns(long, long.age + 12, 2)) === "[5,5]" && treeTurns(long, long.age + 5, 2).length === 0 && JSON.stringify(treeTurns(accountOpening(PROFILES[0]), 99, 2)) === "[1,1]";
+    const a5 = analyse({ ...long, check: null }, settings({ depth: "5y" }), { budget: { scenarios: 8, paths: 8 } });
+    const noMoveInside = a5.plies === 0 && a5.candidates.every((c) => c.pv.length === 1);
+    check("the tree plays the game's turns: inside a five-year turn the engine gives the player no extra moves", schedule && noMoveInside && long.status === "playing", `year 10: ${JSON.stringify(treeTurns(year10, year10.age + 12, 2))} · year 11: ${JSON.stringify(treeTurns(long, long.age + 12, 2))} · depth 5 years in a five-year turn: ${a5.plies} plies, lines of ${a5.candidates.map((c) => c.pv.length).join(",")} move(s)`);
+
+    const a = analyse(currentPosition(newGame(alexia, S)), S, { budget: { scenarios: 80, paths: 8 } });
+    const risky = [...a.candidates, a.hold].find((c) => c.mateShare > 0 && c.mateShare < 1);
+    check("a candidate that is mated in some futures shows the target and median of the futures it survives", !!risky && Math.abs(risky.parts.target - a.hold.parts.target) < 1e-6 && risky.parts.median > 0, risky ? `${risky.card}: mate in ${(risky.mateShare * 100).toFixed(0)}% of futures · target CHF ${Math.round(risky.parts.target).toLocaleString("en")} (hold: ${Math.round(a.hold.parts.target).toLocaleString("en")})` : "no candidate with a partial mate share");
+  }
+
+  // ---------- A7. luck averages zero ----------
+  {
+    const rows: string[] = [];
+    let ok = true;
+    const lucks: Record<"goal" | "1y", number[]> = { goal: [], "1y": [] };
+    for (let seed = 1; seed <= 60; seed++) {
+      // The realised turn does not depend on the depth: one game, judged at both horizons.
+      const g0 = newGame(accountOpening(PROFILES[seed % 2]), settings({ seed }));
+      const g1 = advance(g0, "hold");
+      for (const depth of ["goal", "1y"] as const) {
+        lucks[depth].push(turnLuck(g0.positions[0], "hold", currentPosition(g1), g1.moves[0].crunch, settings({ seed, depth }), { budget: { scenarios: 32, paths: 8 } }).luck * 100);
+      }
+    }
+    for (const depth of ["goal", "1y"] as const) {
+      const v = lucks[depth];
+      const mean = v.reduce((x, y) => x + y, 0) / v.length;
+      const sd = Math.sqrt(v.reduce((x, y) => x + (y - mean) * (y - mean), 0) / (v.length - 1));
+      const positive = v.filter((x) => x > 0).length / v.length;
+      ok &&= Math.abs(mean) < 0.3 * sd && positive > 0.2 && positive < 0.8 && sd > 0.05;
+      rows.push(`depth ${depth}: mean ${mean.toFixed(2)} pts, spread (sd) ${sd.toFixed(2)} pts, ${(positive * 100).toFixed(0)}% of turns lucky`);
+    }
+    const s1 = settings({ seed: 3 });
+    const g0 = newGame(accountOpening(PROFILES[0]), s1);
+    const g1 = advance(g0, "hold");
+    const twice = [0, 1].map(() => turnLuck(g0.positions[0], "hold", currentPosition(g1), g1.moves[0].crunch, s1, { budget: { scenarios: 16, paths: 8 } }).luck);
+    check("luck (realised turn − expected turn at the same horizon) averages zero over 60 games and is deterministic", ok && twice[0] === twice[1], rows.join(" · "));
+  }
+
+  // ---------- A8. the record replays on its own ----------
+  {
+    const start = { ...accountOpening(PROFILES[0]), prefs: ["children", "home"] };
+    let g = newGame(start, S);
+    const reviews: (ReturnType<typeof reviewMove> | null)[] = [];
+    while (!isOver(g) && g.moves.length < 14) {
+      const legal = legalMoves(g);
+      const card = legal.includes("haveChild") ? "haveChild" : legal[g.moves.length % legal.length];
+      reviews.push(g.moves.length < 2 ? reviewMove(analyse(currentPosition(g), settings({ depth: "5y" }), { budget: { scenarios: 6, paths: 8 } }), card) : null);
+      g = play(g, card);
+    }
+    const record = toRecord(g, { reviews, reviewedWith: { depth: "5y", weights: S.weights, preset: "balanced" } });
+    const text = JSON.stringify(record);
+    const again = replay(JSON.parse(text));
+    const years = g.moves.reduce((n, m) => n + m.years, 0);
+    const inside = g.lifeEvents.reduce((n, l) => n + (l.earlier?.length ?? 0), 0);
+    const complete =
+      record.prefs.join() === "children,home" && record.markets.length === years && record.moves.some((m) => m.years === 5) &&
+      record.lifeEvents.reduce((n, l) => n + (l.earlier?.length ?? 0), 0) === inside && inside > 0 &&
+      record.reviewedWith?.depth === "5y" && record.moves[0].review?.label === reviews[0]!.label && typeof record.moves[0].review?.lossSe === "number" && record.moves[5].review === null &&
+      record.moves.some((m) => m.card === "haveChild");
+    let plainFails = false;
+    try {
+      replay({ ...JSON.parse(text), prefs: [] }, accountOpening(PROFILES[0]));
+    } catch {
+      plainFails = true;
+    }
+    check("game record: a game with declared preferences replays from the record alone to the identical final state", JSON.stringify(again) === JSON.stringify(g) && complete && plainFails, `${g.moves.length} moves over ${years} years · ${record.markets.length} market years · ${inside} Life cards inside five-year turns · prefs ${record.prefs.join("+")} · ${text.length} bytes · without the preferences the replay fails: ${plainFails}`);
+  }
+
+  // ---------- A9. an opening that is already independent ----------
+  {
+    const rich = { ...accountOpening(PROFILES[1]), age: 55, cash: 400_000, portfolio: 3_000_000 };
+    const g = newGame(rich, S);
+    const first = currentPosition(g);
+    const rating = rateGame(g);
+    const retiredRich = pensionerFor({ ...accountOpening(PROFILES[1]), pillar2: 400_000, portfolio: 3_000_000 });
+    const gr = newGame(retiredRich, S);
+    check("an opening that is already financially independent is won before the first move (retirees play on)", first.status === "won" && first.goalReached && g.moves.length === 0 && legalMoves(g).length === 0 && rating.player.kind === "independent" && replay(JSON.parse(JSON.stringify(toRecord(g)))).positions.length === 1 && currentPosition(gr).status === "playing", `status ${first.status} with ${g.moves.length} moves · Elo ${rating.elo} · retiree: ${currentPosition(gr).status}`);
+  }
   void alexia;
 }
+
+/** Can `card` be played in this position at all? */
+const dealable = (s: GameState, card: string) => DECISION_CARDS.some((c) => c.id === card && c.eligible(s));
 
 async function main() {
   const alexia = await ubsOpening(ALEXIA_ID);
@@ -314,7 +458,7 @@ async function main() {
     const tiny: Regime = { ...REGIME.stress, eventProb: 0.4, lifeWeights: { lifeJobloss: 1, lifeDrawdown: 1 } };
     const pos = { ...accountOpening(PROFILES[2]), cash: 9000, portfolio: 12_000, check: null };
     const cands = ["investIdle", "cutSpending", "hold"];
-    const opts = { regime: tiny, candidates: cands, budget: { plies: 1, paths: 32, scenarios: 1500 } };
+    const opts = { regime: tiny, candidates: cands, fixedLeafSeed: true, budget: { plies: 1, paths: 32, scenarios: 1500 } };
     const t0 = performance.now();
     const exact = bruteForce(pos, S, opts);
     const t1 = performance.now();
@@ -444,7 +588,10 @@ async function main() {
 
     // Independence ends the game as a win.
     const rich = { ...accountOpening(PROFILES[1]), age: 55, cash: 400_000, portfolio: 3_000_000, check: null };
-    const won = advance(newGame(rich, S), "hold");
+    // (An opening that is already independent is won before the first move, see the audit checks; here the position
+    // is entered mid-game, as after a windfall.)
+    const midGame: Game = { settings: S, positions: [rich], moves: [], lifeEvents: [{ turn: 0, card: null, params: [] }] };
+    const won = advance(midGame, "hold");
     check("independence (savings last to 95 in ≥ 90% of futures) wins the game", currentPosition(won).status === "won", `status ${currentPosition(won).status} at ${currentPosition(won).age}`);
 
     // Rating: deterministic, and holding scores exactly the reference formula.
@@ -465,6 +612,8 @@ async function main() {
     const ld = reviewMove(declared, "haveChild").label;
     const dealt = dealHand({ ...base, prefs: ["children"] }, S.seed).cards.includes("haveChild");
     check("preferences: a declared choice is not graded (♡) and is dealt; undeclared it is graded", ld === "lifeChoice" && lu !== "lifeChoice" && dealt, `undeclared ${lu} · declared ${ld} · dealt ${dealt}`);
+    const accU = reviewMove(undeclared, "haveChild").accuracy;
+    check("a life decision never counts towards the accuracy, declared or not", accU === null && reviewMove(declared, "haveChild").accuracy === null, `undeclared accuracy ${accU}`);
   }
 
   // ---------- 11. business: survival calibrated to the BFS (about half of new firms after five years) ----------

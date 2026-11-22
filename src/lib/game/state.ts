@@ -619,6 +619,8 @@ export interface YearResult {
   minCash: number;
   /** A hard constraint broke: cash below the credit line with nothing left to sell. */
   mate: boolean;
+  /** A cash crunch: in some month the account stayed below zero with nothing left to sell (the simulator's rule). */
+  crunch: boolean;
 }
 
 /**
@@ -639,6 +641,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   let soldToCover = 0;
   let minCash = s.cash;
   let mate = false;
+  let crunch = false;
   let p3aYear = 0;
   if (!s.pension && s.age >= s.retirementAge) retireNow(s, L);
   const retired = !!s.pension;
@@ -752,6 +755,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
       s.cash += sell;
       soldToCover += sell;
     }
+    if (s.cash < -1) crunch = true;
     if (s.cash < -CREDIT_LINE * price) {
       const need = -s.cash;
       const arrears = s.debts.find((d) => d.id === "debt-arrears");
@@ -806,7 +810,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   // Repaid loans leave the list: book the rounding remainder so the identity holds exactly.
   const drift = ledger.closing.debt - ledger.flows.filter((f) => f.account === "debt").reduce((a, f) => a + f.amount, ledger.opening.debt);
   if (Math.abs(drift) > 1e-9) ledger.flows.push({ account: "debt", kind: "loan", amount: drift });
-  return { state: s, ledger, soldToCover, minCash, mate };
+  return { state: s, ledger, soldToCover, minCash, mate, crunch };
 }
 
 /** Months of spending kept as the minimum cash buffer (dashboard and bank rule). Below it the king is in check. */
