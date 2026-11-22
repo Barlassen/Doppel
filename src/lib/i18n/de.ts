@@ -41,7 +41,7 @@ export const de = {
   },
 
   layout: {
-    decisions: "Grosse Entscheidungen",
+    decisions: "Entscheidungen",
     nextSteps: "Nächste Schritte",
     habits: "Gewohnheiten und Timing",
   },
@@ -107,7 +107,7 @@ export const de = {
   },
 
   hero: {
-    who: "{name}, {age} Jahre · {city} · {tagline}",
+    who: "{name}, {age} Jahre · {city}",
     goal: "{goal}:",
     disciplined: "Mit mehr Disziplin wären es {odds}.",
     netWorth: "Nettovermögen heute {amount}",
@@ -229,7 +229,7 @@ export const de = {
   },
 
   chart: {
-    title: "Dein Nettovermögen im Zeitverlauf",
+    title: "Nettovermögen",
     engine: "Monte Carlo · deterministisch · 0 Token",
     legendRange: "Mit Gewohnheiten · 10–90%",
     legendReal: "Mit Gewohnheiten · Median",
@@ -278,7 +278,7 @@ export const de = {
 
   behavior: {
     title: "Deine Gewohnheiten",
-    cost: "Deine Gewohnheiten kosten dich bis zum Zieltermin {amount} (Median).",
+    cost: "Kosten der Gewohnheiten: {amount}",
     habitLeakage: "Spontankäufe rund um den Zahltag",
     habitPanic: "Panikverkäufe",
     approxPerMonth: "≈ {amount:chf}/Mt.",
@@ -2029,7 +2029,7 @@ export const de = {
       viewAria: "Zeitraum der Grafik",
       viewGoal: "Bis zum Ziel",
       viewLife: "Bis Alter {age}",
-      legendMedian: "Mittleres Szenario: je die Hälfte endet höher und tiefer",
+      legendMedian: "Mittleres Szenario",
       tipMedian: "Mittleres Szenario",
       legendBand: "8 von 10 Szenarien",
       legendIdeal: "Ohne deine Gewohnheiten",

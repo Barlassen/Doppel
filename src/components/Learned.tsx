@@ -89,15 +89,6 @@ export function LearnedPanel({
         <p className="mt-1 text-xs text-ink-2">{t("ux.learned.empty")}</p>
       ) : (
         <>
-          <ul className="mt-1.5 space-y-1 text-xs text-ink" data-testid="learned-headline">
-            {summary.headline.map((line, i) => (
-              <li key={i} className={i === 0 ? "num text-[11px] text-ink-2" : ""}>{tm(line)}</li>
-            ))}
-            {profileIncome !== null && (
-              <li data-learned="income">{t("ux.learned.profileIncome", { amount: profileIncome })}</li>
-            )}
-          </ul>
-
           {facts.length > 0 && (
             <ul className="mt-2.5 space-y-2 border-t border-line pt-2.5" data-testid="learned-facts">
               {facts.map((f) => {
@@ -107,7 +98,7 @@ export function LearnedPanel({
                     <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                       <span className="font-medium">{f.confidence < SURE ? t("ux.learned.maybe", { fact: f.title }) : tm(f.title)}</span>
                       <span className="num text-[11px] text-ink-2">
-                        {answer === "confirmed" ? t("ux.learned.confirmed") : t("statement.confidence", { p: f.confidence })}
+                        {answer === "confirmed" ? t("ux.learned.confirmed") : f.confidence < SURE ? t("statement.confidence", { p: f.confidence }) : ""}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -148,6 +139,14 @@ export function LearnedPanel({
 
           <Disclosure summary={t("common.details")} className="mt-2.5" testId="learned-details">
             <div className="space-y-3 text-xs">
+              <ul className="space-y-1 text-ink" data-testid="learned-headline">
+                {summary.headline.map((line, i) => (
+                  <li key={i} className={i === 0 ? "num text-[11px] text-ink-2" : ""}>{tm(line)}</li>
+                ))}
+                {profileIncome !== null && (
+                  <li data-learned="income">{t("ux.learned.profileIncome", { amount: profileIncome })}</li>
+                )}
+              </ul>
               <p className="text-ink-2">{t("statement.intro")}</p>
               {summary.fixed.items.length > 0 && (
                 <div>

@@ -207,8 +207,8 @@ export function ConeChart({ real, ideal, goal, markers: given, before, beforeLab
           </span>
         )}
       </div>
-      <div className="mb-1 flex flex-wrap items-end justify-between gap-x-3 gap-y-1.5">
-        <span className="text-[11px] text-ink-3">{t("ux.chart.axisWorth")}</span>
+      <div className="mb-1 flex flex-wrap items-end justify-end gap-x-3 gap-y-1.5">
+        <span className="sr-only">{t("ux.chart.axisWorth")}</span>
         {canFocus && (
           <span className="flex rounded-full border border-line p-0.5 text-[11px]" role="group" aria-label={t("ux.chart.viewAria")}>
             {([false, true] as const).map((whole) => (
@@ -225,7 +225,7 @@ export function ConeChart({ real, ideal, goal, markers: given, before, beforeLab
           </span>
         )}
       </div>
-      <div className="w-full" style={{ height: 300 + rows * MARKER_ROW_PX }} role="img" aria-label={`${t("chart.title")}. ${lines.join(" ")}`} data-testid="cone-chart">
+      <div className="w-full" style={{ height: 300 + rows * MARKER_ROW_PX }} role="img" aria-label={`${t("chart.title")}. ${t("ux.chart.axisWorth")}. ${lines.join(" ")}`} data-testid="cone-chart">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 6 + rows * MARKER_ROW_PX, right: 12, bottom: 4, left: 0 }} accessibilityLayer={false}>
             <CartesianGrid stroke="var(--line)" vertical={false} />
@@ -308,9 +308,10 @@ export function ConeChart({ real, ideal, goal, markers: given, before, beforeLab
       </div>
       <div className="text-center text-[11px] text-ink-3">{t("ux.chart.axisAge")}</div>
 
+      {/* Two lines on the surface (the path and the lowest cash); the rest of the reading stays for screen readers. */}
       <ul className="mt-3 space-y-1 text-sm text-ink-2" data-testid="chart-reading">
         {lines.map((line, i) => (
-          <li key={i}>{line}</li>
+          <li key={i} className={i === 0 || i === 2 ? "" : "sr-only"}>{line}</li>
         ))}
       </ul>
       {footnote && <div className="mt-2 text-xs text-ink-2">{footnote}</div>}

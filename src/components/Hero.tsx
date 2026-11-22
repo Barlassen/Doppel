@@ -55,24 +55,24 @@ export function Hero({
   notes?: ReactNode;
   children?: ReactNode;
 }) {
-  const { t, rich, fmt, mounted } = useI18n();
+  const { t, tm, rich, fmt, mounted } = useI18n();
   const probColor = oddsTone(odds);
   // The change in points is taken from the two rounded figures on screen, so "91% → 90%" always reads "−1".
   const delta = impact ? Math.round(impact.after * 100) - Math.round(impact.before * 100) : 0;
   return (
     <div>
       <div className="label">
-        {rich("hero.who", { name: <span>{name}</span>, age, city: <span lang={cityLang}>{city}</span>, tagline })}
+        {rich("hero.who", { name: <span>{name}</span>, age, city: <span lang={cityLang}>{city}</span> })}
       </div>
       <h1 className="mt-1.5 font-serif text-4xl leading-tight sm:text-5xl">
         {t("hero.goal", { goal })}{" "}
         <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{fmt.pct(odds)}</span>
       </h1>
-      <p className="mt-1.5 text-[15px] text-ink-2">
-        {economy && <span className="mr-2 inline-block rounded-full border border-line px-2 py-0.5 align-middle text-xs" data-testid="hero-economy">{economy}</span>}
-        {rich("hero.disciplined", { odds: <b className="num font-semibold text-ink">{fmt.pct(ideal)}</b> })}{" "}
-        {rich("hero.crunch", { risk: <b className="num font-semibold text-ink">{fmt.pct(crunch)}</b> })}
-      </p>
+      {economy && (
+        <p className="mt-1.5 text-ink-2">
+          <span className="inline-block rounded-full border border-line px-2 py-0.5 align-middle text-xs" data-testid="hero-economy">{economy}</span>
+        </p>
+      )}
       {impact && (
         <p className="mt-1 text-sm">
           <span className="text-ink-2">{t("impact.line", { label: impact.label })}</span>
@@ -84,8 +84,13 @@ export function Hero({
           </span>
         </p>
       )}
-      <Disclosure summary={t("common.howCalculated")} className="mt-1.5">
+      <Disclosure summary={t("common.details")} className="mt-1.5">
         <ul className="max-w-3xl space-y-1 text-xs text-ink-2">
+          <li>{tm(tagline)}</li>
+          <li>
+            {rich("hero.disciplined", { odds: <b className="num font-semibold text-ink">{fmt.pct(ideal)}</b> })}{" "}
+            {rich("hero.crunch", { risk: <b className="num font-semibold text-ink">{fmt.pct(crunch)}</b> })}
+          </li>
           <li>
             {rich("hero.netWorth", { amount: <b className="num text-ink">{fmt.chf(netWorth)}</b> })} {t("hero.netWorthNote")}
           </li>
