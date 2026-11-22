@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { Disclosure } from "./ui";
+import { Disclosure, oddsTone } from "./ui";
 
 export interface HeroImpact {
   label: Text;
@@ -53,7 +53,9 @@ export function Hero({
   children?: ReactNode;
 }) {
   const { t, rich, fmt, mounted } = useI18n();
-  const probColor = odds >= 0.8 ? "text-good" : odds >= 0.5 ? "text-warn" : "text-bad";
+  const probColor = oddsTone(odds);
+  // The change in points is taken from the two rounded figures on screen, so "91% → 90%" always reads "−1".
+  const delta = impact ? Math.round(impact.after * 100) - Math.round(impact.before * 100) : 0;
   return (
     <div>
       <div className="label">
@@ -73,8 +75,8 @@ export function Hero({
           <b className="num">
             {t("common.arrow", { before: fmt.pct(impact.before), after: fmt.pct(impact.after) })}
           </b>{" "}
-          <span className={`num text-xs ${impact.after > impact.before ? "text-good" : impact.after < impact.before ? "text-bad" : "text-ink-2"}`}>
-            {t("common.deltaPp", { value: (impact.after >= impact.before ? "+" : "−") + fmt.int(Math.abs(Math.round((impact.after - impact.before) * 100))) })}
+          <span className={`num text-xs ${delta > 0 ? "text-good" : delta < 0 ? "text-bad" : "text-ink-2"}`}>
+            {t("common.deltaPp", { value: delta === 0 ? "±0" : fmt.signed(delta) })}
           </span>
         </p>
       )}

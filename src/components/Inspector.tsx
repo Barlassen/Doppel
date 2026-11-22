@@ -7,6 +7,7 @@ import { NAIVE_PRICE } from "@/lib/frugal/tokens";
 import { callTwin } from "@/lib/llm";
 import type { Extraction } from "@/lib/snap/types";
 import { ReceiptDetails } from "./ReceiptDetails";
+import { Disclosure } from "./ui";
 import { msg, type Fmt, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
@@ -44,14 +45,18 @@ export function FrugalBadge({ entries, onClick }: { entries: LedgerEntry[]; onCl
   const stats = totals(entries);
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex flex-wrap items-center gap-x-1.5 rounded-full border border-line bg-surface px-2 py-1.5 text-xs font-medium transition hover:border-frugal sm:gap-x-2 sm:px-3"
+      className="flex min-h-7 items-center gap-x-1.5 rounded-full border border-line bg-surface px-2 py-1.5 text-xs font-medium whitespace-nowrap transition hover:border-frugal sm:gap-x-2 sm:px-3"
       title={t("badge.title")}
     >
       <span className="text-frugal" aria-hidden="true">⚡</span>
       <span className="num">{t("common.tokens", { count: stats.ours })}</span>
+      {/* The badge only knows the estimated baseline (live GPT-4o checks happen inside the Inspector): hence "≈". */}
       {stats.tokenSavedPct !== null && (
-        <span className="num font-semibold text-frugal">{savedPercent(fmt, stats.tokenSavedPct)}</span>
+        <span className="num hidden font-semibold text-frugal sm:inline" title={t("ux.insp.savingEstimated")}>
+          {t("ux.insp.approx", { value: savedPercent(fmt, stats.tokenSavedPct, 0) })}
+        </span>
       )}
       {entries.length > 0 && stats.measuredCount === 0 && (
         <span className="text-[11px] font-medium text-warn">
@@ -62,8 +67,13 @@ export function FrugalBadge({ entries, onClick }: { entries: LedgerEntry[]; onCl
   );
 }
 
-function savedPercent(fmt: Fmt, savings: number) {
-  return savings === 0 ? fmt.pct(0, 1) : fmt.pct(-savings, 1).replace("-", "−");
+function savedPercent(fmt: Fmt, savings: number, digits = 1) {
+  return savings === 0 ? fmt.pct(0, digits) : fmt.pct(-savings, digits).replace("-", "−");
+}
+
+/** Bytes that left the device as "0 B", "812 B" or "14.2 KB". */
+function byteSize(t: ReturnType<typeof useI18n>["t"], fmt: Fmt, bytes: number) {
+  return bytes < 1024 ? t("common.bytes", { value: bytes }) : t("common.kb", { value: fmt.num(bytes / 1024, 1) });
 }
 
 /**
@@ -226,6 +236,13 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
       ? t("inspector.tagMixed", { measured: stats.liveNaiveCount, estimated: stats.measuredCount - stats.liveNaiveCount })
       : t("inspector.tagEstimated", { model: t("inspector.naiveModel") });
 
+  // What stayed on the device: calls that sent nothing, and the bytes of those that did.
+  const bytesSent = entries.reduce((sum, e) => sum + (e.bytesSent ?? 0), 0);
+  const cloudCount = entries.filter((e) => (e.bytesSent ?? 0) > 0 || e.usage.mode === "llm").length;
+  const localCount = entries.length - cloudCount;
+  // "Measured" only when every counted call has a live GPT-4o run behind it; otherwise the baseline is an estimate.
+  const savingMeasured = stats.measuredCount > 0 && stats.liveNaiveCount === stats.measuredCount;
+
   const per1kOurs = stats.snapCount > 0 ? (stats.snapOursCost / stats.snapCount) * 1000 : null;
   const per1kNaive = stats.snapCount > 0 ? (stats.snapNaiveCost / stats.snapCount) * 1000 : null;
 
@@ -242,168 +259,135 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
       >
         <div className="mx-auto max-w-5xl">
           {/* Header */}
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="label">{t("inspector.kicker")}</div>
-              <h2 id={titleId} className="font-serif text-2xl leading-tight sm:text-3xl">
-                {t("inspector.title")}
-              </h2>
-            </div>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <h2 id={titleId} className="min-w-0 font-serif text-2xl leading-tight sm:text-3xl">
+              {t("inspector.title")}
+            </h2>
             <button
               ref={closeBtnRef}
+              type="button"
               onClick={onClose}
               aria-label={t("inspector.closeAria")}
-              className="rounded-full border border-line px-3 py-1 text-sm text-ink-2 transition hover:border-ink-3 hover:text-ink"
+              className="shrink-0 rounded-full border border-line px-3 py-1 text-sm text-ink-2 transition hover:border-ink-3 hover:text-ink"
             >
               {t("common.close")}
             </button>
           </div>
 
-          {/* Measured totals */}
-          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">{t("inspector.oursMeasured")}</div>
-              <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {t("common.tokens", { count: stats.ours })}
-              </div>
-              <div className="num text-xs text-ink-2 sm:text-sm">
-                {t("common.separator", { first: fmt.usd(stats.oursCost), second: msg("inspector.calls", { count: stats.measuredCount }) })}
-              </div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">{t("inspector.naiveBaseline", { tag: baselineTag })}</div>
-              <div className="num mt-1 text-xl font-semibold sm:text-2xl">
-                {t("common.tokens", { count: stats.naive })}
-              </div>
-              <div className="num text-xs text-ink-2 sm:text-sm">
-                {t("common.separator", { first: fmt.usd(stats.naiveCost), second: msg("inspector.formula") })}
-              </div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-3.5 sm:p-4">
-              <div className="label">{t("inspector.savings")}</div>
-              <div className="num mt-1 text-xl font-semibold text-frugal sm:text-2xl">
-                {stats.tokenSavedPct !== null ? t("inspector.savedTokens", { p: savedPercent(fmt, stats.tokenSavedPct) }) : "—"}
-              </div>
-              <div className="num text-xs text-ink-2 sm:text-sm">
-                {stats.costSavedPct !== null
-                  ? t("inspector.savedCost", { p: savedPercent(fmt, stats.costSavedPct) })
-                  : stats.excludedCount > 0
-                    ? t("inspector.savingsExcluded")
-                    : t("inspector.savingsEmpty")}
-              </div>
-            </div>
-          </div>
+          {/* Summary: calls, tokens and cost, what left the device, saving against the naive baseline */}
+          <dl className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3" data-testid="inspector-summary">
+            <Stat label={t("ux.insp.calls")} value={fmt.int(entries.length)} sub={t("ux.insp.local", { count: localCount })} />
+            <Stat label={t("ux.insp.tokens")} value={fmt.int(stats.ours)} sub={fmt.usd(stats.oursCost)} />
+            <Stat
+              label={t("ux.insp.sent")}
+              value={byteSize(t, fmt, bytesSent)}
+              sub={cloudCount > 0 ? t("ux.insp.cloud", { count: cloudCount }) : t("ux.insp.nothingSent")}
+            />
+            <Stat
+              label={t(savingMeasured ? "ux.insp.savingMeasured" : "ux.insp.savingEstimated")}
+              value={stats.tokenSavedPct !== null ? savedPercent(fmt, stats.tokenSavedPct) : "—"}
+              sub={stats.costSavedPct !== null ? t("ux.insp.cost", { p: savedPercent(fmt, stats.costSavedPct) }) : t("inspector.savingsEmpty")}
+              accent
+            />
+          </dl>
 
-          {stats.measuredCount > 0 && (
-            <div className="mb-5 space-y-2">
-              <Bar label={t("inspector.barNaive")} value={stats.naive} max={maxTokens} color="var(--ink-3)" />
-              <Bar label="Doppel" value={stats.ours} max={maxTokens} color="var(--frugal)" />
-            </div>
+          {/* Calls: one line each, the detail behind the row */}
+          {entries.length === 0 ? (
+            <p className="mb-4 text-sm text-ink-2">{t("inspector.emptyAll")}</p>
+          ) : (
+            <>
+              {measuredEntries.length > 0 && (
+                <ul className="mb-4 space-y-2">
+                  {[...measuredEntries].reverse().map((e) => (
+                    <EntryRow
+                      key={e.id}
+                      entry={e}
+                      isOpen={expanded === e.id}
+                      onToggle={() => setExpanded(expanded === e.id ? null : e.id)}
+                      comparison={comparisons[e.id]}
+                      comparing={comparingId === e.id}
+                      compareError={compareError[e.id]}
+                      onCompare={() => void runNaiveCompare(e)}
+                    />
+                  ))}
+                </ul>
+              )}
+              {excludedEntries.length > 0 && (
+                <div className="mb-4">
+                  <div className="label mb-2 text-warn">{t("inspector.excluded", { count: excludedEntries.length })}</div>
+                  <ul className="space-y-2">
+                    {[...excludedEntries].reverse().map((e) => (
+                      <EntryRow
+                        key={e.id}
+                        entry={e}
+                        excluded={exclusionReason(e)}
+                        isOpen={expanded === e.id}
+                        onToggle={() => setExpanded(expanded === e.id ? null : e.id)}
+                        comparison={comparisons[e.id]}
+                        comparing={comparingId === e.id}
+                        compareError={compareError[e.id]}
+                        onCompare={() => void runNaiveCompare(e)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Cascade overview */}
-          <div className="mb-5 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3 sm:text-sm">
-            <Explain chip="0" route="qr" title={t("inspector.tier0Title")} text={t("inspector.tier0Text")} />
-            <Explain chip="1" route="text-llm" title={t("inspector.tier1Title")} text={t("inspector.tier1Text")} />
-            <Explain chip="2" route="vision-llm" title={t("inspector.tier2Title")} text={t("inspector.tier2Text")} />
-          </div>
-
-          {/* Measured calls */}
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-            <div className="label">{t("inspector.measuredCalls", { count: measuredEntries.length })}</div>
-            <span className="text-[11px] text-ink-3">
-              {t("inspector.baselineNote")}
-            </span>
-          </div>
-          {measuredEntries.length === 0 && (
-            <p className="mb-4 text-sm text-ink-3">
-              {entries.length === 0
-                ? t("inspector.emptyAll")
-                : t("inspector.emptyMeasured")}
-            </p>
-          )}
-          {measuredEntries.length > 0 && (
-            <ul className="mb-5 space-y-2">
-              {[...measuredEntries].reverse().map((e) => (
-                <EntryRow
-                  key={e.id}
-                  entry={e}
-                  isOpen={expanded === e.id}
-                  onToggle={() => setExpanded(expanded === e.id ? null : e.id)}
-                  comparison={comparisons[e.id]}
-                  comparing={comparingId === e.id}
-                  compareError={compareError[e.id]}
-                  onCompare={() => void runNaiveCompare(e)}
-                />
-              ))}
-            </ul>
-          )}
-
-          {/* Excluded calls (offline / failed / usage-unknown) */}
-          {excludedEntries.length > 0 && (
-            <div className="mb-5">
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                <div className="label text-warn">{t("inspector.excluded", { count: excludedEntries.length })}</div>
-                <span className="text-[11px] text-ink-3">
-                  {t("inspector.excludedNote")}
-                </span>
+          {/* Method: the cascade, the baseline and the unit figures, one click away */}
+          <Disclosure summary={t("ux.insp.method")} testId="inspector-method">
+            <div className="space-y-4 text-xs">
+              {stats.measuredCount > 0 && (
+                <div className="space-y-2">
+                  <Bar label={t("inspector.barNaive")} value={stats.naive} max={maxTokens} color="var(--ink-3)" />
+                  <Bar label="Doppel" value={stats.ours} max={maxTokens} color="var(--frugal)" />
+                  <p className="text-ink-2">{t("inspector.naiveBaseline", { tag: baselineTag })} · {t("inspector.formula")}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <Explain chip="0" route="qr" title={t("inspector.tier0Title")} text={t("inspector.tier0Text")} />
+                <Explain chip="1" route="text-llm" title={t("inspector.tier1Title")} text={t("inspector.tier1Text")} />
+                <Explain chip="2" route="vision-llm" title={t("inspector.tier2Title")} text={t("inspector.tier2Text")} />
               </div>
-              <ul className="space-y-2">
-                {[...excludedEntries].reverse().map((e) => (
-                  <EntryRow
-                    key={e.id}
-                    entry={e}
-                    excluded={exclusionReason(e)}
-                    isOpen={expanded === e.id}
-                    onToggle={() => setExpanded(expanded === e.id ? null : e.id)}
-                    comparison={comparisons[e.id]}
-                    comparing={comparingId === e.id}
-                    compareError={compareError[e.id]}
-                    onCompare={() => void runNaiveCompare(e)}
-                  />
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Unit economics footer */}
-          <div className="rounded-xl border border-line bg-surface-2/60 p-3.5 text-xs">
-            <div className="label mb-2">{t("inspector.unitTitle")}</div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <div className="font-medium text-ink">{t("inspector.per1k")}</div>
-                {per1kOurs !== null && per1kNaive !== null ? (
-                  <div className="num mt-0.5 text-ink-2">
+              <ul className="space-y-1 text-ink-2">
+                <li>{t("inspector.baselineNote")}</li>
+                <li>{t("inspector.excludedNote")}</li>
+                {per1kOurs !== null && per1kNaive !== null && (
+                  <li className="num">
+                    {t("inspector.per1k", { n: 1000 })}:{" "}
                     {rich("inspector.per1kLine", {
                       ours: <b className="text-frugal">{fmt.usd(per1kOurs)}</b>,
                       naive: <b className="text-ink">{fmt.usd(per1kNaive)}</b>,
                     })}{" "}
-                    <span className="text-ink-3">{t("inspector.per1kBasis", { count: stats.snapCount })}</span>
-                  </div>
-                ) : (
-                  <div className="mt-0.5 text-ink-2">
-                    {rich("inspector.per1kEmpty", { file: <code className="font-mono">docs/BENCHMARK.md</code> })}
-                  </div>
+                    {t("inspector.per1kBasis", { count: stats.snapCount })}
+                  </li>
                 )}
-              </div>
-              <div>
-                <div className="font-medium text-ink">{t("inspector.energy")}</div>
-                {stats.measuredCount > 0 ? (
-                  <div className="num mt-0.5 text-ink-2">
+                {stats.measuredCount > 0 && (
+                  <li className="num">
+                    {t("inspector.energy")}:{" "}
                     {rich("inspector.energyLine", {
                       ours: <b className="text-frugal">{t("common.wh", { value: fmt.num(stats.oursWh, 3) })}</b>,
                       naive: <b className="text-ink">{t("common.wh", { value: fmt.num(stats.naiveWh, 3) })}</b>,
                     })}
-                  </div>
-                ) : (
-                  <div className="mt-0.5 text-ink-2">—</div>
+                  </li>
                 )}
-              </div>
+                <li>{t("inspector.energyNote")}</li>
+              </ul>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">{t("inspector.energyNote")}</p>
-          </div>
+          </Disclosure>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: boolean }) {
+  return (
+    <div className="rounded-xl bg-surface-2 p-3">
+      <dt className="label">{label}</dt>
+      <dd className={`num mt-1 text-xl font-semibold ${accent ? "text-frugal" : ""}`}>{value}</dd>
+      <dd className="num text-xs text-ink-2">{sub}</dd>
     </div>
   );
 }
@@ -455,15 +439,9 @@ function EntryRow({
             {t("inspector.gpt4oMeasured")}
           </span>
         )}
-        <span className="num text-xs text-ink-2">{t("common.ms", { value: Math.round(e.ms) })}</span>
         <span className="num text-xs font-semibold">
           {!usageKnown && e.usage.mode === "llm" ? t("inspector.usageUnknown") : t("inspector.tok", { count: oursTok })}
         </span>
-        {!excluded && (
-          <span className="num text-xs text-ink-3 line-through" title={t(comparison ? "inspector.measuredTitle" : "inspector.estimatedTitle")}>
-            {fmt.int(naiveTok)}
-          </span>
-        )}
       </button>
 
       {!!e.receiptItems?.length && (
@@ -473,6 +451,11 @@ function EntryRow({
       )}
       {isOpen && (
         <div id={panelId} className="space-y-3 border-t border-line px-3 py-3 text-xs">
+          {!excluded && (
+            <p className="num text-ink-2">
+              {t("common.ms", { value: fmt.int(Math.round(e.ms)) })} · {t(comparison ? "inspector.measuredTitle" : "inspector.estimatedTitle")}: {t("inspector.tok", { count: naiveTok })}
+            </p>
+          )}
           {e.steps && e.steps.length > 0 && (
             <ol className="space-y-1">
               {e.steps.map((s, i) => (
@@ -502,10 +485,9 @@ function EntryRow({
                 )}
               </div>
               <div className="mt-0.5 text-ink-2">
-                {rich("inspector.route", { route: <code className="font-mono">{route}</code> })} ·{" "}
+                {t("inspector.route", { route: msg(`route.${route}`) })} ·{" "}
                 {rich("inspector.leftDevice", {
-                  size: <span className="num font-medium">{e.bytesSent == null ? "—" : e.bytesSent < 1024
-                    ? t("common.bytes", { value: e.bytesSent }) : t("common.kb", { value: fmt.num(e.bytesSent / 1024, 1) })}</span>,
+                  size: <span className="num font-medium">{e.bytesSent == null ? "—" : byteSize(t, fmt, e.bytesSent)}</span>,
                 })}
                 {e.imageSize && t("inspector.input", { size: `${e.imageSize.width}×${e.imageSize.height}` })}
               </div>

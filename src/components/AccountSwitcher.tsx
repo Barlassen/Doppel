@@ -50,6 +50,8 @@ export function AccountSwitcher({
 }) {
   const { t, fmt } = useI18n();
   const [open, setOpen] = useState(false);
+  // Deleting asks once more inside the menu: there is no undo for an account.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -59,7 +61,10 @@ export function AccountSwitcher({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setConfirmDelete(false);
+      }
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
@@ -86,6 +91,7 @@ export function AccountSwitcher({
   };
   const close = (refocus = true) => {
     setOpen(false);
+    setConfirmDelete(false);
     if (refocus) triggerRef.current?.focus();
   };
 
@@ -118,6 +124,7 @@ export function AccountSwitcher({
       close();
     } else if (e.key === "Tab") {
       setOpen(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -137,7 +144,7 @@ export function AccountSwitcher({
       >
         <Avatar name={active.profile.name} active />
         <span className="truncate">{active.profile.name}</span>
-        <span className="num shrink-0 text-ink-3">{fmt.chf(netWorth(active))}</span>
+        <span className="num hidden shrink-0 text-ink-3 min-[400px]:inline">{fmt.chf(netWorth(active))}</span>
         <span aria-hidden="true" className="shrink-0 text-[10px] text-ink-3">▾</span>
       </button>
 
@@ -210,14 +217,25 @@ export function AccountSwitcher({
               type="button"
               role="menuitem"
               tabIndex={-1}
+              data-testid="delete-account"
               onClick={() => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
+                }
                 close();
                 onDelete(active.id);
               }}
-              className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-bad outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+              className={`w-full rounded-lg px-2 py-1.5 text-left text-xs text-bad outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent ${confirmDelete ? "bg-bad/10" : ""}`}
             >
-              <span className="block font-medium">{t(active.ubs ? "ubs.closeProfile" : "data.deleteAccount")}</span>
-              <span className="block text-[11px] text-ink-3">{t(active.ubs ? "ubs.closeProfileHint" : "data.deleteAccountHint")}</span>
+              <span className="block font-medium">
+                {confirmDelete
+                  ? t(active.ubs ? "ux.confirmClose" : "ux.confirmDelete", { name: active.profile.name })
+                  : t(active.ubs ? "ubs.closeProfile" : "data.deleteAccount")}
+              </span>
+              <span className="block text-[11px] text-ink-2" role={confirmDelete ? "status" : undefined}>
+                {confirmDelete ? t("ux.confirmHint") : t(active.ubs ? "ubs.closeProfileHint" : "data.deleteAccountHint")}
+              </span>
             </button>
           )}
           {onNewAccount && (
@@ -229,13 +247,12 @@ export function AccountSwitcher({
               role="menuitem"
               tabIndex={-1}
               onClick={() => {
-                close(false);
+                close();
                 onNewAccount();
               }}
               className="w-full rounded-lg px-2 py-1.5 text-left text-xs outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
             >
               <span className="block font-medium">{t("data.newAccount")}</span>
-              <span className="block text-[11px] text-ink-3">{t("data.newAccountHint")}</span>
             </button>
           )}
           {onOpenUbs && (
@@ -248,7 +265,7 @@ export function AccountSwitcher({
               tabIndex={-1}
               data-testid="open-ubs"
               onClick={() => {
-                close(false);
+                close();
                 onOpenUbs();
               }}
               className="w-full rounded-lg px-2 py-1.5 text-left text-xs outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"

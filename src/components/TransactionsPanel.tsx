@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   addTrade,
   addTransaction,
@@ -15,6 +15,7 @@ import {
 import type { AccountRecord } from "@/lib/accounts/types";
 import { categoryMsg, merchantText } from "@/lib/data/merchants";
 import { TRANSACTION_CATEGORIES, type InvestmentTrade, type ReceiptItem, type Transaction, type TransactionCategory } from "@/lib/finance/types";
+import { dateCh, dayMonthCh } from "@/lib/format";
 import { msg, type Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ReceiptDetails } from "./ReceiptDetails";
@@ -29,6 +30,25 @@ const MAX = 1_000_000;
 const ymNum = (ym: string) => Number(ym.slice(0, 4)) * 100 + Number(ym.slice(5, 7));
 const today = () => new Date().toISOString().slice(0, 10);
 const validDate = (d: string) => /^\d{4}-\d\d-\d\d$/.test(d) && Number.isFinite(new Date(d).getTime());
+
+/** After an editor closes, focus goes back to the button that opened it (`data-edit` = record id or "new"). */
+function useReturnFocus(root: RefObject<HTMLDivElement | null>) {
+  return (id: string) =>
+    requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-edit="${id.replace(/"/g, "")}"]`)?.focus());
+}
+
+/** "Removed X · Undo": deleting is immediate, so the row can be put back with one click (focus lands on Undo). */
+function UndoLine({ name, onUndo }: { name: string; onUndo: () => void }) {
+  const { t } = useI18n();
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => button.current?.focus(), [name]);
+  return (
+    <p className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-3 py-1.5 text-xs" data-testid="undo-line">
+      <span className="min-w-0 break-words">{t("ux.removed", { name })}</span>
+      <button ref={button} type="button" className={pill} onClick={onUndo}>{t("ux.undo")}</button>
+    </p>
+  );
+}
 
 /**
  * The active account's transactions and trades: by month with category and month filters, add / edit / delete,
@@ -76,8 +96,19 @@ function TransactionList({ account, onDataChange }: { account: Account; onDataCh
   const groups = new Map<string, AccountRecord<Transaction>[]>();
   for (const r of shown) groups.set(r.value.date.slice(0, 7), [...(groups.get(r.value.date.slice(0, 7)) ?? []), r]);
   const present = new Set(records.map((r) => r.value.category));
+  const [removed, setRemoved] = useState<Transaction | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const returnFocus = useReturnFocus(root);
 
-  useEffect(() => setEditing(null), [account.id]);
+  useEffect(() => {
+    setEditing(null);
+    setRemoved(null);
+  }, [account.id]);
+
+  function close(id: string) {
+    setEditing(null);
+    returnFocus(id);
+  }
 
   function save(id: string | "new", tx: Transaction) {
     if (id === "new") {
@@ -87,11 +118,20 @@ function TransactionList({ account, onDataChange }: { account: Account; onDataCh
       onDataChange(msg("data.impactEdit", { merchant: tx.merchant }));
       updateTransaction(account.id, id, { ...tx, items: tx.items });
     }
-    setEditing(null);
+    setRemoved(null);
+    close(id);
+  }
+
+  function restore() {
+    if (!removed) return;
+    onDataChange(msg("data.impactAdd", { merchant: removed.merchant }));
+    addTransaction(account.id, removed);
+    setRemoved(null);
+    returnFocus("new");
   }
 
   return (
-    <div className="min-w-0 space-y-3">
+    <div ref={root} className="min-w-0 space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="min-w-0 text-xs font-medium text-ink-2">
           {t("data.filterMonth")}
@@ -108,12 +148,13 @@ function TransactionList({ account, onDataChange }: { account: Account; onDataCh
             {TRANSACTION_CATEGORIES.filter((c) => present.has(c)).map((c) => <option key={c} value={c}>{tm(categoryMsg(c))}</option>)}
           </select>
         </label>
-        <button type="button" className={`${primary} col-span-2 justify-self-start sm:col-span-1`} onClick={() => setEditing("new")} disabled={editing === "new"}>
+        <button type="button" data-edit="new" className={`${primary} col-span-2 justify-self-start sm:col-span-1`} onClick={() => setEditing("new")} disabled={editing === "new"}>
           {t("data.addTx")}
         </button>
       </div>
 
-      {editing === "new" && <TxEditor onSave={(tx) => save("new", tx)} onCancel={() => setEditing(null)} />}
+      {editing === "new" && <TxEditor onSave={(tx) => save("new", tx)} onCancel={() => close("new")} />}
+      <div role="status">{removed && <UndoLine name={tm(merchantText(removed.merchant))} onUndo={restore} />}</div>
 
       {account.receipts.length > 0 && (
         <details className="disclosure rounded-lg bg-surface-2 px-3 py-2">
@@ -122,14 +163,13 @@ function TransactionList({ account, onDataChange }: { account: Account; onDataCh
             {account.receipts.map((r, i) => (
               <li key={i} className="text-xs">
                 <div className="flex justify-between gap-2">
-                  <span className="min-w-0 truncate">{r.date} · {tm(merchantText(r.merchant))} · {tm(categoryMsg(r.category))}</span>
+                  <span className="min-w-0 truncate">{dateCh(r.date)} · {tm(merchantText(r.merchant))} · {tm(categoryMsg(r.category))}</span>
                   <span className="num shrink-0">{fmt.chf(r.amount)}</span>
                 </div>
                 {!!r.items?.length && <ReceiptDetails items={r.items} total={r.amount} />}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-ink-3">{t("data.receiptsNote")}</p>
         </details>
       )}
 
@@ -149,23 +189,24 @@ function TransactionList({ account, onDataChange }: { account: Account; onDataCh
                   {rows.map((r) => (
                     <li key={r.id} className="py-1.5">
                       {editing === r.id ? (
-                        <TxEditor initial={r.value} onSave={(tx) => save(r.id, tx)} onCancel={() => setEditing(null)} />
+                        <TxEditor initial={r.value} onSave={(tx) => save(r.id, tx)} onCancel={() => close(r.id)} />
                       ) : (
                         <div className="flex min-w-0 items-center gap-2 text-sm">
                           <span className="min-w-0 flex-1">
                             <span className="block truncate">{tm(merchantText(r.value.merchant))}</span>
-                            <span className="block truncate text-[11px] text-ink-3">
-                              {r.value.date.slice(8, 10)}.{r.value.date.slice(5, 7)}. · {tm(categoryMsg(r.value.category))}
+                            <span className="block truncate text-[11px] text-ink-2">
+                              {dayMonthCh(r.value.date)} · {tm(categoryMsg(r.value.category))}
                               {r.value.note ? <> · {r.value.note}</> : null}
                             </span>
                             {!!r.value.items?.length && <ReceiptDetails items={r.value.items} total={r.value.amount} />}
                           </span>
                           <span className="num shrink-0 text-sm">{fmt.chf(r.value.amount)}</span>
-                          <button type="button" className={iconBtn} aria-label={t("data.editAria", { merchant: r.value.merchant, date: r.value.date })} onClick={() => setEditing(r.id)}>✎</button>
-                          <button type="button" className={iconBtn} aria-label={t("data.deleteAria", { merchant: r.value.merchant, date: r.value.date })}
+                          <button type="button" data-edit={r.id} className={iconBtn} aria-label={t("data.editAria", { merchant: r.value.merchant, date: dateCh(r.value.date) })} onClick={() => setEditing(r.id)}>✎</button>
+                          <button type="button" className={iconBtn} aria-label={t("data.deleteAria", { merchant: r.value.merchant, date: dateCh(r.value.date) })}
                             onClick={() => {
                               onDataChange(msg("data.impactDelete", { merchant: r.value.merchant }));
                               deleteTransaction(account.id, r.id);
+                              setRemoved(r.value);
                             }}>✕</button>
                         </div>
                       )}
@@ -276,22 +317,40 @@ function TradeList({ account, onDataChange }: { account: Account; onDataChange: 
   const records = useMemo(() => listTrades(account.id), [account.id, account.version]);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const shown = [...records].sort((a, b) => (a.value.date < b.value.date ? 1 : a.value.date > b.value.date ? -1 : 0));
-  useEffect(() => setEditing(null), [account.id]);
+  const [removed, setRemoved] = useState<InvestmentTrade | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const returnFocus = useReturnFocus(root);
+  useEffect(() => {
+    setEditing(null);
+    setRemoved(null);
+  }, [account.id]);
+
+  function close(id: string) {
+    setEditing(null);
+    returnFocus(id);
+  }
 
   function save(id: string | "new", trade: InvestmentTrade) {
     onDataChange(msg(id === "new" ? "data.impactAdd" : "data.impactEdit", { merchant: trade.instrument }));
     if (id === "new") addTrade(account.id, trade);
     else updateTrade(account.id, id, trade);
-    setEditing(null);
+    setRemoved(null);
+    close(id);
+  }
+
+  function restore() {
+    if (!removed) return;
+    onDataChange(msg("data.impactAdd", { merchant: removed.instrument }));
+    addTrade(account.id, removed);
+    setRemoved(null);
+    returnFocus("new");
   }
 
   return (
-    <div className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-2">{t("data.tradesIntro")}</p>
-        <button type="button" className={primary} onClick={() => setEditing("new")} disabled={editing === "new"}>{t("data.addTrade")}</button>
-      </div>
-      {editing === "new" && <TradeEditor onSave={(tr) => save("new", tr)} onCancel={() => setEditing(null)} />}
+    <div ref={root} className="min-w-0 space-y-3">
+      <button type="button" data-edit="new" className={primary} onClick={() => setEditing("new")} disabled={editing === "new"}>{t("data.addTrade")}</button>
+      {editing === "new" && <TradeEditor onSave={(tr) => save("new", tr)} onCancel={() => close("new")} />}
+      <div role="status">{removed && <UndoLine name={removed.instrument} onUndo={restore} />}</div>
       {shown.length === 0 ? (
         <p className="text-sm text-ink-2">{t("data.noTrades")}</p>
       ) : (
@@ -299,22 +358,23 @@ function TradeList({ account, onDataChange }: { account: Account; onDataChange: 
           {shown.map((r) => (
             <li key={r.id} className="py-1.5">
               {editing === r.id ? (
-                <TradeEditor initial={r.value} onSave={(tr) => save(r.id, tr)} onCancel={() => setEditing(null)} />
+                <TradeEditor initial={r.value} onSave={(tr) => save(r.id, tr)} onCancel={() => close(r.id)} />
               ) : (
                 <div className="flex min-w-0 items-center gap-2 text-sm">
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{r.value.instrument}</span>
-                    <span className="block truncate text-[11px] text-ink-3">
-                      {r.value.date} · {t(`data.side.${r.value.side}`)} · {t(`data.tradeAccount.${r.value.account}`)}
+                    <span className="block truncate text-[11px] text-ink-2">
+                      {dateCh(r.value.date)} · {t(`data.side.${r.value.side}`)} · {t(`data.tradeAccount.${r.value.account}`)}
                       {r.value.units ? <> · {t("data.units", { units: fmt.num(r.value.units) })}</> : null}
                     </span>
                   </span>
                   <span className={`num shrink-0 ${r.value.side === "sell" ? "text-bad" : ""}`}>{fmt.chf(r.value.amount)}</span>
-                  <button type="button" className={iconBtn} aria-label={t("data.editAria", { merchant: r.value.instrument, date: r.value.date })} onClick={() => setEditing(r.id)}>✎</button>
-                  <button type="button" className={iconBtn} aria-label={t("data.deleteAria", { merchant: r.value.instrument, date: r.value.date })}
+                  <button type="button" data-edit={r.id} className={iconBtn} aria-label={t("data.editAria", { merchant: r.value.instrument, date: dateCh(r.value.date) })} onClick={() => setEditing(r.id)}>✎</button>
+                  <button type="button" className={iconBtn} aria-label={t("data.deleteAria", { merchant: r.value.instrument, date: dateCh(r.value.date) })}
                     onClick={() => {
                       onDataChange(msg("data.impactDelete", { merchant: r.value.instrument }));
                       deleteTrade(account.id, r.id);
+                      setRemoved(r.value);
                     }}>✕</button>
                 </div>
               )}
