@@ -42,7 +42,7 @@ export function AskCard({
   const connected = status !== "checking" && !!status?.configured && !!status.textModel;
   const state = status === "checking" ? "checking" : connected ? "on" : "off";
   return (
-    <section id="assistant" className="card scroll-mt-28 p-5 sm:p-6" data-testid="ask-card">
+    <section id="assistant" className="card scroll-mt-36 p-5 sm:p-6" data-testid="ask-card">
       <CardHeader
         title={t("llm.askLabel")}
         aside={

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
 /** Small page nav shared by the dashboard and Doppel Play. */
@@ -33,6 +34,33 @@ const SECTIONS = ["money", "outlook", "decisions", "assistant", "statements"] as
 export function SectionNav({ current }: { current: "dashboard" | "play" }) {
   const { t } = useI18n();
   const base = current === "dashboard" ? "" : "/";
+  // Arriving with a hash (from Doppel Play, a reload, a shared link): the cards above the target are still being
+  // computed, so the first jump lands too high. Jump again as the page settles, until the reader scrolls themselves.
+  useEffect(() => {
+    if (current !== "dashboard") return;
+    const jump = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (id) document.getElementById(id)?.scrollIntoView({ block: "start" });
+    };
+    let timers: number[] = [];
+    const stop = () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers = [];
+    };
+    const settle = () => {
+      stop();
+      timers = [0, 300, 900, 1800, 3000].map((ms) => window.setTimeout(jump, ms));
+    };
+    if (window.location.hash) settle();
+    window.addEventListener("hashchange", settle);
+    const own = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    own.forEach((type) => window.addEventListener(type, stop, { passive: true }));
+    return () => {
+      stop();
+      window.removeEventListener("hashchange", settle);
+      own.forEach((type) => window.removeEventListener(type, stop));
+    };
+  }, [current]);
   return (
     <nav aria-label={t("sections.aria")} data-testid="section-nav" className="mx-auto max-w-6xl overflow-x-auto px-4 pb-2">
       <ul className="flex w-max items-center gap-1">

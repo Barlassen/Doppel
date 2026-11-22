@@ -1086,13 +1086,13 @@ export default function DoppelApp() {
 
         <div className="mt-6 space-y-5">
           <TwinCard profile={effProfile} summary={learned.summary} />
-          <div id="money" className="scroll-mt-28">
+          <div id="money" className="scroll-mt-36">
             <MoneyFlow profile={effProfile} summary={learned.summary} outlook={outlookFresh} />
           </div>
           <Insights profile={effProfile} summary={learned.summary} />
 
           <h2 className="sr-only">{t("ux.futureTitle")}</h2>
-          <section id="outlook" className="card scroll-mt-28 p-4 sm:p-6">
+          <section id="outlook" className="card scroll-mt-36 p-4 sm:p-6">
             <CardHeader title={t("chart.title")} />
             <ConeChart
               real={real}
@@ -1139,8 +1139,7 @@ export default function DoppelApp() {
         </div>
 
         <div className="mt-14 space-y-14">
-          <span id="decisions" aria-hidden="true" className="-mb-14 block h-0 scroll-mt-28" />
-          <Section title={t("layout.decisions")}>
+          <Section id="decisions" title={t("layout.decisions")}>
             <div className="mb-5">
               <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} hasHome={scenario.events.some((e) => e.type === "house")} />
             </div>
@@ -1224,8 +1223,7 @@ export default function DoppelApp() {
             </div>
           </Section>
 
-          <span id="statements" aria-hidden="true" className="-mb-14 block h-0 scroll-mt-28" />
-          <Section title={t("data.sectionTitle")}>
+          <Section id="statements" title={t("data.sectionTitle")}>
             <div className="grid items-start gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
               <ImportPanel
                 account={account}

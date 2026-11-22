@@ -64,10 +64,11 @@ export function Disclosure({
 }
 
 /** A titled group of related cards. */
-export function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+/** `id` makes the section a jump target of the header's section links (it clears the sticky header). */
+export function Section({ title, children, id: anchor }: { title: ReactNode; children: ReactNode; id?: string }) {
   const id = useId();
   return (
-    <section aria-labelledby={id}>
+    <section id={anchor} aria-labelledby={id} className={anchor ? "scroll-mt-36" : undefined}>
       <h2 id={id} className="mb-4 font-serif text-2xl leading-tight sm:text-3xl">{title}</h2>
       {children}
     </section>
