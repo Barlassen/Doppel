@@ -12,7 +12,7 @@ Start everything for the demo with `scripts/demo-with-tkt.ps1` (Windows) or `scr
 | J3: thumb closes and opens (left click) | Tap a ringed piece, then one of its decisions; start a game, hold, compare lines, open a past move |
 | J6: index and middle slide together | Scroll: board → engine review → move list |
 | J11: pinky alone, speak | Dictation into the focused field. Click the what-if bar on the dashboard, say "retire at 60" or "buy a flat in 2028 for 1.2M", then close the fist to press Enter. Doppel parses it in four languages. |
-| J9: three/four fingers, swipe | Switch desktop: between Doppel and the slides during the pitch |
+| J9: three/four fingers, swipe | Switch desktop: between Doppel and the slides during the pitch. Or, with the setting below: step through the moves in `/play` (← / →) and compare lines (swipe up, Tab) |
 | J10: hand out of view, or Ctrl+Alt+P | Output stops (safe stop) |
 | J0: loose fist | Rest |
 
@@ -40,9 +40,21 @@ The decision buttons are at least 44 px high. A board square is about 35 px on a
 5. On the dashboard, click the what-if bar, raise the pinky (J11) and say "retire at 60"; close the fist. The twin recomputes.
 6. Say: "The camera sends plain clicks, scrolls and dictation. Doppel's maths never changes."
 
+## Swipes as `/play` shortcuts
+
+`/play` listens for ← / → (previous / next move) and Tab (compare lines). The swipes switch desktops by default. To send those keys instead, set this in `tkt/config/control.toml`:
+
+```toml
+[swipe]
+left = "key_left"
+right = "key_right"
+up = "key_tab"
+```
+
+Tab compares lines only while the focus is on the page itself, not in a field. This mapping is covered by tests in `tkt/` but was not tried with a live camera.
+
 ## Next steps
 
-- **Gestures as shortcuts:** swipes left and right step through moves (← / →), and a swipe up compares lines (Tab). `/play` already has these keys. Today the swipes switch desktops, so this needs a mapping in the hand-control layer (`src/tkt/control/gestures.py`) and new config keys.
 - **Event bridge:** a versioned localhost event stream (Python standard library only) and a feature-flagged subscriber in Doppel.
 - **Desk documents:** one still frame of a receipt or bill on the desk goes into Doppel's snap cascade. OCR runs in the browser first.
 
