@@ -1,0 +1,31 @@
+/** The 26 cantons with their main city and the marginal tax rate the new-account wizard prefills (percent). */
+export const CANTONS: readonly { code: string; city: string; tax: number }[] = [
+  { code: "ZH", city: "Zürich", tax: 22 },
+  { code: "BE", city: "Bern", tax: 26 },
+  { code: "VD", city: "Lausanne", tax: 29 },
+  { code: "GE", city: "Genève", tax: 30 },
+  { code: "BS", city: "Basel", tax: 25 },
+  { code: "BL", city: "Liestal", tax: 24 },
+  { code: "LU", city: "Luzern", tax: 20 },
+  { code: "SG", city: "St. Gallen", tax: 23 },
+  { code: "AG", city: "Aarau", tax: 21 },
+  { code: "ZG", city: "Zug", tax: 14 },
+  { code: "TI", city: "Lugano", tax: 24 },
+  { code: "FR", city: "Fribourg", tax: 26 },
+  { code: "VS", city: "Sion", tax: 24 },
+  { code: "NE", city: "Neuchâtel", tax: 28 },
+  { code: "SO", city: "Solothurn", tax: 24 },
+  { code: "TG", city: "Frauenfeld", tax: 21 },
+  { code: "GR", city: "Chur", tax: 21 },
+  { code: "SZ", city: "Schwyz", tax: 16 },
+  { code: "SH", city: "Schaffhausen", tax: 22 },
+  { code: "AR", city: "Herisau", tax: 21 },
+  { code: "AI", city: "Appenzell", tax: 18 },
+  { code: "GL", city: "Glarus", tax: 20 },
+  { code: "NW", city: "Stans", tax: 16 },
+  { code: "OW", city: "Sarnen", tax: 17 },
+  { code: "UR", city: "Altdorf", tax: 19 },
+  { code: "JU", city: "Delémont", tax: 28 },
+];
+
+export const CANTON_CODES: readonly string[] = CANTONS.map((c) => c.code);
