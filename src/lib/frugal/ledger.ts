@@ -1,4 +1,4 @@
-import { msg, type Text } from "@/lib/i18n/types";
+import { msg, type Msg, type Text } from "@/lib/i18n/types";
 import type { NaiveEstimate } from "./tokens";
 import { estimateEnergyWh, naiveReasoning, naiveSnap } from "./tokens";
 import type { DocKind, PipelineStep, SnapResult, Tier, Usage } from "@/lib/snap/types";
@@ -37,7 +37,7 @@ export interface NaiveComparison {
 export interface LedgerEntry {
   id: string;
   at: number;
-  kind: "snap" | "command" | "narrate";
+  kind: "snap" | "command" | "narrate" | "ask";
   title: Text;
   tier: Tier | "local-parser" | "llm";
   ms: number;
@@ -86,6 +86,12 @@ export interface LedgerTotals {
   unknownUsageCount: number;
   partialCount: number;
   liveNaiveCount: number;
+  /** Included entries whose model has no known price: counted in tokens, left out of both cost totals. */
+  costUnknownCount: number;
+  /** Included entries whose cost is tokens × list price rather than a provider-reported cost. */
+  costEstimatedCount: number;
+  /** Entries whose token counts are estimates (the provider reported none). Always among the excluded ones. */
+  estimatedTokenCount: number;
   /** Measured snap-only aggregates for per-1,000-snap unit economics. */
   snapCount: number;
   snapOursCost: number;
@@ -109,7 +115,7 @@ export function resolveRoute(e: Pick<LedgerEntry, "kind" | "tier" | "usage" | "r
     if (e.tier === "local-parser") return "local-parser";
     return e.usage.mode === "offline" ? "offline-heuristic" : "text-llm";
   }
-  if (e.kind === "narrate") {
+  if (e.kind === "narrate" || e.kind === "ask") {
     return e.usage.mode === "offline" ? "offline-template" : "text-llm";
   }
   if (e.usage.mode === "offline") return "offline-heuristic";
@@ -301,6 +307,46 @@ export function entryFromNarrate(a: {
 }
 
 /**
+ * Build a ledger entry from a free-form question (`ask` task). The baseline is the same "frontier model does the
+ * reasoning" estimate as for a narration.
+ */
+export function entryFromAsk(a: {
+  question: string;
+  usage: Usage;
+  payload: unknown;
+  ms: number;
+  stateChars: number;
+  usageKnown?: boolean;
+  outcome?: SnapOutcome;
+}): LedgerEntry {
+  const usageKnown = typeof a.usageKnown === "boolean" ? a.usageKnown
+    : a.usage.mode === "llm" ? a.usage.tokenBasis !== "estimated" && a.usage.promptTokens + a.usage.completionTokens > 0 : false;
+  return {
+    id: nextId("ask"),
+    at: Date.now(),
+    kind: "ask",
+    title: msg("llm.ledgerAsk", { text: a.question }),
+    tier: "llm",
+    ms: a.ms,
+    usage: a.usage,
+    naive: naiveReasoning(a.stateChars, 220),
+    payload: a.payload,
+    route: a.usage.mode === "offline" ? "offline-template" : "text-llm",
+    outcome: a.outcome ?? "ok",
+    usageKnown,
+    bytesSent: estimateBytesSent(a.payload, a.usage.mode),
+  };
+}
+
+/** A label for an entry whose usage is not fully provider-reported, or undefined when it is. */
+export function usageBasisMsg(usage: Pick<Usage, "tokenBasis" | "costBasis">): Msg | undefined {
+  if (usage.tokenBasis === "estimated") return msg("llm.usageEstimated");
+  if (usage.costBasis === "unknown") return msg("llm.costUnknown");
+  if (usage.costBasis === "estimated") return msg("llm.costEstimated");
+  return undefined;
+}
+
+/**
  * Aggregate ledger totals.
  * Savings % (both tokens and cost) are computed strictly over measured, non-offline, non-failed entries.
  * If live GPT-4o comparisons exist in `comparisons`, their measured tokens/cost replace the estimates.
@@ -316,6 +362,9 @@ export function totals(entries: LedgerEntry[], comparisons?: Record<string, Naiv
   let unknownUsageCount = 0;
   let partialCount = 0;
   let liveNaiveCount = 0;
+  let costUnknownCount = 0;
+  let costEstimatedCount = 0;
+  let estimatedTokenCount = 0;
   let snapCount = 0;
   let snapOursCost = 0;
   let snapNaiveCost = 0;
@@ -325,7 +374,9 @@ export function totals(entries: LedgerEntry[], comparisons?: Record<string, Naiv
   let naiveWh = 0;
 
   for (const e of entries) {
-    const reason = exclusionReason(e);
+    if (e.usage.tokenBasis === "estimated") estimatedTokenCount += 1;
+    // An estimate is not a measurement, whatever the entry says about itself.
+    const reason = exclusionReason(e) ?? (e.usage.tokenBasis === "estimated" ? "usage-unknown" : null);
     if (reason) {
       if (reason === "offline") offlineCount += 1;
       else if (reason === "failed") failedCount += 1;
@@ -342,10 +393,17 @@ export function totals(entries: LedgerEntry[], comparisons?: Record<string, Naiv
     const eNaiveCost = live ? live.costUsd : e.naive.costUsd;
     if (live) liveNaiveCount += 1;
 
+    // Without a price for the model the entry would read as "cost 0" and inflate the cost savings.
+    const costKnown = e.usage.costBasis !== "unknown";
+    if (!costKnown) costUnknownCount += 1;
+    if (e.usage.costBasis === "estimated") costEstimatedCount += 1;
+
     ours += eOurs;
     naive += eNaive;
-    oursCost += e.usage.costUsd;
-    naiveCost += eNaiveCost;
+    if (costKnown) {
+      oursCost += e.usage.costUsd;
+      naiveCost += eNaiveCost;
+    }
 
     const localPass = e.usage.mode === "local";
     oursWh += estimateEnergyWh(eOurs, localPass ? "local" : "small");
@@ -353,8 +411,10 @@ export function totals(entries: LedgerEntry[], comparisons?: Record<string, Naiv
 
     if (e.kind === "snap") {
       snapCount += 1;
-      snapOursCost += e.usage.costUsd;
-      snapNaiveCost += eNaiveCost;
+      if (costKnown) {
+        snapOursCost += e.usage.costUsd;
+        snapNaiveCost += eNaiveCost;
+      }
       snapOursTokens += eOurs;
       snapNaiveTokens += eNaive;
     }
@@ -379,6 +439,9 @@ export function totals(entries: LedgerEntry[], comparisons?: Record<string, Naiv
     unknownUsageCount,
     partialCount,
     liveNaiveCount,
+    costUnknownCount,
+    costEstimatedCount,
+    estimatedTokenCount,
     snapCount,
     snapOursCost,
     snapNaiveCost,

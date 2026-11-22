@@ -5,7 +5,8 @@ import { msg } from "@/lib/i18n/types";
 import { callTwin } from "@/lib/llm";
 import type { Usage } from "@/lib/snap/types";
 import { CATEGORIZE_MAX_NAMES, categorizeName } from "./categorizeModel";
-import { applyCategories, unresolvedMerchants, type Review } from "./review";
+import { applyCategories, isAdded, unresolvedMerchants, type Review } from "./review";
+import type { ReviewRow } from "./types";
 import { merchantKey } from "./text";
 
 /**
@@ -38,20 +39,29 @@ function writeCache(add: Record<string, TransactionCategory>) {
   }
 }
 
-/** What GPT-4o would cost if every row's booking text were sent for categorisation (the naive baseline). */
-function naiveCategorize(review: Review): NaiveEstimate {
-  const text = review.rows.map((r) => `${r.date} ${r.raw} ${r.amount}`).join("\n");
+/**
+ * What GPT-4o would cost to categorise `rows` from their booking texts (the naive baseline). Only rows that this
+ * step really resolved are passed in: a row left "review needed" was not done and saves nothing.
+ */
+function naiveCategorize(rows: readonly ReviewRow[]): NaiveEstimate {
+  if (!rows.length) {
+    return { promptTokens: 0, completionTokens: 0, costUsd: 0, description: msg("data.naive", { rows: 0, tokens: 0 }), model: NAIVE_MODEL, basis: "estimated" };
+  }
+  const text = rows.map((r) => `${r.date} ${r.raw} ${r.amount}`).join("\n");
   const promptTokens = estimateTextTokens(text) + 120;
-  const completionTokens = Math.max(20, review.rows.length * 6);
+  const completionTokens = Math.max(20, rows.length * 6);
   return {
     promptTokens,
     completionTokens,
     costUsd: (promptTokens * NAIVE_PRICE.input + completionTokens * NAIVE_PRICE.output) / 1e6,
-    description: msg("data.naive", { rows: review.rows.length, tokens: promptTokens }),
+    description: msg("data.naive", { rows: rows.length, tokens: promptTokens }),
     model: NAIVE_MODEL,
     basis: "estimated",
   };
 }
+
+/** New spending rows (not duplicates, transfers or income) whose category came from one of `sources`. */
+const resolvedBy = (review: Review, sources: readonly ReviewRow["source"][]) => review.rows.filter((r) => isAdded(r) && sources.includes(r.source));
 
 let seq = 0;
 const entryId = () => `imp-${Date.now().toString(36)}-${(++seq).toString(36)}`;
@@ -75,7 +85,7 @@ export async function categorizeWithModel(review: Review, fileName: string, rows
   }
   let next = cached.size ? applyCategories(review, cached, "cache") : review;
   const pending = unresolvedMerchants(next);
-  const naive = naiveCategorize(review);
+  const naive = naiveCategorize(resolvedBy(next, ["override", "dictionary", "keyword", "cache"]));
   const localEntry: LedgerEntry = {
     id: entryId(),
     at: Date.now(),
@@ -124,7 +134,8 @@ export async function categorizeWithModel(review: Review, fileName: string, rows
     tier: "llm",
     ms: performance.now() - t1,
     usage,
-    naive: { ...naive, promptTokens: 0, completionTokens: 0, costUsd: 0 },
+    // The rows the model call placed. Nothing when it failed: the entry is then excluded from the savings anyway.
+    naive: naiveCategorize(mode === "model" ? resolvedBy(next, ["model"]) : []),
     payload: r.request ?? { wouldSend: request },
     route: mode === "offline" ? "offline-heuristic" : "text-llm",
     outcome: mode === "model" ? "ok" : mode === "offline" ? "partial" : "failed",
