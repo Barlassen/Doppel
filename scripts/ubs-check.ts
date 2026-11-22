@@ -41,6 +41,19 @@ function nonFinite(v: unknown, path = ""): string[] {
   return [];
 }
 
+/** Relative tolerance for the fingerprint on other platforms: far below a rappen on any figure, far above rounding noise. */
+const GOLDEN_REL_TOL = 1e-12;
+
+/** Same structure and same values; numbers may differ by `tol` relative. */
+function sameWithin(a: unknown, b: unknown, tol: number): boolean {
+  if (typeof a === "number" && typeof b === "number") return a === b || Math.abs(a - b) <= tol * Math.max(Math.abs(a), Math.abs(b));
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return a === b;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  return ka.length === kb.length && ka.every((k) => k in b && sameWithin((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], tol));
+}
+
 async function main() {
   const t0 = performance.now();
   const summaries = listUbsProfiles();
@@ -258,6 +271,9 @@ async function main() {
   }
   const golden = readFileSync(GOLDEN_PATH, "utf8").trim();
   if (now === golden) ok("engine output is bit-identical to the pinned fingerprint (scripts/fixtures/persona-golden.json)");
+  // Other CPUs and Node versions round the last bits of a few sums differently (seen: 4 of 1'744 values, last digit).
+  else if (sameWithin(JSON.parse(now), JSON.parse(golden), GOLDEN_REL_TOL))
+    ok(`engine output matches the pinned fingerprint within ${GOLDEN_REL_TOL} relative (floating-point rounding on this platform)`);
   else fail("built-in accounts changed (scripts/fixtures/persona-golden.json); re-pin with DOPPEL_UPDATE_GOLDEN=1 only for a deliberate engine change");
 
   // ---------------- population overview ----------------
