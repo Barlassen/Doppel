@@ -11,6 +11,8 @@ const unchanged = new Set([
   "common.deltaChf", "common.priceLabel", "common.arrow", "common.separator", "cmd.result", "insight.subsItem",
   "common.tokens_one", "common.tokens_other", "inspector.tok",
   "timeline.amount", "narr.bestMove", "route.cache", "inspector.oursHeader", "data.formats",
+  // Format-only templates (placeholders and separators, no words).
+  "ubs.rowMeta", "ubs.loanLine",
 ]);
 
 function flatten(value: unknown, errors: string[], key = "", leaves = new Map<string, string>()): Map<string, string> {

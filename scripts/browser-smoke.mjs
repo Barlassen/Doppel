@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 import QRCode from "qrcode";
 // Run through tsx (see package.json) so localized steps read their labels from the dictionaries.
 import { DICTIONARIES, translate } from "../src/lib/i18n/index.ts";
+import { ALEXIA_ID, listUbsProfiles } from "../src/lib/ubs/index.ts";
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** The longest fixed fragment of a template, for matching text whose placeholders vary. */
@@ -570,6 +571,63 @@ try {
   await page.waitForFunction(() => document.documentElement.lang === "tr-TR");
   await switcher("Oktay").waitFor();
   console.log("Account switcher: keyboard switch, headline change and persistence across reload passed");
+
+  // UBS synthetic profiles: open Alexia from the picker (headline + her three paths), then a profile with debt.
+  {
+    const E = DICTIONARIES.en.ubs;
+    const ubsContext = await browser.newContext({ locale: "en-US", viewport: { width: 320, height: 800 } });
+    const ubsPage = await ubsContext.newPage();
+    ubsPage.on("pageerror", (error) => errors.push(error.message));
+    trackHydration(ubsPage, errors);
+    await visit(ubsPage);
+    const ubsSwitcher = (name) => ubsPage.getByRole("button", { name: translate("en", "header.switchAria", { name }) });
+    const openPicker = async (current) => {
+      await ubsSwitcher(current).click();
+      await ubsPage.getByRole("menuitem", { name: new RegExp(escapeRegExp(E.openProfile)) }).click();
+      const picker = ubsPage.getByRole("dialog", { name: E.pickerTitle });
+      await picker.waitFor();
+      return picker;
+    };
+    let picker = await openPicker("Barlas");
+    assert.equal(await picker.locator("[data-ubs-id]").first().getAttribute("data-ubs-id"), ALEXIA_ID);
+    await assertNoOverflow(ubsPage);
+    await picker.locator(`[data-ubs-id="${ALEXIA_ID}"]`).click();
+    await ubsSwitcher("Alexia").waitFor();
+    const alexiaHeadline = await ubsPage.locator("h1").textContent();
+    assert.match(alexiaHeadline, new RegExp(escapeRegExp(E.goalName.emergency)));
+    assert.match(alexiaHeadline, /\d+%/);
+    const paths = ubsPage.getByTestId("alexia-paths");
+    await paths.waitFor();
+    assert.equal(await paths.locator("[data-path]").count(), 3);
+    await paths.locator("[data-path=master] dd").first().waitFor();
+    await paths.locator("[data-path=work] [data-action=apply]").click();
+    // The pill's clear button is named after the pill (the auto-pinned Plan A chip repeats the label).
+    await ubsPage.getByRole("button", { name: translate("en", "pill.clear", { label: { key: "ubs.pillPath", params: { label: { key: "ubs.path.work" } } } }) }).waitFor();
+    await ubsPage.getByTestId("goals-card").waitFor();
+    await ubsPage.getByTestId("ubs-source").waitFor();
+    await assertNoOverflow(ubsPage);
+
+    const debtor = listUbsProfiles().find((p) => p.debtChf > 0);
+    picker = await openPicker("Alexia");
+    await picker.getByRole("checkbox", { name: E.filterDebt }).check();
+    await picker.getByTestId("ubs-search").fill(debtor.id);
+    await picker.locator(`[data-ubs-id="${debtor.id}"]`).click();
+    await ubsSwitcher(debtor.name).waitFor();
+    const debtCard = ubsPage.getByTestId("debt-card");
+    await debtCard.waitFor();
+    const chf = `CHF ${Math.round(debtor.debtChf).toLocaleString("en").replace(/,/g, "’")}`;
+    assert.match(await debtCard.textContent(), new RegExp(escapeRegExp(chf)));
+    await debtCard.getByRole("button", { name: E.debtMore }).click();
+    await ubsPage.getByRole("button", { name: translate("en", "pill.clear", { label: { key: "ubs.pillDebt", params: { amount: 100 } } }) }).waitFor();
+    await assertNoOverflow(ubsPage);
+    const stored = await ubsPage.evaluate(() => JSON.parse(localStorage.getItem("doppel:accounts:v1") ?? "{}").ubs);
+    assert.deepEqual(stored, [ALEXIA_ID, debtor.id]);
+    await ubsPage.reload();
+    await ubsSwitcher(debtor.name).waitFor();
+    await ubsPage.getByTestId("debt-card").waitFor();
+    await ubsContext.close();
+    console.log(`UBS profiles: Alexia from the picker (headline, 3 paths, apply), debt profile ${debtor.id} shows ${chf}, persisted across reload at 320px`);
+  }
 
   const preferenceContext = await browser.newContext({ locale: "fr-CH" });
   const preferencePage = await preferenceContext.newPage();

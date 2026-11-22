@@ -23,6 +23,7 @@ export function InvestControls({
   onClearInvest,
   panicHistory,
   marginalTaxRate,
+  no3a,
   children,
 }: {
   risk: RiskProfile;
@@ -33,6 +34,8 @@ export function InvestControls({
   onClearInvest: () => void;
   panicHistory: boolean;
   marginalTaxRate: number;
+  /** Already retired: no pillar 3a contributions are possible, so the toggle and its tax line are hidden. */
+  no3a?: boolean;
   children?: ReactNode;
 }) {
   const { t, fmt } = useI18n();
@@ -53,11 +56,13 @@ export function InvestControls({
             </button>
           ))}
         </div>
-        <label className="flex cursor-pointer items-center gap-2 font-medium text-ink-2 hover:text-ink">
-          <input type="checkbox" checked={contributes3a} onChange={(e) => on3a(e.target.checked)} className="accent-[var(--series-1)]" />
-          {t(contributes3a ? "invest.pillar3aOn" : "invest.pillar3aOff")}
-        </label>
-        {!contributes3a && (
+        {!no3a && (
+          <label className="flex cursor-pointer items-center gap-2 font-medium text-ink-2 hover:text-ink">
+            <input type="checkbox" checked={contributes3a} onChange={(e) => on3a(e.target.checked)} className="accent-[var(--series-1)]" />
+            {t(contributes3a ? "invest.pillar3aOn" : "invest.pillar3aOff")}
+          </label>
+        )}
+        {!contributes3a && !no3a && (
           <span className="num text-ink-2">{t("invest.taxLeftShort", { amount: PILLAR_3A_MAX * marginalTaxRate })}</span>
         )}
         {monthlyInvest > 0 && (

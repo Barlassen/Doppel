@@ -1,11 +1,12 @@
 import { simulate } from "./monteCarlo";
 import { HEADLINE } from "./scenario";
+import { debtSchedule, totalDebt } from "./debt";
 import { BUFFER_MONTHS, PILLAR_3A_MAX } from "./swissRules";
 import type { SimInput, SimResult } from "./types";
 import type { Msg } from "@/lib/i18n/types";
 
 export interface Recipe {
-  id: "spend" | "invest" | "timing" | "combo";
+  id: "spend" | "invest" | "timing" | "combo" | "debt";
   title: Msg;
   detail: Msg;
   /** Goal odds after applying the recipe — scored exactly like the headline (seed 42, 1,000 paths). */
@@ -17,7 +18,8 @@ export interface Recipe {
     | { kind: "expenseDelta"; value: number }
     | { kind: "optimize" }
     | { kind: "delay"; eventId: string; months: number }
-    | { kind: "combo"; eventId: string; months: number; expenseDelta: number };
+    | { kind: "combo"; eventId: string; months: number; expenseDelta: number }
+    | { kind: "debtExtra"; value: number };
 }
 
 export interface SolverResult {
@@ -86,9 +88,10 @@ export function solveGoal(base: SimInput, opts: { spendTip?: Msg } = {}): Solver
     });
   }
 
-  // 2) Investment lever: put idle cash to work + max pillar 3a
+  // 2) Investment lever: put idle cash to work + max pillar 3a (skipped when it lowers the odds, e.g. a cash goal)
   if (!base.optimizeIdleCash) {
     const prob = score({ optimizeIdleCash: true }).successProb;
+    if (prob >= baseProb) {
     const idle = Math.max(0, p.cash - BUFFER_MONTHS * (p.expensesMonth + ed0));
     const taxSaving = p.contributes3a ? 0 : Math.round(PILLAR_3A_MAX * p.marginalTaxRate);
     recipes.push({
@@ -101,6 +104,56 @@ export function solveGoal(base: SimInput, opts: { spendTip?: Msg } = {}): Solver
       reaches: prob >= TARGET,
       apply: { kind: "optimize" },
     });
+    }
+  }
+
+  // 2b) Debt lever: an extra monthly payment on the loans (highest rate first). Debt service also counts in the
+  //     bank test, so paying a loan off before a planned home purchase can make the mortgage affordable.
+  const debt = totalDebt(p);
+  if (debt > 0) {
+    const ex0 = base.extraDebtPayment ?? 0;
+    const MAX_EXTRA = 2000;
+    const loans = p.liabilities ?? [];
+    const months = Math.max(12, (p.goal.age - p.age) * 12);
+    const interest = (extra: number) => debtSchedule(loans, 1200, extra).interestPaid;
+    const push = (extra: number, prob: number, pass?: number) => {
+      const s = debtSchedule(loans, 1200, ex0 + extra);
+      recipes.push({
+        id: "debt",
+        title: { key: "ubs.recipeDebtTitle", params: { amount: extra } },
+        detail: {
+          key: pass === undefined ? "ubs.recipeDebtDetail" : "ubs.recipeDebtDetailHome",
+          params: { saved: Math.max(0, Math.round(interest(ex0) - s.interestPaid)), months: s.debtFreeMonth ?? months, ...(pass === undefined ? {} : { pass }) },
+        },
+        newProb: prob,
+        reaches: prob >= TARGET,
+        apply: { kind: "debtExtra", value: ex0 + extra },
+      });
+    };
+    const houseOf = (r: SimResult) => (house ? r.house?.boughtProb : undefined);
+    const house = base.events.find((e) => e.type === "house");
+    if (search({ extraDebtPayment: ex0 + MAX_EXTRA }).successProb >= TARGET) {
+      let lo = 0;
+      let hi = MAX_EXTRA;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        if (search({ extraDebtPayment: ex0 + mid }).successProb >= TARGET) hi = mid;
+        else lo = mid;
+      }
+      let extra = Math.ceil(hi / 50) * 50;
+      let r = score({ extraDebtPayment: ex0 + extra });
+      for (let i = 0; i < 5 && r.successProb < TARGET; i++) {
+        extra = Math.ceil((extra * 1.1) / 50) * 50;
+        r = score({ extraDebtPayment: ex0 + extra });
+      }
+      push(extra, r.successProb, houseOf(r));
+    } else {
+      // No extra payment alone reaches the target: offer half of today's surplus (CHF 100–2,000) if it helps.
+      const surplus = p.netIncomeMonth - p.expensesMonth - (p.liabilities ?? []).reduce((s, l) => s + l.monthlyPayment, 0);
+      const extra = Math.min(MAX_EXTRA, Math.max(100, Math.round((surplus * 0.5) / 50) * 50));
+      const r = score({ extraDebtPayment: ex0 + extra });
+      if (r.successProb > baseProb || (houseOf(r) ?? 0) > (baseRun.house?.boughtProb ?? 0)) push(extra, r.successProb, houseOf(r));
+    }
   }
 
   // 3) Timing lever: delay the home until the bank test passes in ≥ 80% of futures.

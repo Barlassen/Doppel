@@ -5,7 +5,8 @@
  *  - at least 20% equity, of which at least 10% must be "hard" equity (not from Pillar 2)
  *  - imputed costs: 5% calculatory interest on the loan + 1% maintenance on the price
  *    + amortisation of the 2nd mortgage (above 2/3 of the price) within 15 years
- *  - imputed costs must not exceed 1/3 of gross household income
+ *  - imputed costs must not exceed 1/3 of gross household income; payments on other loans (consumer credit,
+ *    leasing) count against the same third, as Swiss lenders do
  *  - purchase closing costs (notary, land registry, transfer tax) must be paid from own funds on top
  *
  * The SAME `tragbarkeit()` is used by the affordability card and by the Monte Carlo simulator at the
@@ -41,6 +42,8 @@ export interface AffordabilityInput {
   pillar2Available: number;
   /** Closing costs as a share of the price, paid from hard equity. Default 0. */
   closingRate?: number;
+  /** Yearly payments on other loans (interest + principal), counted in the cost-to-income test. Default 0. */
+  otherDebtYear?: number;
 }
 
 export interface TragbarkeitPlan {
@@ -59,11 +62,13 @@ export interface TragbarkeitPlan {
   incomeGap: number;
   /** Additional hard equity that would make the income rule pass — 0 if fine. */
   extraEquityToPass: number;
+  /** Yearly payments on other loans included in `costToIncome` (only present when > 0). */
+  otherDebtYear?: number;
 }
 
-/** Highest loan whose imputed cost stays within ⅓ of gross income, for a given price. */
-export function maxLoanForIncome(price: number, grossIncomeYear: number): number {
-  const budget = grossIncomeYear * MAX_COST_TO_INCOME - price * MAINTENANCE_RATE;
+/** Highest loan whose imputed cost (plus other debt service) stays within ⅓ of gross income, for a given price. */
+export function maxLoanForIncome(price: number, grossIncomeYear: number, otherDebtYear = 0): number {
+  const budget = grossIncomeYear * MAX_COST_TO_INCOME - price * MAINTENANCE_RATE - otherDebtYear;
   if (budget <= 0) return 0;
   const first = price * FIRST_MORTGAGE_SHARE;
   const onlyFirst = budget / STRESS_RATE;
@@ -77,10 +82,11 @@ export function maxLoanForIncome(price: number, grossIncomeYear: number): number
  */
 export function tragbarkeit(input: AffordabilityInput): TragbarkeitPlan {
   const { price, grossIncomeYear: gross, pillar2Available } = input;
+  const otherDebt = Math.max(0, input.otherDebtYear ?? 0);
   const closingCosts = price * (input.closingRate ?? 0);
   const hard = Math.max(0, input.hardEquityAvailable - closingCosts);
   const minEq = price * MIN_EQUITY;
-  const target = Math.min(price, Math.max(minEq, price - maxLoanForIncome(price, gross)));
+  const target = Math.min(price, Math.max(minEq, price - maxLoanForIncome(price, gross, otherDebt)));
 
   const hardUsed = Math.min(hard, target);
   // Pillar 2 may fill the 20% minimum, but not the hard 10% and not the part above 20%.
@@ -88,7 +94,7 @@ export function tragbarkeit(input: AffordabilityInput): TragbarkeitPlan {
   const equity = hardUsed + pillar2Used;
   const loan = Math.max(0, price - equity);
   const yearlyCost = imputedCosts(price, loan);
-  const costToIncome = gross > 0 ? yearlyCost.total / gross : Infinity;
+  const costToIncome = gross > 0 ? (yearlyCost.total + otherDebt) / gross : Infinity;
   const equityGap = Math.max(Math.max(0, price * MIN_HARD_EQUITY - hardUsed), Math.max(0, minEq - equity));
   const pass = equityGap === 0 && costToIncome <= MAX_COST_TO_INCOME + 1e-9;
   return {
@@ -101,8 +107,9 @@ export function tragbarkeit(input: AffordabilityInput): TragbarkeitPlan {
     yearlyCost,
     costToIncome,
     equityGap,
-    incomeGap: pass ? 0 : Math.max(0, yearlyCost.total / MAX_COST_TO_INCOME - gross),
+    incomeGap: pass ? 0 : Math.max(0, (yearlyCost.total + otherDebt) / MAX_COST_TO_INCOME - gross),
     extraEquityToPass: pass ? 0 : Math.max(0, target - equity),
+    ...(otherDebt > 0 ? { otherDebtYear: otherDebt } : {}),
   };
 }
 
@@ -129,7 +136,7 @@ export function checkAffordability(input: AffordabilityInput): AffordabilityResu
     hardEquityNeeded: input.price * MIN_HARD_EQUITY,
     equityUsed: plan.equity,
     hardEquityUsed: plan.hardUsed,
-    maxPrice: maxAffordablePrice(input.grossIncomeYear, input.hardEquityAvailable, input.pillar2Available, input.closingRate ?? 0),
+    maxPrice: maxAffordablePrice(input.grossIncomeYear, input.hardEquityAvailable, input.pillar2Available, input.closingRate ?? 0, input.otherDebtYear ?? 0),
   };
 }
 
@@ -142,12 +149,12 @@ function imputedCosts(price: number, loan: number) {
 }
 
 /** Binary search for the highest price that passes the bank test (same rule as `tragbarkeit`). */
-export function maxAffordablePrice(gross: number, hard: number, p2: number, closingRate = 0): number {
+export function maxAffordablePrice(gross: number, hard: number, p2: number, closingRate = 0, otherDebtYear = 0): number {
   let lo = 0;
   let hi = 20_000_000;
   for (let i = 0; i < 40; i++) {
     const mid = (lo + hi) / 2;
-    if (passesTragbarkeit({ price: mid, grossIncomeYear: gross, hardEquityAvailable: hard, pillar2Available: p2, closingRate })) lo = mid;
+    if (passesTragbarkeit({ price: mid, grossIncomeYear: gross, hardEquityAvailable: hard, pillar2Available: p2, closingRate, otherDebtYear })) lo = mid;
     else hi = mid;
   }
   return Math.floor(lo / 1000) * 1000;

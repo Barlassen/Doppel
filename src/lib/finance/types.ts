@@ -82,13 +82,58 @@ export interface InvestmentTrade {
  */
 export const GOAL_DEFINITION = "net worth incl. pillar 2, pillar 3a & home equity, today's CHF";
 
+/**
+ * What a goal measures, at its date, in today's CHF:
+ *  - `netWorth` (default): GOAL_DEFINITION, net of liabilities
+ *  - `cash`: cash on the bank account only (an emergency fund must be liquid, not invested)
+ *  - `liquid`: cash + investment portfolio (pillar 3a and pillar 2 are locked)
+ *  - `deposit`: cash + portfolio + pillar 3a (3a may be withdrawn early for an owner-occupied home)
+ */
+export type GoalMetric = "netWorth" | "cash" | "liquid" | "deposit";
+
 export interface Goal {
   label: Msg;
-  /** Net-worth target (see GOAL_DEFINITION), CHF in today's money. */
+  /** Target in today's CHF, measured by `metric` (default: net worth, see GOAL_DEFINITION). */
   target: number;
   /** Age at which the goal should be reached. */
   age: number;
+  /** Default "netWorth". */
+  metric?: GoalMetric;
 }
+
+/** One of several goals (UBS profiles have 1–N). The engine scores each on the same simulated futures. */
+export interface ProfileGoal extends Goal {
+  id: string;
+  priority: "high" | "medium" | "low";
+  /** ISO date of the target, for display (the engine uses `age`). */
+  targetDate?: string;
+  /** The goal shown as the headline (highest priority, then earliest date). */
+  primary?: boolean;
+}
+
+/**
+ * A debt on the balance sheet. Personal loans amortise with a fixed annuity; a `mortgage` liability with no
+ * payment is interest-only (Swiss first mortgages usually are). A home bought through a `house` event keeps its own
+ * mortgage logic in the simulator.
+ */
+export interface Liability {
+  id: string;
+  kind: "personal_loan" | "mortgage";
+  label: Text;
+  /** Outstanding balance at month 0, CHF. */
+  principal: number;
+  /** Nominal yearly rate, e.g. 0.0593. */
+  annualRate: number;
+  /** Contractual monthly payment (interest + principal), CHF. */
+  monthlyPayment: number;
+  /** Remaining term in months the payment was derived from (when the data had no payment). */
+  termMonths?: number;
+  /** True when `monthlyPayment` was derived from a default term because the data had none. */
+  paymentDerived?: boolean;
+}
+
+/** Where a profile field's value comes from (shown in the UI next to the value). */
+export type Provenance = "ubs_synthetic" | "doppel_default" | "derived";
 
 export interface Profile {
   id: string;
@@ -123,6 +168,18 @@ export interface Profile {
     soldInDrawdown: boolean;
     drawdownSellPct: number; // share of equities sold in last big drawdown
   };
+  /** Loans and other debts (none for the built-in accounts). Net worth = assets − liabilities. */
+  liabilities?: Liability[];
+  /** All goals of the profile incl. the headline one (`goal` is the primary). Absent = just `goal`. */
+  goals?: ProfileGoal[];
+  /** False = no pension fund (self-employed, not insured): no BVG credits. Default true. */
+  bvgInsured?: boolean;
+  /** ISO date of the starting balance sheet = month 0 (default: today). */
+  asOf?: string;
+  /** Imported from an external dataset (read-only base data). */
+  origin?: { dataset: "ubs-lauzhack-2026"; id: string; employment: string; household: string };
+  /** Source of each profile field, for profiles not entered by hand. */
+  provenance?: Partial<Record<string, Provenance>>;
 }
 
 export interface BehaviorParams {
@@ -164,6 +221,28 @@ export interface Scenario {
   recurring: RecurringExpense[];
   /** Snapped receipts — feed the "this month" figure of the behavioural twin. */
   extraTx: Transaction[];
+  /** Extra CHF/month paid on top of the loans' contractual payments (highest rate first). */
+  debtExtra?: number;
+  /** Income and spending set per period (e.g. the UBS starter kit's life paths). */
+  phases?: CashflowPhase[];
+  /** Name of the applied life path, for its pill. */
+  path?: { id: string; label: Text };
+}
+
+/**
+ * A period with given take-home income and total spending (both CHF/month, nominal, not indexed, as in the UBS
+ * `scenario_config.json`). Months `startMonth` ≤ m < `endMonth`. After the last phase the last one continues,
+ * indexed with wage growth and inflation from its end.
+ */
+export interface CashflowPhase {
+  startMonth: number;
+  endMonth: number;
+  netIncomeMonth: number;
+  expensesMonth: number;
+  /** Gross salary (CHF/yr) behind `netIncomeMonth`, for pillar 2 credits and the bank test. */
+  grossIncomeYear: number;
+  /** False = not insured in a Swiss pension fund during the phase (e.g. working abroad). Default true. */
+  bvgInsured?: boolean;
 }
 
 export interface SimInput {
@@ -185,6 +264,37 @@ export interface SimInput {
    * "goal" stops right after the goal age (and the planned home) — identical goal odds, much faster.
    */
   horizon?: "full" | "goal";
+  /** Extra CHF/month on the loans (highest rate first). */
+  extraDebtPayment?: number;
+  /** Income/spending per period, overriding the profile in those months. */
+  phases?: CashflowPhase[];
+  /**
+   * Accounting mode for validation: every return, rate, inflation and wage growth is zero and nothing is random,
+   * so cash must follow the plain ledger (opening cash + income − spending − one-offs − debt service).
+   */
+  accounting?: boolean;
+  /** Record path 0's month-end cash and debt (nominal CHF) in `SimResult.trace`. */
+  trace?: boolean;
+}
+
+export interface GoalStats {
+  id: string;
+  /** Share of futures in which the goal is reached at its date (same rule as the headline). */
+  prob: number;
+  /** Median value of the goal's metric at its date, today's CHF. */
+  median: number;
+  month: number;
+}
+
+export interface DebtStats {
+  /** Debt at month 0, CHF. */
+  start: number;
+  /** Contractual debt service in month 0, CHF/month. */
+  monthlyService: number;
+  /** Month in which the last loan is repaid (deterministic: payments are fixed), null = beyond the horizon. */
+  debtFreeMonth: number | null;
+  /** Interest paid until debt-free (nominal CHF). */
+  interestPaid: number;
 }
 
 export interface YearBand {
@@ -212,6 +322,8 @@ export interface HouseStats {
   /** Among futures that bought: equity actually put in and the resulting mortgage. */
   medianEquityAtPurchase: number;
   medianLoan: number;
+  /** Median yearly debt service on other loans at the purchase date (only when the profile has liabilities). */
+  medianOtherDebtYear?: number;
 }
 
 export interface RetirementStats {
@@ -246,4 +358,9 @@ export interface SimResult {
   house?: HouseStats;
   /** Only present for full-horizon runs. */
   retirement?: RetirementStats;
+  /** One entry per `profile.goals` goal inside the horizon (only when the profile lists goals). */
+  goals?: GoalStats[];
+  /** Only when the profile has liabilities. */
+  debt?: DebtStats;
+  trace?: { cash: number[]; debt: number[] };
 }

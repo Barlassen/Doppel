@@ -20,7 +20,8 @@ import {
   coordinatedSalary,
   effectiveTaxRate,
 } from "./pension";
-import type { HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput, SimResult, YearBand } from "./types";
+import { debtSchedule } from "./debt";
+import type { GoalMetric, GoalStats, HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput, SimResult, YearBand } from "./types";
 
 /** Yearly nominal capital-market and household assumptions. */
 export const ASSUMPTIONS = {
@@ -46,6 +47,24 @@ export const ASSUMPTIONS = {
   raiseNetShare: 0.72,
   /** Market drawdown that can trigger a panic sale. */
   panicDrawdown: 0.15,
+};
+
+/**
+ * Accounting mode (`SimInput.accounting`): no returns, rates, inflation or wage growth, so the simulated cash must
+ * equal the plain ledger. Used by `scripts/ubs-check.ts` to validate the engine's cash-flow bookkeeping.
+ */
+const ACCOUNTING: typeof ASSUMPTIONS = {
+  ...ASSUMPTIONS,
+  equity: { mu: 0, sigma: 0 },
+  bonds: { mu: 0, sigma: 0 },
+  cashRate: 0,
+  overdraftRate: 0,
+  inflation: 0,
+  wageGrowth: 0,
+  home: { mu: 0, sigma: 0 },
+  wageVol: 0,
+  pillar2Rate: 0,
+  crashShock: 0,
 };
 
 export const EQUITY_WEIGHT: Record<RiskProfile, number> = {
@@ -83,7 +102,8 @@ export function simulate(input: SimInput): SimResult {
   const { profile: p, behavior } = input;
   const paths = input.paths ?? 1000;
   const seed = input.seed ?? 42;
-  const A = ASSUMPTIONS;
+  const acc = !!input.accounting;
+  const A = acc ? ACCOUNTING : ASSUMPTIONS;
 
   const endAge = Math.max(A.endAge, p.retirementAge + 1, p.goal.age + 1);
   const fullMonths = (endAge - p.age) * 12;
@@ -125,6 +145,15 @@ export function simulate(input: SimInput): SimResult {
   const leakage = behavior?.leakageRate ?? 0;
   const monthlyInvest = Math.max(0, input.monthlyInvest ?? 0);
   const baseMonthly = Math.max(p.rentMonth, p.expensesMonth + (input.expenseDelta ?? 0));
+  // Already retired at the start: today's spending already is retirement spending.
+  const retSpending = p.retirementAge <= p.age ? 1 : A.retirementSpending;
+  const bvgInsured = p.bvgInsured !== false;
+  const phases = input.phases?.length ? [...input.phases].sort((a, b) => a.startMonth - b.startMonth) : null;
+  const lastPhase = phases ? phases.reduce((a, b) => (b.endMonth > a.endMonth ? b : a)) : null;
+
+  // Loans: payments are fixed, so the schedule is the same in every future (computed once).
+  const debtLoans = p.liabilities?.filter((l) => l.principal > 0) ?? [];
+  const debt = debtLoans.length ? debtSchedule(debtLoans, months, input.extraDebtPayment ?? 0) : null;
 
   // ---------- path-independent monthly schedule (salary, spending, events) ----------
   const priceIdx = new Float64Array(months);
@@ -135,11 +164,15 @@ export function simulate(input: SimInput): SimResult {
   const rentArr = new Float64Array(months);
   const oneOff = new Float64Array(months);
   const crash = new Uint8Array(months);
+  /** 1 = income given by a phase (not scaled by career luck). */
+  const fixedIncome = new Uint8Array(months);
   {
     let wage = 1;
     let price = 1;
     const mWage = Math.pow(1 + A.wageGrowth, 1 / 12);
     const mInfl = Math.pow(1 + A.inflation, 1 / 12);
+    let wageEnd = 1;
+    let priceEnd = 1;
     for (let m = 0; m < months; m++) {
       wage *= mWage;
       price *= mInfl;
@@ -147,6 +180,35 @@ export function simulate(input: SimInput): SimResult {
       const retired = m >= retireMonth;
       let gross = p.grossIncomeYear * wage;
       let net = p.netIncomeMonth * wage;
+      let living = baseMonthly;
+      let livingIdx = price;
+      let wageIdx = wage;
+      let insured = bvgInsured;
+      if (phases && lastPhase) {
+        const ph = phases.find((x) => m >= x.startMonth && m < x.endMonth);
+        if (m === lastPhase.endMonth) {
+          wageEnd = wage / mWage;
+          priceEnd = price / mInfl;
+        }
+        if (ph) {
+          // As given: nominal, not indexed, not scaled by career luck.
+          gross = ph.grossIncomeYear;
+          net = ph.netIncomeMonth;
+          living = Math.max(0, ph.expensesMonth + (input.expenseDelta ?? 0));
+          livingIdx = 1;
+          wageIdx = 1;
+          insured = bvgInsured && ph.bvgInsured !== false;
+          fixedIncome[m] = 1;
+        } else if (m >= lastPhase.endMonth) {
+          // After the last phase it continues, indexed from its end.
+          gross = lastPhase.grossIncomeYear * (wage / wageEnd);
+          net = lastPhase.netIncomeMonth * (wage / wageEnd);
+          living = Math.max(0, lastPhase.expensesMonth + (input.expenseDelta ?? 0));
+          livingIdx = price / priceEnd;
+          wageIdx = wage / wageEnd;
+          insured = bvgInsured && lastPhase.bvgInsured !== false;
+        }
+      }
       let unemployed = false;
       let child = 0;
       for (const e of events) {
@@ -169,9 +231,9 @@ export function simulate(input: SimInput): SimResult {
       netIncome[m] = retired ? 0 : net;
       grossInc[m] = retired ? 0 : gross;
       // BVG savings credits stop during unemployment (ALV only insures death & disability).
-      p2Credit[m] = retired || unemployed ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wage) * wage) / 12;
-      const living = retired ? (baseMonthly - p.rentMonth) * A.retirementSpending + p.rentMonth : baseMonthly;
-      baseExp[m] = living * price + child;
+      p2Credit[m] = retired || unemployed || !insured ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wageIdx) * wageIdx) / 12;
+      const spend = retired ? (living - p.rentMonth) * retSpending + p.rentMonth : living;
+      baseExp[m] = spend * livingIdx + child;
       rentArr[m] = p.rentMonth * price;
     }
   }
@@ -192,6 +254,13 @@ export function simulate(input: SimInput): SimResult {
   const liquidAtRet: number[] = [];
   const bvgReal: number[] = [];
   const spendRet: number[] = [];
+  const otherDebtAtPurchase: number[] = [];
+  // Goals: the headline metric, and every listed goal inside the horizon.
+  const metric: GoalMetric = p.goal.metric ?? "netWorth";
+  const listed = (p.goals ?? []).map((g) => ({ g, year: Math.max(0, g.age - p.age) })).filter((x) => x.year <= years);
+  const goalVals = listed.map(() => new Float64Array(paths));
+  const goalHits = listed.map(() => 0);
+  const trace = input.trace ? { cash: [] as number[], debt: [] as number[] } : undefined;
 
   for (let path = 0; path < paths; path++) {
     const ps = pathSeed(seed, path);
@@ -220,9 +289,21 @@ export function simulate(input: SimInput): SimResult {
     let wf = 1; // this future's career factor on top of average wage growth
     let bvgMonthly = 0;
     let p2AtRet = 0;
+    let crunchMonth = Infinity;
 
     const row = path * (years + 1);
-    nw[row] = cash + port + p3a + p2;
+    nw[row] = debt ? cash + port + p3a + p2 - debt.opening : cash + port + p3a + p2;
+    /** A goal metric now, in today's CHF (`nwNow` = net worth just computed for this year end). */
+    const valueOf = (k: GoalMetric, nwNow: number, priceNow: number) =>
+      k === "netWorth"
+        ? nwNow
+        : k === "cash"
+          ? (cash + parked) / priceNow
+          : k === "liquid"
+            ? (cash + parked + port) / priceNow
+            : (cash + parked + port + p3a) / priceNow;
+    let goalWorth = goalYear === 0 ? valueOf(metric, nw[row], 1) : 0;
+    for (let g = 0; g < listed.length; g++) if (listed[g].year === 0) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row], 1);
 
     for (let m = 0; m < months; m++) {
       const price = priceIdx[m];
@@ -235,14 +316,15 @@ export function simulate(input: SimInput): SimResult {
         }
       }
 
-      // --- markets (same draws for every scenario on this path) ---
-      const rE = crash[m] ? A.crashShock : eMu + eSd * randn();
-      const rB = bMu + bSd * randn();
-      const rH = hMu + hSd * randn();
-      if (m % 12 === 0) {
+      // --- markets (same draws for every scenario on this path; none in accounting mode) ---
+      const rE = acc ? 0 : crash[m] ? A.crashShock : eMu + eSd * randn();
+      const rB = acc ? 0 : bMu + bSd * randn();
+      const rH = acc ? 0 : hMu + hSd * randn();
+      if (m % 12 === 0 && !acc) {
         const z = randn();
         if (m > 0) wf *= Math.exp(A.wageVol * z + wageDrift);
       }
+      const luck = fixedIncome[m] ? 1 : wf;
       idx *= 1 + rE;
       if (idx > peak) {
         peak = idx;
@@ -288,19 +370,30 @@ export function simulate(input: SimInput): SimResult {
 
       // --- income & spending ---
       const retired = m >= retireMonth;
-      const income = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * (1 - retTax) : netIncome[m] * wf;
+      const income = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * (1 - retTax) : netIncome[m] * luck;
       let expenses = baseExp[m];
+      if (debt) expenses += debt.payment[m];
       cash += oneOff[m];
 
       // --- home purchase: the bank test runs at the purchase date with this future's equity & salary ---
       if (house && m === house.month) {
         const buffer = BUFFER_MONTHS * expenses;
         const hardAvail = Math.max(0, cash - buffer) + parked + port + p3a;
-        const gross = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * 12 : grossInc[m] * wf;
+        const gross = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * 12 : grossInc[m] * luck;
         hardAtPurchase.push(hardAvail);
         grossAtPurchase.push(gross);
         p2AtPurchase.push(p2);
-        const plan = tragbarkeit({ price: house.amount, grossIncomeYear: gross, hardEquityAvailable: hardAvail, pillar2Available: p2, closingRate });
+        // Banks count the payments on other loans against the same third of income.
+        const otherDebtYear = debt ? debt.service[m] * 12 : 0;
+        if (debt) otherDebtAtPurchase.push(otherDebtYear);
+        const plan = tragbarkeit({
+          price: house.amount,
+          grossIncomeYear: gross,
+          hardEquityAvailable: hardAvail,
+          pillar2Available: p2,
+          closingRate,
+          ...(debt ? { otherDebtYear } : {}),
+        });
         if (!plan.pass) {
           houseFailed = true; // keep renting
         } else {
@@ -337,7 +430,7 @@ export function simulate(input: SimInput): SimResult {
       // --- savings flow ---
       let surplus = income - expenses;
       if (!retired) {
-        p2 += p2Credit[m] * wf;
+        p2 += p2Credit[m] * luck;
         if (surplus > 0 && monthlyInvest > 0) {
           const order = Math.min(monthlyInvest, surplus); // pay yourself first: leaves before payday spending
           port += order;
@@ -389,24 +482,36 @@ export function simulate(input: SimInput): SimResult {
         if (need > 1) {
           if (!retired) {
             if (m < goalMonth) crunch = true;
+            if (crunchMonth === Infinity) crunchMonth = m;
           } else if (depletion[path] === Infinity) depletion[path] = p.age + m / 12;
         }
+      }
+      if (trace && path === 0) {
+        trace.cash.push(cash);
+        trace.debt.push(debt ? debt.balance[m] : 0);
       }
 
       if (m % 12 === 11) {
         const y = (m + 1) / 12;
         const p2Value = retired ? p2AtRet * Math.max(0, 1 - (m + 1 - retireMonth) / (fullMonths - retireMonth)) : p2;
-        nw[row + y] = (cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0)) / price;
+        const assets = cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0);
+        nw[row + y] = (debt ? assets - debt.balance[m] : assets) / price;
+        if (y === Math.min(years, goalYear)) goalWorth = valueOf(metric, nw[row + y], price);
+        for (let g = 0; g < listed.length; g++) if (listed[g].year === y) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row + y], price);
       }
     }
 
-    const goalWorth = nw[row + Math.min(years, goalYear)];
     atGoal[path] = goalWorth;
     if (crunch) crunches++;
     if (!crunch && !houseFailed && goalWorth >= p.goal.target) successes++;
+    // Every listed goal, same rule as the headline: no crunch before its date, no failed home purchase, target met.
+    for (let g = 0; g < listed.length; g++) {
+      if (crunchMonth >= listed[g].year * 12 && !houseFailed && goalVals[g][path] >= listed[g].g.target) goalHits[g]++;
+    }
   }
 
-  const thisYear = new Date().getFullYear();
+  // Calendar year of month 0: the profile's as-of date (a dataset snapshot), else today.
+  const thisYear = p.asOf ? Number(p.asOf.slice(0, 4)) : new Date().getFullYear();
   const bands: YearBand[] = [];
   const col = new Float64Array(paths);
   for (let y = 0; y <= years; y++) {
@@ -437,6 +542,7 @@ export function simulate(input: SimInput): SimResult {
       closingRate,
       medianEquityAtPurchase: median(equityIn),
       medianLoan: median(loans),
+      ...(debt ? { medianOtherDebtYear: median(otherDebtAtPurchase) } : {}),
     };
   }
 
@@ -471,6 +577,17 @@ export function simulate(input: SimInput): SimResult {
     paths,
     house: houseStats,
     retirement,
+    ...(p.goals
+      ? {
+          goals: listed.map(
+            ({ g, year }, i): GoalStats => ({ id: g.id, prob: goalHits[i] / paths, median: median(Array.from(goalVals[i])), month: year * 12 }),
+          ),
+        }
+      : {}),
+    ...(debt
+      ? { debt: { start: debt.opening, monthlyService: debt.service[0] ?? 0, debtFreeMonth: debt.debtFreeMonth, interestPaid: debt.interestPaid } }
+      : {}),
+    ...(trace ? { trace } : {}),
   };
 }
 

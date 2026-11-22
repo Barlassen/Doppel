@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   addReceipt,
   deleteAccount,
@@ -16,6 +17,7 @@ import { simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe, type SolverResult } from "@/lib/finance/goalSolver";
 import { checkAffordability } from "@/lib/finance/swissRules";
+import { netWorthOf, totalDebt } from "@/lib/finance/debt";
 import {
   baseScenario,
   costOfWaiting,
@@ -63,6 +65,13 @@ import { AccountSwitcher } from "./AccountSwitcher";
 import { AccountWizard } from "./AccountWizard";
 import { ImportPanel } from "./ImportPanel";
 import { TransactionsPanel } from "./TransactionsPanel";
+import { DebtCard, GoalsCard, UbsSourceNote, startDate } from "./UbsCards";
+import { ALEXIA_ID } from "@/lib/ubs/types";
+import { clearPath, pathLabel, type AlexiaPathId } from "@/lib/ubs/path";
+
+// Loaded on demand: the picker carries the 1'200-profile search summary, the path card only shows for Alexia.
+const UbsPicker = dynamic(() => import("./UbsPicker"), { ssr: false });
+const AlexiaPaths = dynamic(() => import("./AlexiaPaths"), { ssr: false });
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 /** Cantons whose city names are French (for the `lang` attribute of the hero line). */
@@ -156,6 +165,7 @@ export default function DoppelApp() {
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [ubsPickerOpen, setUbsPickerOpen] = useState(false);
   const [importOpenToken, setImportOpenToken] = useState(0);
   const pendingDataChange = useRef<{ accountId: string; label: Text; before: number } | null>(null);
 
@@ -454,13 +464,36 @@ export default function DoppelApp() {
             hardEquityAvailable: house.medianHardEquity,
             pillar2Available: house.medianPillar2,
             closingRate: house.closingRate,
+            ...(house.medianOtherDebtYear ? { otherDebtYear: house.medianOtherDebtYear } : {}),
           })
         : null,
     [house],
   );
 
   const behaviorCost = ideal.medianAtGoal - real.medianAtGoal;
-  const netWorthToday = effProfile.cash + effProfile.portfolio + effProfile.pillar2 + effProfile.pillar3a;
+  // Net worth = assets − liabilities (hero, switcher, chart and solver all use the same definition).
+  const netWorthToday = netWorthOf(effProfile);
+  const debtToday = totalDebt(effProfile);
+  const start = startDate(effProfile);
+  const accountStart = useMemo(() => baseScenarioFor(account), [account]);
+  const goalIsNetWorth = (effProfile.goal.metric ?? "netWorth") === "netWorth";
+
+  function setDebtExtra(value: number) {
+    mutate(
+      (s) => {
+        const { debtExtra: _old, ...rest } = s;
+        void _old;
+        return value > 0 ? { ...rest, debtExtra: value } : rest;
+      },
+      { label: value > 0 ? msg("ubs.changeDebtExtra", { amount: value }) : msg("ubs.changeDebtStop") },
+    );
+  }
+  function applyAlexiaPath(next: Scenario, id: AlexiaPathId) {
+    mutate(() => next, { label: msg("ubs.changePath", { label: pathLabel(id) }) });
+  }
+  function pinAlexiaPath(next: Scenario, id: AlexiaPathId) {
+    commitPin({ scenario: next, label: pathLabel(id), manual: true });
+  }
   const stateChars = useMemo(() => JSON.stringify({ profile: effProfile, events: scenario.events }).length, [effProfile, scenario.events]);
 
   // ---------------- multimodal snap ----------------
@@ -638,6 +671,7 @@ export default function DoppelApp() {
       (s) => {
         if (a.kind === "expenseDelta") return { ...s, expenseDelta: a.value };
         if (a.kind === "optimize") return { ...s, optimize: true };
+        if (a.kind === "debtExtra") return { ...s, debtExtra: a.value };
         const shifted = applyScenarioOps(s, [{ op: "shift", id: a.eventId, months: a.months }], "solver");
         return a.kind === "combo" ? { ...shifted, expenseDelta: a.expenseDelta } : shifted;
       },
@@ -648,7 +682,7 @@ export default function DoppelApp() {
   const set = (ops: Op[], label: Text) => mutate((s) => applyScenarioOps(s, validateOps(ops, s.events)), { label });
 
   const hasOverrides =
-    scenario.expenseDelta !== 0 || scenario.optimize || !!scenario.income || scenario.recurring.length > 0;
+    scenario.expenseDelta !== 0 || scenario.optimize || !!scenario.income || scenario.recurring.length > 0 || !!scenario.path || !!scenario.debtExtra;
 
   return (
     <div className="min-h-screen">
@@ -683,6 +717,7 @@ export default function DoppelApp() {
               onReset={onResetAccount}
               onDelete={onDeleteAccount}
               onNewAccount={() => setWizardOpen(true)}
+              onOpenUbs={() => setUbsPickerOpen(true)}
             />
             <div className="shrink-0 justify-self-end">
               <FrugalBadge entries={ledger} onClick={() => setInspector(true)} />
@@ -707,7 +742,8 @@ export default function DoppelApp() {
           crunch={real.crunchProb}
           sim={{ paths: real.paths, ms: real.ms }}
           impact={impact}
-          taxTip={effProfile.contributes3a || scenario.optimize ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
+          taxTip={effProfile.contributes3a || scenario.optimize || effProfile.retirementAge <= effProfile.age ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
+          notes={debtToday > 0 ? <li>{t("ubs.heroDebt", { debt: debtToday })}</li> : undefined}
         >
           <InvestControls
             risk={effProfile.riskProfile}
@@ -718,6 +754,7 @@ export default function DoppelApp() {
             onClearInvest={() => set([{ op: "set", key: "monthlyInvest", value: 0 }], msg("change.stopStandingOrder"))}
             panicHistory={effProfile.history.soldInDrawdown}
             marginalTaxRate={effProfile.marginalTaxRate}
+            no3a={effProfile.retirementAge <= effProfile.age}
           >
             <PlanCompare
               plan={pin}
@@ -729,6 +766,7 @@ export default function DoppelApp() {
             />
           </InvestControls>
         </Hero>
+        <UbsSourceNote profile={effProfile} />
 
         <div className="mt-6 mb-6">
           <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} />
@@ -745,11 +783,14 @@ export default function DoppelApp() {
               planA={planAResult && planAResult !== real ? planAResult : null}
               retirementAge={effProfile.retirementAge}
               eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
+              targetLine={goalIsNetWorth}
             />
+            {!goalIsNetWorth && <p className="mt-2 text-xs text-ink-2">{t("ubs.chartMetricNote")}</p>}
             <div className="mt-5">
               <Timeline
                 events={scenario.events}
                 age={effProfile.age}
+                start={start}
                 onShift={(id, m) => {
                   const e = scenario.events.find((x) => x.id === id);
                   set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
@@ -774,6 +815,13 @@ export default function DoppelApp() {
                   <Pill label={msg("pill.income", { label: scenario.income.label, gross: scenario.income.grossIncomeYear, net: scenario.income.netIncomeMonth })}
                     onClear={() => mutate((s) => ({ ...s, income: null }), { label: msg("change.removePayslip") })} />
                 )}
+                {scenario.path && (
+                  <Pill label={msg("ubs.pillPath", { label: scenario.path.label })}
+                    onClear={() => mutate((s) => clearPath(s), { label: msg("ubs.changeClearPath") })} />
+                )}
+                {!!scenario.debtExtra && (
+                  <Pill label={msg("ubs.pillDebt", { amount: scenario.debtExtra })} onClear={() => setDebtExtra(0)} />
+                )}
                 {scenario.recurring.map((r) => (
                   <Pill key={r.id} label={msg("pill.recurring", { label: r.label, amount: r.monthly })}
                     onClear={() => mutate((s) => ({ ...s, recurring: s.recurring.filter((x) => x.id !== r.id) }), { label: msg("change.removeItem", { label: r.label }) })} />
@@ -787,6 +835,15 @@ export default function DoppelApp() {
         <div className="mt-14 space-y-14">
           <Section title={t("layout.decisions")}>
             <div className="grid items-start gap-5 lg:grid-cols-2">
+              {account.id === ALEXIA_ID && (
+                <AlexiaPaths base={base} scenario={accountStart} activePath={scenario.path?.id} onApply={applyAlexiaPath} onPin={pinAlexiaPath} />
+              )}
+              {effProfile.goals && effProfile.goals.length > 0 && (
+                <GoalsCard goals={effProfile.goals} stats={real.goals} fresh={fresh} />
+              )}
+              {effProfile.liabilities && effProfile.liabilities.length > 0 && (
+                <DebtCard liabilities={effProfile.liabilities} extra={scenario.debtExtra ?? 0} onExtra={setDebtExtra} start={start} disabled={!fresh} />
+              )}
               {affordability && house && (
                 <AffordabilityCard
                   result={affordability}
@@ -794,12 +851,14 @@ export default function DoppelApp() {
                   month={house.month}
                   boughtProb={house.boughtProb}
                   floorPlan={floorPlan}
+                  start={start}
                 />
               )}
               <RetirementCard
                 stats={real.retirement}
                 retirementAge={effProfile.retirementAge}
                 disabled={!fresh}
+                alreadyRetired={effProfile.retirementAge <= effProfile.age}
                 onChangeAge={(age) => set([{ op: "set", key: "retirementAge", value: age }], msg("change.retireAt", { age }))}
               />
             </div>
@@ -855,6 +914,16 @@ export default function DoppelApp() {
           if (withImport) setImportOpenToken((n) => n + 1);
         }}
       />
+      {ubsPickerOpen && (
+        <UbsPicker
+          open={ubsPickerOpen}
+          onClose={() => setUbsPickerOpen(false)}
+          onOpened={(id) => {
+            setUbsPickerOpen(false);
+            setActiveAccount(id);
+          }}
+        />
+      )}
       <Inspector entries={ledger} open={inspector} onClose={() => setInspector(false)} />
     </div>
   );

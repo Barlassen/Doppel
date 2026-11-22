@@ -2,9 +2,11 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Account } from "@/lib/accounts/types";
+import { netWorthOf } from "@/lib/finance/debt";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 
-const netWorth = (a: Account) => a.profile.cash + a.profile.portfolio + a.profile.pillar2 + a.profile.pillar3a;
+/** Assets − liabilities, the same net worth as the hero. */
+const netWorth = (a: Account) => netWorthOf(a.profile);
 
 /** "Barlas" → "B", "Anna Muster" → "AM". */
 export function initials(name: string): string {
@@ -35,6 +37,7 @@ export function AccountSwitcher({
   onReset,
   onDelete,
   onNewAccount,
+  onOpenUbs,
 }: {
   accounts: Account[];
   activeId: string;
@@ -42,6 +45,8 @@ export function AccountSwitcher({
   onReset: (id: string) => void;
   onDelete?: (id: string) => void;
   onNewAccount?: () => void;
+  /** "Open a UBS profile…" (synthetic starter data). */
+  onOpenUbs?: () => void;
 }) {
   const { t, fmt } = useI18n();
   const [open, setOpen] = useState(false);
@@ -142,7 +147,7 @@ export function AccountSwitcher({
           role="menu"
           aria-label={t("header.menu")}
           onKeyDown={onMenuKey}
-          className="card absolute top-full left-0 z-50 mt-1.5 w-[min(18rem,calc(100vw-2rem))] p-1.5 shadow-lg sm:right-0 sm:left-auto"
+          className="card absolute top-full left-0 z-50 mt-1.5 max-h-[min(32rem,calc(100vh-8rem))] w-[min(18rem,calc(100vw-2rem))] overflow-y-auto p-1.5 shadow-lg sm:right-0 sm:left-auto"
         >
           <div className="label px-2 pt-1 pb-1.5">{t("header.menu")}</div>
           {accounts.map((a, i) => {
@@ -165,7 +170,10 @@ export function AccountSwitcher({
               >
                 <Avatar name={a.profile.name} active={current} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{a.profile.name}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-medium">{a.profile.name}</span>
+                    {a.ubs && <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[10px] font-semibold text-ink-2">{t("ubs.tag")}</span>}
+                  </span>
                   <span className="block truncate text-[11px] text-ink-3">
                     {a.profile.city} · {t("header.netWorth", { amount: netWorth(a) })}
                   </span>
@@ -208,8 +216,8 @@ export function AccountSwitcher({
               }}
               className="w-full rounded-lg px-2 py-1.5 text-left text-xs text-bad outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <span className="block font-medium">{t("data.deleteAccount")}</span>
-              <span className="block text-[11px] text-ink-3">{t("data.deleteAccountHint")}</span>
+              <span className="block font-medium">{t(active.ubs ? "ubs.closeProfile" : "data.deleteAccount")}</span>
+              <span className="block text-[11px] text-ink-3">{t(active.ubs ? "ubs.closeProfileHint" : "data.deleteAccountHint")}</span>
             </button>
           )}
           {onNewAccount && (
@@ -228,6 +236,25 @@ export function AccountSwitcher({
             >
               <span className="block font-medium">{t("data.newAccount")}</span>
               <span className="block text-[11px] text-ink-3">{t("data.newAccountHint")}</span>
+            </button>
+          )}
+          {onOpenUbs && (
+            <button
+              ref={(el) => {
+                itemRefs.current[accounts.length + 3] = el;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              data-testid="open-ubs"
+              onClick={() => {
+                close(false);
+                onOpenUbs();
+              }}
+              className="w-full rounded-lg px-2 py-1.5 text-left text-xs outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="block font-medium">{t("ubs.openProfile")}</span>
+              <span className="block text-[11px] text-ink-3">{t("ubs.openProfileHint")}</span>
             </button>
           )}
         </div>

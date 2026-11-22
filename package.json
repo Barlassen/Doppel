@@ -8,6 +8,8 @@
     "start": "next start",
     "i18n:check": "npx tsx scripts/i18n-check.ts",
     "import:check": "npx tsx scripts/import-check.ts",
+    "ubs:build": "npx tsx scripts/build-ubs-data.ts",
+    "ubs:check": "npx tsx scripts/ubs-check.ts",
     "lint": "eslint --ignore-pattern public/tesseract/runtime/**",
     "postinstall": "node scripts/copy-tesseract-assets.mjs",
     "smoke:browser": "npx tsx scripts/browser-smoke.mjs",
