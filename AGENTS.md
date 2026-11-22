@@ -129,6 +129,9 @@ npm run dev                    # http://localhost:3000
 | i18n (strict) | `npx tsx scripts/i18n-check.ts` |
 | Engine numbers | `npx tsx scripts/engine-check.ts`. Barlas / Meriç / Oktay numbers must stay unchanged unless you change the engine on purpose. |
 | Imports round trip | `npx tsx scripts/import-check.ts` |
+| Engine regressions | `npm run engine:regression`. One check per fixed engine or parser bug. |
+| Model gateway | `npm run api:check`. Guards, caps, provider layer and snap heuristics against a stubbed model. |
+| Life game | `npm run play:check`. Includes parity between the game simulator and the dashboard engine. |
 | Vision (offline) | `npx tsx scripts/vision-benchmark.ts` |
 | Vision (live) | `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`. Uses the key; costs well under a cent. |
 | Browser smoke | `DOPPEL_SMOKE_PORT=<your port> npm run smoke:browser`. **Run `npm run build` first**; a stale `.next` build fails unrelated steps. |
