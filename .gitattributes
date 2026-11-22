@@ -1,0 +1,2 @@
+# Match the import fixture generator's CSV line endings in every checkout.
+public/samples/imports/*.csv text eol=crlf
