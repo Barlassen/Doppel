@@ -21,6 +21,8 @@ npm run dev                  # http://localhost:3000
 
 Without a key, QR-bills, local OCR, regex extraction, the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
 
+The OpenRouter defaults are Qwen3 30B A3B Instruct 2507 for text and Qwen3-VL 30B A3B Instruct for vision. To use the previous Gemini setup, set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` in `.env.local` and restart the app. The opt-in naive comparison defaults to `openai/gpt-4o`. See the [model selection and dated rates](docs/DECISIONS.md#16-open-weight-defaults-for-text-and-vision).
+
 ## How it works
 
 ```
@@ -36,20 +38,23 @@ photo ─► Tier 0  jsQR on the Swiss QR-bill            0 tokens, nothing sent
 
 For receipts, Tier 1 reads the complete OCR text and checks the signed item sum against the printed total. A basket within CHF 0.05 or read at high OCR confidence can go straight to review. Otherwise Tier 2 uses the small text model when OCR is readable and the 512px image when OCR fails. Review shows discrepancies for either route.
 
-Code: `src/lib/snap/pipeline.ts` (cascade), `src/lib/finance/` (engine), `src/lib/twin/actions.ts` (what-if ops and their validation), `src/app/api/twin/route.ts` (the only route that calls a model, via OpenRouter, default `google/gemini-2.5-flash-lite`). Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The cascade runs in `src/lib/snap/pipeline.ts`, the engine in `src/lib/finance/`, and what-if validation in `src/lib/twin/actions.ts`. All app model calls go through `src/app/api/twin/route.ts`. [Technical design](docs/ARCHITECTURE.md)
 
 ## Evidence
 
-The original live benchmark used 16 synthetic Swiss documents, including nine phone-photo variants. The current offline report also measures receipt item accuracy and routing. [Benchmark results](docs/BENCHMARK.md)
+The historical live run used 16 synthetic Swiss documents, including nine phone-photo variants. Live measurement of the Qwen defaults is pending with Barlas. [Historical live report, 2026-11-21](https://github.com/Barlassen/Doppel/blob/279287d8d82f3f09036240ec343606c6e40113ba/docs/BENCHMARK.md)
 
-| | Doppel cascade | Whole image to GPT-4o |
-|---|---:|---:|
-| Amounts correct (within CHF 0.05 or 0.5%) | 16/16 | 16/16 |
-| Documents read with 0 tokens | 11/16 | 0/16 |
-| Tokens per document | 123 | 966 |
-| Cost per 1,000 documents | $0.02 | $2.61 |
+| Metric | Gemini cascade (historical live) | Qwen cascade | Whole image to GPT-4o (historical live) |
+|---|---:|---:|---:|
+| Amounts correct (within the larger of CHF 0.05 or 0.5%) | 16/16 | Pending | 16/16 |
+| Documents read with 0 tokens | 11/16 | Pending | 0/16 |
+| Average tokens per document | 123 | Pending | 966 |
+| Cost per 1,000 documents | $0.02 | Pending | $2.61 |
+| Average latency per document (Node) | 2,943 ms¹ | Pending | 1,708 ms |
 
-The original run used a Node mirror with a 75% local-regex threshold and tied its latency to the GPT-4o request. The current benchmark shares the receipt gate and OCR languages with the browser and times Doppel separately. Both runs use synthetic fixtures.
+¹ The historical cascade timing includes the GPT-4o request. The current 19-document Node benchmark times Doppel separately, shares the receipt gate and OCR languages with the browser, and retains a 75% local-regex threshold for other documents. The committed report is offline and includes receipt item accuracy and routing. [Current document report](docs/BENCHMARK.md)
+
+The separate live vision report used Gemini 2.5 Flash-Lite on seven floor plans and charts. It records a 7/10 room-mapping result and two chart risk mismatches. [Live Gemini vision report](docs/VISION_BENCHMARK.md)
 
 The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, borderline) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 
