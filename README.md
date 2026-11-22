@@ -74,3 +74,5 @@ Contributors and coding agents: start with [AGENTS.md](AGENTS.md) and [docs/WORK
 Doppel Play (`/play`) turns the same twin into a chess-review life game: Life plays White, you play Black, and a Monte Carlo tree search over possible futures reviews every move. See [docs/PLAY.md](docs/PLAY.md).
 
 More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
+
+Contributor demo guides: [Judging and evidence](docs/JUDGING.md), [TKT integration plan](docs/TKT.md).
