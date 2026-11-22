@@ -59,12 +59,20 @@ src/app/
   play/                         the /play life game
 src/components/
   DoppelApp.tsx                 dashboard state machine: accounts, scenario, mutate() + impact, simulations,
-                                Plan A pin, snaps, ledger, solver
+                                outlook, Plan A pin, snaps, ledger, solver, assistant status and ask
   Hero, Cards, ConeChart, RetirementCard, PlanCompare, InvestControls, CommandBar
-  SnapPanel, ReceiptDetails, VisionReview   document capture and review
+  Decisions                     "Add a decision": picker, one short form per decision kind (sourced defaults,
+                                required inputs from the life model), the list of the plan's events
+  OutlookCard                   "What happens next": outlook() as before -> after figures and itemised costs
+  EconomyControl                economic scenario picker and the dated, sourced assumptions table
+  AskCard                       assistant connected / not connected, ask box, situation summary
+  ImportPanel, Learned, statementMemory   bank statement upload and review (the first data action), "What the
+                                twin learned" (summarizeStatement + confirm / reject of inferred facts), and
+                                what the browser remembers about statements (income rows, fact answers)
+  SnapPanel, ReceiptDetails, VisionReview   document photos, collapsed under "Other documents"
   Inspector                     token ledger, "why vision was needed", naive GPT-4o cost comparison
-  AccountSwitcher, AccountWizard, ImportPanel, TransactionsPanel   accounts and "data in"
-  ui.tsx                        CardHeader, Section and other layout primitives
+  AccountSwitcher, AccountWizard, TransactionsPanel   accounts, new-account wizard (statement first), bookings
+  ui.tsx, cantons.ts            CardHeader, Section, Disclosure and shared constants
 src/lib/
   finance/                      the engine: types, monteCarlo, scenario, swissRules, pension, goalSolver,
                                 behavioralEngine, investBehavior (behaviour derived from trades)
