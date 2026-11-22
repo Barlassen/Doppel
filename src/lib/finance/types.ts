@@ -28,6 +28,11 @@ export interface LifeEvent {
   durationMonths?: number;
   /** Where the event came from — shown in the UI. */
   source?: "profile" | "snap" | "command" | "solver";
+  /**
+   * True = `amount` is nominal CHF at the event's date, taken as given (e.g. the UBS starter kit's one-off costs).
+   * Default: `amount` is in today's CHF and is indexed to its date (prices for one-offs, home prices for a home).
+   */
+  nominal?: boolean;
 }
 
 export const TRANSACTION_CATEGORIES = [
@@ -314,7 +319,10 @@ export interface HouseStats {
   eventId: string;
   label: string;
   labelMsg?: Msg;
+  /** Price at the purchase date (nominal CHF): the amount the bank test and the mortgage use. */
   price: number;
+  /** The price as entered, in today's CHF. */
+  priceToday?: number;
   month: number;
   /** Share of futures in which the bank test passed at the purchase date and the home was bought. */
   boughtProb: number;
@@ -337,11 +345,21 @@ export interface RetirementStats {
   lastsTo90Prob: number;
   /** In the worst 10% of futures, the age at which savings run out (null = lasts beyond 90 even then). */
   depletionAgeP10: number | null;
-  /** Gross pension (AHV + BVG, from 65) / last gross salary. */
+  /** Gross pension (AHV + BVG) from the AHV reference age / last gross salary, both in today's CHF. */
   replacementRatio: number;
-  /** Gross pension income per month from 65, today's CHF (median). */
+  /**
+   * Gross pension income per month at the retirement date, today's CHF (median): the BVG annuity, plus AHV only
+   * when the retirement age is the AHV reference age or later. Before that the gap is bridged from savings.
+   */
   monthlyIncomeAtRetirement: number;
+  /** Gross pension income per month from the AHV reference age (BVG + AHV), today's CHF. */
+  monthlyIncomeFromAhvAge?: number;
+  /** The BVG annuity at the AHV reference age in today's CHF (it is fixed in nominal CHF, so it shrinks with prices). */
+  bvgMonthlyAtAhvAge?: number;
+  /** The BVG annuity at the end of the simulation (age 90) in today's CHF. */
+  bvgMonthlyAtEnd?: number;
   ahvMonthly: number;
+  /** The BVG annuity at the retirement date, today's CHF (median). */
   bvgMonthly: number;
   /** Monthly spending in retirement, today's CHF (median, incl. housing). */
   monthlySpending: number;
@@ -353,6 +371,8 @@ export interface RetirementStats {
 export interface SimResult {
   bands: YearBand[];
   successProb: number;
+  /** The monthly spending change the engine applied (`expenseDelta`, limited so that spending never falls below the rent). */
+  expenseDeltaApplied?: number;
   /** Share of futures that run out of cash before the goal age. */
   crunchProb: number;
   medianAtGoal: number;
@@ -367,5 +387,5 @@ export interface SimResult {
   goals?: GoalStats[];
   /** Only when the profile has liabilities. */
   debt?: DebtStats;
-  trace?: { cash: number[]; debt: number[] };
+  trace?: { cash: number[]; debt: number[]; p3a?: number[] };
 }

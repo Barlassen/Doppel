@@ -31,8 +31,12 @@ export function eventLabel(labelMsg: Msg): { label: string; labelMsg: Msg } {
   return { label: translate("en", labelMsg.key, labelMsg.params), labelMsg };
 }
 
-/** Months from now to mid-`year`, the same convention as the English parser and note snaps. */
+/**
+ * Months from now to mid-`year`, the same convention as the English parser and note snaps. A year before the
+ * current one gives −1: the bounds in `../actions` then drop the dated op instead of moving it to today.
+ */
 export function monthOfYear(year: number, now: Date): number {
+  if (year < now.getFullYear()) return -1;
   return Math.max(0, (year - now.getFullYear()) * 12 + (6 - now.getMonth()));
 }
 
@@ -64,12 +68,12 @@ export function normalizeText(text: string, locale: Locale): string {
 }
 
 /** Number with an optional magnitude word: 500 · 1,5 mio · 900k · 80 bin · 100 mille · 1.2 millionen. */
-export const AMOUNT = String.raw`(\d+(?:[.,]\d+)?)\s*(k|tsd\.?|tausend|bin|mille|mio\.?|millionen|million|millions|milyon|mn|m)?(?![\p{L}\d])`;
+export const AMOUNT = String.raw`(\d+(?:[.,]\d+)?)\s*(k|tsd\.?|tausend|thousand|bin|mille|mio\.?|millionen|million|millions|milyon|mn|m)?(?![\p{L}\d])`;
 
 export function amountValue(n: string, unit?: string): number {
   const v = Number(n.replace(",", "."));
   const u = (unit ?? "").toLowerCase().replace(/\.$/, "");
-  if (["k", "tsd", "tausend", "bin", "mille"].includes(u)) return v * 1000;
+  if (["k", "tsd", "tausend", "thousand", "bin", "mille"].includes(u)) return v * 1000;
   if (["m", "mio", "mn", "million", "millionen", "millions", "milyon"].includes(u)) return v * 1_000_000;
   return v;
 }

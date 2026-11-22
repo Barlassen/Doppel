@@ -170,11 +170,11 @@ function parse({ text, house, now }: IntentContext): Op[] {
   }
 
   // «Lohnerhöhung von 500», «500 mehr Lohn pro Monat».
-  const raise = t.match(re(String.raw`(lohnerhoehung|gehaltserhoehung|befoerderung)\D{0,20}${AMOUNT}`))
-    ?? t.match(re(String.raw`${AMOUNT}\s*(?:${PER_MONTH}\s*)?mehr\s+(?:lohn|gehalt)`));
-  if (raise) {
-    const [value, unit] = raise.length === 4 ? [raise[2], raise[3]] : [raise[1], raise[2]];
-    ops.push({ op: "add", type: "raise", ...eventLabel({ key: "event.raise" }), month: when ?? 6, amount: amountValue(value, unit) });
+  // The engine takes CHF per year: «500 pro Monat» is converted; a percentage needs the salary and is left to the model.
+  const raise = t.match(re(String.raw`(?:lohnerhoehung|gehaltserhoehung|befoerderung)[^\d%]{0,20}${AMOUNT}(\s*(?:%|prozent))?(\s*${PER_MONTH})?`))
+    ?? t.match(re(String.raw`${AMOUNT}(\s*(?:%|prozent))?(\s*${PER_MONTH})?\s*mehr\s+(?:lohn|gehalt)`));
+  if (raise && !raise[3]) {
+    ops.push({ op: "add", type: "raise", ...eventLabel({ key: "event.raise" }), month: when ?? 6, amount: amountValue(raise[1], raise[2]) * (raise[4] ? 12 : 1) });
   }
 
   return ops;

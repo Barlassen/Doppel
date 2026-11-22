@@ -1,4 +1,4 @@
-import type { EventType, LifeEvent, RecurringExpense, RiskProfile, Scenario, Transaction } from "@/lib/finance/types";
+import type { EventType, LifeEvent, Profile, RecurringExpense, RiskProfile, Scenario, Transaction } from "@/lib/finance/types";
 import { RISK_PROFILES, TRANSACTION_CATEGORIES } from "@/lib/finance/types";
 import { payslipToIncome } from "@/lib/finance/pension";
 import { receiptMoney } from "@/lib/format";
@@ -43,8 +43,13 @@ export const BOUNDS = {
 let counter = 0;
 const newId = () => `ev-${Date.now().toString(36)}-${counter++}`;
 
+/** A plain decimal number. Strings may use Swiss thousands marks ("1'200"); hex, exponents and empty strings are rejected. */
 const num = (v: unknown): number | null => {
-  const n = typeof v === "string" ? Number(v.replace(/['’\s]/g, "")) : typeof v === "number" ? v : NaN;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v !== "string") return null;
+  const s = v.replace(/['’\s]/g, "");
+  if (!/^-?\d+(?:\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
 const within = (v: number | null, [lo, hi]: readonly [number, number]) => v !== null && v >= lo && v <= hi;
@@ -67,6 +72,8 @@ export function validateLocalOps(ops: Op[], events: LifeEvent[]): Op[] {
 function normalizeOps(raw: unknown, events: LifeEvent[], local = false): Op[] {
   if (!Array.isArray(raw)) return [];
   const ids = new Set(events.map((e) => e.id));
+  // Months as the ops before this one leave them, so two shifts cannot add up past the bound.
+  const monthOf = new Map(events.map((e) => [e.id, e.month]));
   const out: Op[] = [];
   for (const o of raw as Record<string, unknown>[]) {
     if (!o || typeof o !== "object") continue;
@@ -77,6 +84,7 @@ function normalizeOps(raw: unknown, events: LifeEvent[], local = false): Op[] {
       if (!within(month, BOUNDS.month)) continue;
       let amount = num(o.amount ?? 0);
       let duration = o.duration === undefined || o.duration === null ? undefined : num(o.duration);
+      if (duration !== undefined && duration !== null) duration = Math.round(duration);
       if (duration !== undefined && !within(duration, BOUNDS.duration)) continue;
       if (type === "house" && !within(amount, BOUNDS.housePrice)) continue;
       if (type === "child") {
@@ -97,9 +105,14 @@ function normalizeOps(raw: unknown, events: LifeEvent[], local = false): Op[] {
     } else if (o.op === "shift") {
       const months = num(o.months);
       if (typeof o.id !== "string" || !ids.has(o.id) || !within(months, BOUNDS.shift) || Math.round(months!) === 0) continue;
+      // The event must stay inside the simulated range: no silent clamp to today, no month past the bound.
+      const target = (monthOf.get(o.id) ?? 0) + Math.round(months!);
+      if (!within(target, BOUNDS.month)) continue;
+      monthOf.set(o.id, target);
       out.push({ op: "shift", id: o.id, months: Math.round(months!) });
     } else if (o.op === "remove") {
       if (typeof o.id !== "string" || !ids.has(o.id)) continue;
+      ids.delete(o.id);
       out.push({ op: "remove", id: o.id });
     } else if (o.op === "set") {
       const key = o.key as SetKey;
@@ -144,8 +157,19 @@ export function applyOps(events: LifeEvent[], ops: Op[], source: LifeEvent["sour
   return out;
 }
 
-/** Applies every op (events + `set` knobs) to a scenario. Pure. */
-export function applyScenarioOps(s: Scenario, ops: Op[], source: LifeEvent["source"] = "command"): Scenario {
+/**
+ * The lowest `expenseDelta` the engine can apply for a profile: spending cannot fall below the rent
+ * (`simulate()` uses `max(rentMonth, expensesMonth + expenseDelta)`).
+ */
+export function minExpenseDelta(profile: Pick<Profile, "expensesMonth" | "rentMonth">, recurringMonthly = 0): number {
+  return Math.min(0, profile.rentMonth - (profile.expensesMonth + recurringMonthly));
+}
+
+/**
+ * Applies every op (events + `set` knobs) to a scenario. Pure. With `ctx.profile`, a spending cut is limited to
+ * what the engine can apply (not below the rent), so the scenario never shows a larger cut than the one simulated.
+ */
+export function applyScenarioOps(s: Scenario, ops: Op[], source: LifeEvent["source"] = "command", ctx: { profile?: Pick<Profile, "expensesMonth" | "rentMonth"> } = {}): Scenario {
   let next: Scenario = { ...s, events: applyOps(s.events, ops, source) };
   for (const o of ops) {
     if (o.op !== "set") continue;
@@ -164,6 +188,10 @@ export function applyScenarioOps(s: Scenario, ops: Op[], source: LifeEvent["sour
         break;
       case "expenseDelta":
         next = { ...next, expenseDelta: clamp(next.expenseDelta + Number(o.value), BOUNDS.expenseDelta) };
+        if (ctx.profile) {
+          const floor = minExpenseDelta(ctx.profile, next.recurring.reduce((sum, r) => sum + r.monthly, 0));
+          next = { ...next, expenseDelta: Math.max(floor, next.expenseDelta) };
+        }
         break;
       case "optimize":
         next = { ...next, optimize: Boolean(o.value) };
