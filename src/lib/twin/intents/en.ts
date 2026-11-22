@@ -6,11 +6,53 @@
  */
 import type { RiskProfile } from "@/lib/finance/types";
 import type { Op } from "../actions";
+import { lifeOps, type LifeVocab } from "./life";
 import { AMOUNT, amountValue, eventLabel, largestAmountAbove, monthOfYear, normalizeText, yearIn, type IntentContext, type IntentParser } from "./shared";
 
 const re = (s: string, flags = "u") => new RegExp(s, flags);
 const PER_MONTH = String.raw`(?:(?:a|per|each|every|\/|in\s+a)\s*month|monthly|\/\s*mo\b|p\.?\s?m\.?(?![\p{L}]))`;
 const HOME = /\b(house|home|flat|apartment|condo)\b/;
+
+/** Life decisions and economic scenarios (see `life.ts`). */
+const LIFE: LifeVocab = {
+  perMonth: PER_MONTH,
+  forAmount: String.raw`\bfor`,
+  car: /\b(?:car|vehicle|tesla|suv|motorbike|motorcycle)\b/,
+  lease: /\bleas(?:e|ing|ed)\b/,
+  buy: /\b(?:buy|buying|purchase|get)\b/,
+  ga: /\b(?:ga\s+(?:travelcard|travel\s+card|pass|abo)|general\s*abo\w*|generalabonnement|(?:get|buy|switch\s+to)\s+(?:a\s+|the\s+)?ga)\b/,
+  home: HOME,
+  child: /\b(?:baby|child|kid)\b/,
+  university: /\b(?:universit\w+|eth|epfl|college|stud(?:y|ies|ying)|gymnasium)\b/,
+  apprenticeship: /\bapprentice\w*\b/,
+  kitaDays: /\b(\d)\s*days?\b[^.]{0,20}?\b(?:daycare|day\s+care|nursery|kita|creche)\b/,
+  workload: /\b(?:work(?:ing|load)?|part[- ]time|hours|job|pensum)\b[^.%\d]{0,25}?(\d{1,3})\s*(?:%|percent)|\b(\d{1,3})\s*(?:%|percent)\s+(?:job|workload|position|pensum|part[- ]time)/,
+  halfTime: /\b(?:half[- ]time|work\s+half)\b/,
+  sabbatical: /\b(?:sabbatical|career\s+break|unpaid\s+leave|gap\s+year)\b/,
+  forMonths: /\bfor\s+(\d+)\s*months?\b/,
+  forYears: /\bfor\s+(\d+(?:[.,]5)?)\s*years?\b/,
+  moveTo: /\b[Mm]ov(?:e|ing)\s+to\s+((?:St\.\s+)?\p{Lu}[\p{L}’'.-]+)/u,
+  move: /\b(?:move|moving|relocat\w+)\b/,
+  rent: String.raw`\brent\s+(?:of\s+|is\s+|at\s+|for\s+)?`,
+  marry: /\b(?:marr(?:y|ied|iage)|wedding)\b/,
+  partner: /\bmov(?:e|ing)\s+in\s+(?:together|with\s+my\s+\w+)\b|\bmy\s+partner\s+moves\s+in\b/,
+  partnerEarns: String.raw`\b(?:partner|wife|husband|spouse|girlfriend|boyfriend)\s+(?:earns|makes|brings\s+in|with)\s+`,
+  master: /\b(?:master(?:'s|s)?|mba|msc)\b/,
+  bachelor: /\b(?:bachelor(?:'s|s)?|bsc)\b/,
+  education: /\b(?:phd|doctorate|further\s+education|back\s+to\s+(?:school|university|uni)|retrain\w*|bootcamp)\b/,
+  fullTime: /\bfull[- ]time\b/,
+  selfEmployed: /\b(?:self[- ]employ\w*|freelanc\w*|go(?:ing)?\s+independent|(?:start|found|launch)\w*\s+(?:my\s+own\s+|a\s+|my\s+)(?:business|company|startup))\b/,
+  earning: String.raw`\b(?:earn(?:ing)?|mak(?:e|ing)|income\s+of|paying\s+myself)\s+`,
+  inherit: /\b(?:inherit\w*|windfall|gift\s+of|bonus\s+of|lottery)\b/,
+  heatPump: /\bheat\s*pump\b/,
+  economy: {
+    high_inflation: /\b(?:high|higher|rising)\s+inflation\b|\binflation\s+(?:stays|spike|shock|rises|jumps|at\s+\d)|\b(?:mortgage|interest)\s+rates?\s+(?:rise|hit|go\s+up|increase|climb|jump)/,
+    recession: /\b(?:recession|crisis)\s+scenario\b|\bscenario\W+(?:recession|crisis)\b|\beconomic\s+crisis\b/,
+    low_rates: /\b(?:low|lower|negative|zero)\s+(?:interest\s+)?rates?\b/,
+    climate_transition: /\bclimate\s+(?:transition|scenario|stress|shock)\b/,
+    baseline: /\b(?:baseline|normal)\s+(?:economy|scenario)\b/,
+  },
+};
 
 /** Lower-cased text with English thousands commas removed ("1,200,000" → "1200000") and Swiss formats normalised. */
 export function normalizeEnglish(text: string): string {
@@ -29,7 +71,8 @@ export function monthFromEnglish(t: string, now: Date): number | undefined {
   return undefined;
 }
 
-function parse({ text, house, now }: IntentContext): Op[] {
+function parse(ctx: IntentContext): Op[] {
+  const { text, house, now } = ctx;
   const t = normalizeEnglish(text);
   const when = monthFromEnglish(t, now);
   const ops: Op[] = [];
@@ -91,14 +134,9 @@ function parse({ text, house, now }: IntentContext): Op[] {
     ops.push({ op: "add", type: "jobloss", ...eventLabel({ key: "event.jobLoss" }), month: when ?? 12, amount: 0, duration: dur ? Number(dur[1]) : 6 });
   }
 
-  // market crash
-  if (/crash|market\s+(drops?|falls?|tanks?)|recession/.test(t)) {
+  // market crash (a named "scenario" is the economy, see life.ts)
+  if (/crash|market\s+(drops?|falls?|tanks?)|recession/.test(t) && !/scenario|economic\s+crisis/.test(t)) {
     ops.push({ op: "add", type: "crash", ...eventLabel({ key: "event.crash" }), month: when ?? 12, amount: 0 });
-  }
-
-  // child
-  if (/\b(baby|child|kid)\b/.test(t)) {
-    ops.push({ op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: when ?? 18, amount: 1500, duration: 216 });
   }
 
   // raise: CHF per year; "500 a month" is converted, a percentage is left to the model (it needs the salary)
@@ -107,6 +145,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
     ops.push({ op: "add", type: "raise", ...eventLabel({ key: "event.raise" }), month: when ?? 6, amount: amountValue(raise[1], raise[2]) * (raise[4] ? 12 : 1) });
   }
 
+  // child, car, workload, move, partner, education, self-employment, windfall, purchase, economy
+  ops.push(...lifeOps(LIFE, t, ctx, when, ops));
   return ops;
 }
 

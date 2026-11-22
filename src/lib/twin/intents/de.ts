@@ -1,6 +1,7 @@
 /** Local what-if patterns for Swiss Standard German. */
 import type { RiskProfile } from "@/lib/finance/types";
 import type { Op } from "../actions";
+import { lifeOps, type LifeVocab } from "./life";
 import { AMOUNT, amountValue, eventLabel, largestAmountAbove, monthOfYear, normalizeText, yearIn, type IntentContext, type IntentParser } from "./shared";
 
 // Every pattern below is written with ae/oe/ue/ss: `foldGerman` maps ä/ö/ü/ß to those digraphs first,
@@ -16,8 +17,50 @@ const SPEND_OUT = String.raw`aus(?:g[ei]b\p{L}*|gaben)?(?![\p{L}])`;
 const HOME = /haus|wohnung|eigenheim|immobilie|wohneigentum|eigentum|liegenschaft|stockwerkeigentum|stwe|\befh\b/;
 const HOME_PRICE = new RegExp(String.raw`\b(?:fuer|kaufpreis(?:\s+von)?)\s+${AMOUNT}`, "gu");
 const JOB_LOSS = /(?:job|stelle|arbeit|anstellung)\S*(?:\s+\S+){0,7}?\s+(?:verlier|verloren)|(?:verlier|verloren)\S*(?:\s+\S+){0,5}?\s+(?:job|stelle|arbeit|anstellung)\b|jobverlust|arbeitslos|stellenverlust|stellenlos|kuendigung|gekuendigt|entlassen|entlassung/;
+const CHILD_RE = /\b(?:baby|nachwuchs|familienzuwachs|schwanger)|\b(?:ein|unser\w*|zweites|drittes|erstes)\s+kind\b|\bkind\s+(?:bekommen|kriegen)|\bgeburt\s+(?:eines|unseres)\s+kindes\b|\b(?:mutter|vater|eltern)\s+werd|\bwerd\w*\s+(?:ich\s+|wir\s+)?(?:mutter|vater|eltern)\b/;
 const MARKET = String.raw`\b(?:boerse|markt|maerkte|aktienkurse)\b`;
 const re = (pattern: string) => new RegExp(pattern, "u");
+
+/** Life decisions and economic scenarios (see `life.ts`); patterns run on the folded text (ae/oe/ue/ss). */
+const LIFE: LifeVocab = {
+  perMonth: PER_MONTH,
+  forAmount: String.raw`\b(?:fuer|um)`,
+  car: /\b(?:auto|autos|wagen|pkw|fahrzeug|tesla|occasion|motorrad|toeff)\b/,
+  lease: /leas/,
+  buy: /kauf|anschaff|zuleg|erwerb/,
+  ga: /\bga\b|generalabo\p{L}*|general-abo\p{L}*/u,
+  home: HOME,
+  child: CHILD_RE,
+  university: /\b(?:uni|universitaet|eth|epfl|fachhochschule|fh|studier\p{L}*|studium|gymnasium|gymi|matura)\b/u,
+  apprenticeship: /\b(?:lehre|lehrstelle|berufslehre)\b/,
+  kitaDays: /\b(\d)\s*tage?\b[^.]{0,20}?\b(?:kita|krippe|hort|betreuung|tagesstaette)\b/,
+  workload: /\b(\d{1,3})\s*(?:%|prozent)\s*(?:\p{L}+\s+)?(?:arbeit\p{L}*|pensum|stelle|job|teilzeit)|\b(?:pensum|arbeitszeit|arbeitspensum|stelle|teilzeit|arbeit\p{L}*)\b[^.%\d]{0,25}?(\d{1,3})\s*(?:%|prozent)/u,
+  halfTime: /\bhalbtags\b|\bhalbe\s+stelle\b/,
+  sabbatical: /\b(?:sabbatical|auszeit|unbezahlte[rn]?\s+urlaub|sabbatjahr)\b/,
+  forMonths: /(?<!\bin\s)(?<!\d)(\d+)\s*monate?n?\b/,
+  forYears: /(?<!\bin\s)(?<!\d)(\d+(?:[.,]5)?)\s*jahre?n?\b/,
+  moveTo: /\b[Nn]ach\s+((?:St\.\s+)?\p{Lu}[\p{L}’'.-]+)\s+(?:um)?(?:zieh|zügel|zuegel)\p{L}*|\b(?:[Uu]mzug|[Zz]ieh\p{L}*|[Zz]ügl\p{L}*|[Zz]uegl\p{L}*|[Uu]mzieh\p{L}*)\s+(?:\p{L}+\s+){0,2}?nach\s+((?:St\.\s+)?\p{Lu}[\p{L}’'.-]+)/u,
+  move: /\b(?:umzug|umzieh\p{L}*|zuegel\p{L}*|zieh\p{L}*\s+um)\b/u,
+  rent: String.raw`\b(?:miete|mietzins)\s+(?:von\s+|fuer\s+|betraegt\s+)?`,
+  marry: /\b(?:heirat\p{L}*|hochzeit|verheirat\p{L}*|trauung)\b/u,
+  partner: /\bzusammenzieh\p{L}*|\bzieh\p{L}*\s+(?:mit\s+\p{L}+\s+\p{L}+\s+)?zusammen\b|\bzusammen\s+zieh\p{L}*/u,
+  partnerEarns: String.raw`\b(?:partner\p{L}*|frau|mann|freund\p{L}*|ehe\p{L}+)\s+(?:verdient|mit)\s+`,
+  master: /\b(?:master\p{L}*|mba|msc)\b/u,
+  bachelor: /\b(?:bachelor\p{L}*|bsc)\b/u,
+  education: /\b(?:weiterbildung|doktorat|nachdiplom\p{L}*|umschulung|studium|studier\p{L}*)\b/u,
+  fullTime: /\bvollzeit\p{L}*/u,
+  selfEmployed: /\bselbst(?:st)?aendig\p{L}*|\bfreiberuf\p{L}*|\bfreelanc\p{L}*|\beigene[sn]?\s+(?:firma|geschaeft|unternehmen)|\b(?:firma|unternehmen|startup)\s+gruend\p{L}*/u,
+  earning: String.raw`\b(?:verdien\p{L}*|einkommen\s+von|lohn\s+von)\s+`,
+  inherit: /\b(?:erbe|erben|erbst|erbt|erbschaft|schenkung|lottogewinn)\b/,
+  heatPump: /\bwaermepumpe\b/,
+  economy: {
+    high_inflation: /\bhohe\p{L}*\s+(?:inflation|teuerung)|\b(?:inflation|teuerung)\s+(?:steigt|bleibt\s+hoch|hoch\s+bleibt|zieht\s+an|bei\s+\d)|\b(?:hypothekar)?zinsen\s+(?:steigen|erhoeh\p{L}*|klettern|auf\s+\d)/u,
+    recession: /\brezessions?szenario|\bszenario\W+rezession|\bwirtschaftskrise\b/,
+    low_rates: /\b(?:tiefzins\p{L}*|niedrigzins\p{L}*|negativzins\p{L}*|tiefe\p{L}*\s+zinsen|nullzinsen)\b/u,
+    climate_transition: /\bklima(?:wandel|szenario|stress|schock|transition)\p{L}*/u,
+    baseline: /\bbasisszenario\b|\bnormale\s+wirtschaft\b/,
+  },
+};
 const MARKET_FALLS = re(String.raw`${MARKET}[^.!?]{0,50}?\b(?:stuerz|einbr|kollabier|krach|tauch|sink|faell|fall(?:en|t)\b|rutsch|br(?:icht|echen)\b[^.!?]{0,30}?\bein\b)|\bbr(?:icht|echen)\b[^.!?]{0,35}?${MARKET}\s+ein\b`);
 
 const RISK_TERMS = {
@@ -63,7 +106,8 @@ function monthFrom(t: string, now: Date): number | undefined {
   return undefined;
 }
 
-function parse({ text, house, now }: IntentContext): Op[] {
+function parse(ctx: IntentContext): Op[] {
+  const { text, house, now } = ctx;
   const t = foldGerman(text);
   const when = monthFrom(t, now);
   const ops: Op[] = [];
@@ -161,12 +205,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
     ops.push({ op: "add", type: "jobloss", ...eventLabel({ key: "event.jobLoss" }), month: when ?? 12, amount: 0, duration });
   }
 
-  if (/crash|boersen(?:einbruch|sturz)|markt(?:einbruch|absturz)|kurssturz|rezession/.test(t) || MARKET_FALLS.test(t)) {
+  if ((/crash|boersen(?:einbruch|sturz)|markt(?:einbruch|absturz)|kurssturz|rezession/.test(t) || MARKET_FALLS.test(t)) && !/szenario|wirtschaftskrise/.test(t)) {
     ops.push({ op: "add", type: "crash", ...eventLabel({ key: "event.crash" }), month: when ?? 12, amount: 0 });
-  }
-
-  if (/\b(?:baby|nachwuchs|familienzuwachs|schwanger)|\b(?:ein|unser\w*|zweites|drittes|erstes)\s+kind\b|\bkind\s+(?:bekommen|kriegen)|\bgeburt\s+(?:eines|unseres)\s+kindes\b|\b(?:mutter|vater|eltern)\s+werd|\bwerd\w*\s+(?:ich\s+|wir\s+)?(?:mutter|vater|eltern)\b/.test(t)) {
-    ops.push({ op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: when ?? 18, amount: 1500, duration: 216 });
   }
 
   // «Lohnerhöhung von 500», «500 mehr Lohn pro Monat».
@@ -177,6 +217,8 @@ function parse({ text, house, now }: IntentContext): Op[] {
     ops.push({ op: "add", type: "raise", ...eventLabel({ key: "event.raise" }), month: when ?? 6, amount: amountValue(raise[1], raise[2]) * (raise[4] ? 12 : 1) });
   }
 
+  // Kind, Auto, Pensum, Umzug, Heirat, Weiterbildung, Selbstständigkeit, Erbschaft, Anschaffung, Wirtschaftslage
+  ops.push(...lifeOps(LIFE, t, ctx, when, ops));
   return ops;
 }
 
