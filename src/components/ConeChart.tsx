@@ -124,24 +124,30 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
   const rows = Math.max(1, rowEnd.length);
 
   const reading = readChart({ real, before, goal, targetLine, netWorthToday });
+  // " (140k–181k)": left out when the band has no width at this precision (e.g. no investments at all).
+  const range = (b: YearBand) => (fmt.chfShort(b.p10) === fmt.chfShort(b.p90) ? "" : ` (${fmt.chfShort(b.p10)}–${fmt.chfShort(b.p90)})`);
+  const sinks = reading.underwaterAge !== null;
   const lines = [
-    reading.ahead
-      ? t("ux.chart.readAhead", { now: netWorthToday, years: reading.ahead.years, age: reading.ahead.band.age, mid: reading.ahead.band.p50, low: reading.ahead.band.p10, high: reading.ahead.band.p90 })
-      : t("ux.chart.readNow", { now: netWorthToday }),
+    // "Today CHF 10’000 → in 5 years about CHF 159k (140k–181k) → at 40 about CHF 593k (459k–809k)."
     [
-      reading.atGoal
-        ? t("ux.chart.readGoal", { age: reading.atGoal.age, year: reading.atGoal.year, mid: reading.atGoal.p50, low: reading.atGoal.p10, high: reading.atGoal.p90 })
-        : "",
-      t(`ux.chart.status.${reading.status}`, { goal: goal.label, odds: real.successProb }),
+      t("ux.chart.readNow", { now: netWorthToday }),
+      reading.ahead ? t("ux.chart.readAhead", { years: reading.ahead.years, mid: reading.ahead.band.p50, range: range(reading.ahead.band) }) : "",
+      reading.atGoal ? t("ux.chart.readGoal", { age: reading.atGoal.age, year: reading.atGoal.year, mid: reading.atGoal.p50, range: range(reading.atGoal) }) : "",
+    ].filter(Boolean).join(" → ") + ".",
+    [
+      t(`ux.chart.status.${reading.status}`, { odds: real.successProb }),
       reading.gap > 0 ? t("ux.chart.readGap", { gap: reading.gap }) : "",
     ].filter(Boolean).join(" "),
     [
-      real.crunchProb > 0 ? t("ux.chart.readCrunch", { p: real.crunchProb }) : t("ux.chart.readNoCrunch"),
-      reading.underwaterAge !== null ? t("ux.chart.readUnderwater", { age: reading.underwaterAge }) : "",
+      // "No cash crunch" is only said when the weakest futures also stay above zero until the goal date.
+      real.crunchProb > 0 ? t("ux.chart.readCrunch", { p: real.crunchProb }) : sinks && reading.underwaterAge! <= goal.age ? "" : t("ux.chart.readNoCrunch"),
+      sinks ? t("ux.chart.readUnderwater", { age: reading.underwaterAge! }) : "",
     ].filter(Boolean).join(" "),
     ...(reading.beforeAtGoal && before
       ? [t("ux.chart.readBefore", { label: beforeLabel ?? t("plan.pinned"), before: before.successProb, after: real.successProb, beforeMid: reading.beforeAtGoal.p50, afterMid: reading.atGoal?.p50 ?? real.medianAtGoal })]
-      : []),
+      : before
+        ? [t("ux.chart.readBeforeOdds", { label: beforeLabel ?? t("plan.pinned"), before: before.successProb, after: real.successProb })]
+        : []),
   ];
 
   return (
@@ -272,7 +278,6 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
         </ResponsiveContainer>
       </div>
       <div className="text-center text-[11px] text-ink-3">{t("ux.chart.axisAge")}</div>
-      <p className="mt-2 text-xs text-ink-2">{t("ux.chart.legendHow", { paths: real.paths })}</p>
 
       <ul className="mt-3 space-y-1 text-sm text-ink-2" data-testid="chart-reading">
         {lines.map((line, i) => (
@@ -354,11 +359,11 @@ function ConeTooltip({ active, payload, hasBefore }: TipProps) {
   // Short amounts ("CHF 119k"): the tooltip has to fit a 250 px wide chart on a phone.
   const short = (v: number) => t("common.deltaChf", { sign: "", amount: v });
   return (
-    <div className="card max-w-[15rem] px-3 py-2 text-xs shadow-lg">
+    <div className="card max-w-[11.5rem] px-2.5 py-2 text-xs shadow-lg sm:max-w-[15rem] sm:px-3">
       <div className="mb-1 font-semibold text-ink">
         {t("chart.tipAge", { age: d.age, year: d.year })}
       </div>
-      <Row color="var(--series-1)" label={t("ux.chart.legendMedian")} value={short(d.real)} />
+      <Row color="var(--series-1)" label={t("ux.chart.tipMedian")} value={short(d.real)} />
       <Row color="var(--series-2)" label={t("ux.chart.legendIdeal")} value={short(d.ideal)} dashed />
       {hasBefore && d.before !== undefined && <Row color="var(--ink-2)" label={t("chart.tipPlanA")} value={short(d.before)} dashed />}
       <div className="mt-1 text-ink-3">
@@ -372,10 +377,10 @@ function Row({ color, label, value, dashed }: { color: string; label: string; va
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="flex min-w-0 items-center gap-2 text-ink-2">
-        <span className={`inline-block w-3 ${dashed ? "border-t-2 border-dashed" : "h-[2px]"}`} style={dashed ? { borderColor: color } : { background: color }} />
+        <span className={`inline-block w-3 shrink-0 ${dashed ? "border-t-2 border-dashed" : "h-[2px]"}`} style={dashed ? { borderColor: color } : { background: color }} />
         {label}
       </span>
-      <span className="num font-medium text-ink">{value}</span>
+      <span className="num shrink-0 font-medium whitespace-nowrap text-ink">{value}</span>
     </div>
   );
 }

@@ -431,8 +431,9 @@ function EntryRow({
         aria-controls={panelId}
         className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 py-2.5 text-left"
       >
-        <TierChip tier={e.tier} route={route} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{tm(e.title)}</span>
+        <span className="flex-1 sm:flex-none"><TierChip tier={e.tier} route={route} /></span>
+        {/* Below `sm` the title takes its own line under the chip, so it is not cut to a few letters. */}
+        <span className="order-last min-w-0 basis-full truncate text-sm font-medium sm:order-none sm:flex-1 sm:basis-0">{tm(e.title)}</span>
         <OutcomeTag outcome={outcome} excluded={excluded} />
         {comparison && (
           <span className="rounded-full bg-s1/15 px-2 py-0.5 text-[10px] font-semibold text-s1">

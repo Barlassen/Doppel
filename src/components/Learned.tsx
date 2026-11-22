@@ -22,8 +22,9 @@ export interface Learned {
 
 /** Costs that come back every month whatever the month looks like. */
 const FIXED: ReadonlySet<TransactionCategory> = new Set(["housing", "insurance", "bills", "subscriptions"]);
-/** How many flexible categories and habits one row lists. */
+/** How many flexible categories and how many habits one row lists. */
 const TOP = 3;
+const TOP_HABITS = 2;
 
 /**
  * THE adapter of the panel: the account's data (profile + behaviour analysis) → rows. Everything the panel shows comes
@@ -76,7 +77,7 @@ export function learnedFrom(profile: Profile, behavior: BehaviorProfile): Learne
       ? [{
           id: "habits" as const,
           label: msg("ux.learned.habits"),
-          value: msg("ux.learned.list", { items: behavior.insights.slice(0, TOP).map((i) => i.title) }),
+          value: msg("ux.learned.list", { items: behavior.insights.slice(0, TOP_HABITS).map((i) => i.title) }),
         }]
       : []),
   ];

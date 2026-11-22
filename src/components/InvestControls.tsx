@@ -113,16 +113,19 @@ const TILE_DIVIDERS = [
   "border-l border-line px-3",
 ];
 
+/** A difference of this many points between two runs of 1,000 futures is simulation noise, not a cost of waiting. */
+const WAITING_NOISE_POINTS = 1;
+
 /**
  * Cost of waiting: odds if the idle cash is put to work now, in 2 or in 5 years. The card is left out when waiting
- * changes nothing (every figure rounds to the same percent): there is then nothing to decide.
+ * changes nothing (every figure is within simulation noise of "now"): there is then nothing to decide.
  */
 export function WaitingStrip({ items, loading }: { items: WaitingCost[] | null | undefined; loading?: boolean }) {
   const { t, tm, fmt } = useI18n();
   if (items === null) return null;
   const points = (p: number) => Math.round(p * 100);
   const now = points(items?.[0]?.prob ?? 0);
-  if (items && items.every((w) => points(w.prob) === now)) return null;
+  if (items && items.every((w) => Math.abs(points(w.prob) - now) <= WAITING_NOISE_POINTS)) return null;
   return (
     <section className="card p-5 sm:p-6">
       <CardHeader title={t("waiting.title")} className="mb-1" />

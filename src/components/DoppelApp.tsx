@@ -296,8 +296,19 @@ export default function DoppelApp() {
     if (fresh && id === accountRef.current.id) loadAccount(fresh, true);
   }
 
+  // The <title> follows the language. React owns the server-rendered <title> and writes the English text back when
+  // it re-renders the head, so the localized title is re-applied whenever that element changes.
   useEffect(() => {
-    document.title = t("ux.docTitle");
+    const want = t("ux.docTitle");
+    const apply = () => {
+      if (document.title !== want) document.title = want;
+    };
+    apply();
+    const el = document.querySelector("head > title");
+    if (!el) return;
+    const observer = new MutationObserver(apply);
+    observer.observe(el, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes with the locale
   }, [locale]);
 

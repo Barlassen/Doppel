@@ -355,9 +355,6 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
         </p>
       </div>
 
-      <p className="num text-xs text-ink-2" data-testid="import-counts">
-        {t("data.counts", { transactions: counts.transactions, trades: counts.trades, duplicates: counts.duplicates, income: counts.income, transfers: counts.transfers, review: counts.review })}
-      </p>
       <div role="status" className="text-xs">
         {categorizing ? <p className="text-ink-2">{t("data.categorizing")}</p> : pending.modelNote && <p className="text-ink-2">{tm(pending.modelNote)}</p>}
       </div>

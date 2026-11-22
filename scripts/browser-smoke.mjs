@@ -715,6 +715,12 @@ try {
       await assertNoOverflow(uxPage);
     }
     assert.equal(await uxPage.title(), U("ux.docTitle"));
+    await uxPage.getByTestId("lang-select").selectOption("tr");
+    await uxPage.waitForFunction((title) => document.title === title, translate("tr", "ux.docTitle"));
+    await uxPage.waitForTimeout(1000); // a late head re-render must not put the English title back
+    assert.equal(await uxPage.title(), translate("tr", "ux.docTitle"));
+    await uxPage.getByTestId("lang-select").selectOption("en");
+    await uxPage.waitForFunction((title) => document.title === title, U("ux.docTitle"));
 
     // Statement first: the upload is the first data action, document photos are collapsed below it.
     const statement = uxPage.getByTestId("statement-card");
