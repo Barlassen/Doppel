@@ -16,7 +16,7 @@ What the user can do:
 - ask what-ifs in four languages ("retire at 60", "buy a flat in 2028 for 1.2M");
 - see the effect: Monte Carlo cone, goal odds, Swiss mortgage affordability (Tragbarkeit), pension (AHV/BVG/3a), a behavioural twin built from real spending and trades, and a goal solver that finds the smallest change that works.
 
-Coming next is a **life game at `/play`**, a chess-review framing of decisions, specified in [docs/PLAY.md](docs/PLAY.md).
+The same twin is also a **life game at `/play`**, a chess-review framing of decisions (phase 1 is on `main`; spec and implementation notes in [docs/PLAY.md](docs/PLAY.md)).
 
 ### How the judges score (UBS draft rubric)
 
@@ -56,7 +56,7 @@ src/app/
   page.tsx, layout.tsx          dashboard entry (renders DoppelApp)
   api/twin/route.ts             the ONLY server route that calls a model (OpenRouter). Every task has strict
                                 input validation, a byte cap and a per-task output-token cap.
-  play/                         (in flight) the /play life game
+  play/                         the /play life game
 src/components/
   DoppelApp.tsx                 dashboard state machine: accounts, scenario, mutate() + impact, simulations,
                                 Plan A pin, snaps, ledger, solver
@@ -77,8 +77,8 @@ src/lib/
   twin/                         what-if ops (actions.ts) + local intent parsers per language (intents/*)
   frugal/                       token ledger, prices, naive baseline
   i18n/                         typed dictionaries en/de/fr/tr, translate/format helpers, I18nProvider
-  ubs/                          (in flight) UBS synthetic data layer
-  game/                         (in flight) /play engine (MCTS), cards, evaluation
+  ubs/                          UBS synthetic data layer (API in docs/UBS.md)
+  game/                         /play engine (MCTS), cards, evaluation
 data/ubs/                       UBS LauzHack 2026 starter data (fictional): profiles, assets, liabilities,
                                 goals, scenario catalog, Alexia's paths
 public/samples/                 sample documents, import files (imports/), vision samples (vision/), bench photos
