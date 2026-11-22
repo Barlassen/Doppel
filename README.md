@@ -77,9 +77,9 @@ The historical live run used 16 synthetic Swiss documents, including nine phone-
 
 The separate live vision report used Gemini 2.5 Flash-Lite on seven floor plans and charts. It records a 7/10 room-mapping result and two chart risk mismatches. [Live Gemini vision report](docs/VISION_BENCHMARK.md)
 
-The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, behind on her flat) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+The app has three fictional accounts with a switcher in the header: Barlas (Zürich, on track), Meriç (Lausanne, borderline) and Oktay (Basel, off track). Their behaviour comes from five months of transactions and investment trades; see [docs/ACCOUNTS.md](docs/ACCOUNTS.md).
 
-The finance numbers used in the pitch (Meriç 8.7% vs 24.8%, −14.2 pp from payday spending, and the CHF 940k listing failing the bank test at 72.7%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 25.1k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 362,038 − CHF 336,948 = CHF 25,089`, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
+The finance numbers used in the pitch (Meriç 58.7% vs 75.3%, −16.8 pp from payday spending, and the CHF 940k listing failing the bank test at 72.6%) are printed by `npx tsx scripts/engine-check.ts`. The CHF 33.0k habit cost is `ideal.medianAtGoal − real.medianAtGoal` (`CHF 453,994 − CHF 420,992`, CHF 33,001 before rounding, computed as `behaviorCost` in `src/components/DoppelApp.tsx`).
 
 ## Scripts
 

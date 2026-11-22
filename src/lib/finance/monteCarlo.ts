@@ -26,7 +26,8 @@ import {
   effectiveTaxRate,
 } from "./pension";
 import { debtSchedule } from "./debt";
-import { HEALTH_EXCESS_GROWTH, defaultHealthPremium, premiumDrift } from "./canton";
+import { HEALTH_EXCESS_GROWTH, premiumDrift } from "./canton";
+import { healthPremiumOf } from "./investBehavior";
 import { BASELINE_REGIME, ECONOMIES, economyYears, resolveEconomy, type EconomyRegime } from "./economy";
 import { compileLife } from "./life";
 import { BASELINE, PENSION, TRANSMISSION } from "./params";
@@ -225,7 +226,8 @@ export function simulate(input: SimInput): SimResult {
   const baseMonthly = Math.max(p.rentMonth, p.expensesMonth + (input.expenseDelta ?? 0));
   // What the engine really applies: spending cannot be cut below the rent.
   const expenseDeltaApplied = baseMonthly - p.expensesMonth;
-  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
+  // The person's own premium when the profile or its statements have one, else the canton's mean (investBehavior.ts).
+  const premium = healthPremiumOf(p).value;
   // Already retired at the start: today's spending already is retirement spending.
   const retSpending = p.retirementAge <= p.age ? 1 : A.retirementSpending;
   const bvgInsured = p.bvgInsured !== false;
@@ -945,7 +947,7 @@ export function simulate(input: SimInput): SimResult {
       push({ id: "pension", kind: "pension", flow: "income", label: { key: "outlook.line.pension" }, monthly: pension });
     }
     push({ id: "rent", kind: "rent", flow: "expense", label: { key: "outlook.line.rent" }, monthly: dRent! });
-    push({ id: "health", kind: "health", flow: "expense", label: { key: "outlook.line.health" }, monthly: dHealth!, provenance: p.healthPremiumMonth === undefined ? "doppel_default" : (p.provenance?.healthPremiumMonth ?? "user") });
+    push({ id: "health", kind: "health", flow: "expense", label: { key: "outlook.line.health" }, monthly: dHealth!, provenance: healthPremiumOf(p).provenance });
     push({ id: "living", kind: "living", flow: "expense", label: { key: "outlook.line.living" }, monthly: dLiving! });
     if (debt) {
       const d = new Float64Array(months);

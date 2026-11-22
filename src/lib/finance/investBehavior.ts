@@ -1,4 +1,5 @@
-import type { InvestmentTrade, Profile, Transaction } from "./types";
+import { defaultHealthPremium } from "./canton";
+import type { InvestmentTrade, Profile, Provenance, Transaction } from "./types";
 
 /**
  * ILLUSTRATIVE market index, NOT real market data: a made-up monthly close (CHF, start = 100 in Jan 2026) shaped
@@ -75,6 +76,20 @@ export function observedHealthPremium(transactions: readonly Transaction[]): num
   let total = 0;
   for (const v of byMonth.values()) total += v;
   return Math.round(total / byMonth.size);
+}
+
+/**
+ * The monthly health premium the twin uses for a profile, and whose figure it is:
+ *  1. `profile.healthPremiumMonth` when set (`provenance.healthPremiumMonth`, else `user`),
+ *  2. else the premium the transactions show (`derived`),
+ *  3. else the canton's mean premium for one person (`doppel_default`).
+ * The simulator and the budget lines use this one rule; show the same value wherever the premium is displayed.
+ */
+export function healthPremiumOf(p: Pick<Profile, "healthPremiumMonth" | "transactions" | "canton" | "age" | "provenance">): { value: number; provenance: Provenance | "user" } {
+  if (p.healthPremiumMonth !== undefined) return { value: p.healthPremiumMonth, provenance: p.provenance?.healthPremiumMonth ?? "user" };
+  const observed = observedHealthPremium(p.transactions ?? []);
+  if (observed !== undefined) return { value: observed, provenance: "derived" };
+  return { value: defaultHealthPremium(p), provenance: "doppel_default" };
 }
 
 export interface InvestBehavior {

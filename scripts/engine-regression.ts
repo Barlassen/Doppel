@@ -536,8 +536,10 @@ function part6() {
     const own = simulate({ profile: barlas, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
     const { healthPremiumMonth: _own, ...noPremium } = barlas;
     void _own;
-    const avg = simulate({ profile: noPremium, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
-    check("the twin budgets the person's premium when it has one, the canton's mean otherwise", near(own.monthly[0], 318, 1) && own.provenance === "derived" && near(avg.monthly[0], 459, 1) && avg.provenance === "doppel_default", `${Math.round(own.monthly[0])} vs ${Math.round(avg.monthly[0])}`);
+    // Without the field the premium still comes from the statements; without statements, from the canton.
+    const fromTx = simulate({ profile: noPremium, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
+    const avg = simulate({ profile: { ...noPremium, transactions: [] }, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
+    check("the twin budgets the person's premium when the profile or its statements have one, the canton's mean otherwise", near(own.monthly[0], 318, 1) && own.provenance === "derived" && near(fromTx.monthly[0], 318, 1) && fromTx.provenance === "derived" && near(avg.monthly[0], 459, 1) && avg.provenance === "doppel_default", `${Math.round(own.monthly[0])} / ${Math.round(fromTx.monthly[0])} / ${Math.round(avg.monthly[0])}`);
     const odds = PROFILES.map((who) => simulate(simInputFor(who, baseScenario(who), analyzeBehavior(who).params)).successProb);
     check("the three accounts keep their roles: on track, borderline, off track", odds[0] >= 0.8 && odds[1] > 0.4 && odds[1] < 0.7 && odds[2] < 0.1, odds.join(" / "));
   });
