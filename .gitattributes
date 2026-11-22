@@ -1,0 +1,3 @@
+# Sample statements must keep LF on every OS: import-check compares them byte for byte with the generator.
+public/samples/imports/** text eol=lf
+data/ubs/** text eol=lf
