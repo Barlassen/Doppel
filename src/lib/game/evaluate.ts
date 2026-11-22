@@ -12,7 +12,7 @@
  */
 import { simulate } from "./sim";
 import type { Regime } from "./regime";
-import { type GameState, glideTarget, toSimInput } from "./state";
+import { type GameState, targetAt, toSimInput } from "./state";
 
 export type PresetId = "balanced" | "safety" | "growth";
 export const PRESETS: PresetId[] = ["balanced", "safety", "growth"];
@@ -74,7 +74,7 @@ export function evaluatePosition(s: GameState, horizonAge: number, regime: Regim
   const res = simulate(toSimInput(s, h, regime, cfg.paths, cfg.seed));
   const band = res.bands[Math.min(res.bands.length - 1, h - s.age)];
   const k = s.priceIndex;
-  return combine({ pGoal: res.successProb, pCrunch: res.crunchProb, median: res.medianAtGoal / k, p10: band.p10 / k, target: glideTarget(s.goal, h) }, w);
+  return combine({ pGoal: res.successProb, pCrunch: res.crunchProb, median: res.medianAtGoal / k, p10: band.p10 / k, target: targetAt(s, h) }, w);
 }
 
 // ---------------- move labels ----------------

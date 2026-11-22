@@ -13,19 +13,20 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PROFILES } from "../src/lib/data/profiles";
-import { simulate } from "../src/lib/game/sim";
+import { simulate, type SimInput } from "../src/lib/game/sim";
+import { simulate as dashboardSimulate } from "../src/lib/finance/monteCarlo";
 import type { Profile } from "../src/lib/finance/types";
 import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
 import { analyse, bruteForce, reviewMove } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib/game/evaluate";
-import { advance, currentPosition, isOver, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
+import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
 import { FI_THRESHOLD, fiProbability } from "../src/lib/game/independence";
 import { replay, toRecord } from "../src/lib/game/notation";
 import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime, uniform } from "../src/lib/game/regime";
-import { accountOpening, ubsOpening } from "../src/lib/game/start";
-import { type GameState, initialState, ledgerError, netWorth, stepYear, toSimInput, monthlyOutflow, pensionNet } from "../src/lib/game/state";
-import { ALEXIA_ID } from "../src/lib/ubs";
+import { accountOpening, ubsOpening, withFiGoal } from "../src/lib/game/start";
+import { type GameState, initialState, ledgerError, netWorth, stepYear, targetAt, toSimInput, monthlyOutflow, pensionNet } from "../src/lib/game/state";
+import { ALEXIA_ID, listUbsProfiles, loadUbsProfile } from "../src/lib/ubs";
 
 let failures = 0;
 const results: string[] = [];
@@ -65,9 +66,162 @@ function profileFor(over: Partial<Profile>): Profile {
   return { ...PROFILES[1], events: [], transactions: [], trades: [], ...over };
 }
 
+/** Mean net worth after one year over the five market buckets (the stepper's expected year), nominal CHF. */
+const stepperYear = (s: GameState) => [0, 1, 2, 3, 4].reduce((sum, b) => sum + netWorth(stepYear(s, marketYear(REGIME.normal, b)).state) / 5, 0);
+/** The game simulator's median net worth after one year, nominal CHF (its bands are deflated). */
+const simulatorYear = (s: GameState) => simulate({ ...toSimInput(s, s.age + 1, REGIME.normal, 4000, 11), shocks: undefined }).bands[1].p50 * (1 + REGIME.normal.inflation);
+
+/** A simulator result without its timing, as comparable text. */
+const comparable = (r: ReturnType<typeof simulate>) => JSON.stringify({ ...r, ms: 0 });
+
+/**
+ * Checks added by the /play audit (2026-11-22): the game simulator against the dashboard engine, retirees,
+ * openings from every kind of profile.
+ */
+async function auditChecks(alexia: GameState, S: GameSettings) {
+  const ubs = listUbsProfiles();
+  const firstOf = async (test: (p: Profile) => boolean, among = ubs) => {
+    for (const s of among) {
+      const p = await loadUbsProfile(s.id);
+      if (test(p)) return p;
+    }
+    throw new Error("no such UBS profile");
+  };
+  const indebted = await firstOf((p) => !!p.liabilities?.length && p.retirementAge > p.age);
+  const selfEmployed = await firstOf((p) => p.bvgInsured === false && p.origin?.employment === "self_employed");
+  const retiredProfile = await firstOf((p) => p.retirementAge <= p.age);
+
+  // ---------- A1. the game's simulator is the dashboard's engine (no extension → identical results) ----------
+  {
+    const alexiaProfile = await loadUbsProfile(ALEXIA_ID);
+    const cases: [string, SimInput][] = [];
+    for (const p of [...PROFILES, alexiaProfile, indebted, selfEmployed, retiredProfile]) {
+      cases.push([`${p.name} to the goal`, { profile: p, events: p.events, paths: 300, seed: 5, horizon: "goal" }]);
+      cases.push([`${p.name} to 90`, { profile: p, events: p.events, paths: 120, seed: 6, horizon: "full" }]);
+    }
+    const b = PROFILES[0];
+    cases.push(["behaviour, standing order, spending cut", { profile: b, events: b.events, paths: 200, seed: 7, horizon: "goal", behavior: { leakageRate: 0.2, panicSellProb: 0.6, panicSellShare: 0.5, panicOutMonths: 9 }, monthlyInvest: 300, expenseDelta: -150 }]);
+    cases.push(["optimised idle cash from month 12", { profile: b, events: b.events, paths: 200, seed: 8, horizon: "full", optimizeIdleCash: true, optimizeFromMonth: 12 }]);
+    cases.push(["extra debt payment", { profile: indebted, events: [], paths: 200, seed: 9, horizon: "goal", extraDebtPayment: 200 }]);
+    cases.push(["a home purchase with other loans", { profile: { ...indebted, cash: 400_000 }, events: [{ id: "h", type: "house", label: "Home", month: 18, amount: 700_000 }], paths: 200, seed: 10, horizon: "goal" }]);
+    cases.push(["dashboard cash-flow phases", { profile: b, events: [], paths: 200, seed: 11, horizon: "goal", phases: [{ startMonth: 0, endMonth: 24, netIncomeMonth: 1800, expensesMonth: 2100, grossIncomeYear: 24_000, bvgInsured: false }, { startMonth: 24, endMonth: 60, netIncomeMonth: 5200, expensesMonth: 3100, grossIncomeYear: 78_000 }] }]);
+    cases.push(["accounting mode with a trace", { profile: indebted, events: [], paths: 2, seed: 12, horizon: "goal", accounting: true, trace: true }]);
+    const differing = cases.filter(([, input]) => comparable(simulate(input)) !== comparable(dashboardSimulate(input))).map(([name]) => name);
+    check(
+      "simulator parity: without game extensions the game's simulator returns exactly the dashboard engine's result",
+      differing.length === 0,
+      differing.length ? `DIFFERENT: ${differing.join("; ")} — mirror the change of src/lib/finance/monteCarlo.ts in src/lib/game/sim.ts` : `${cases.length} runs identical (built-ins, Alexia, loans, no pension fund, retired, behaviour, optimiser, home, phases, accounting)`,
+    );
+  }
+
+  // ---------- A2. retirees: the stepper and the simulator agree; the three stepper conventions are the only gap ----------
+  {
+    const retirees: GameState[] = [];
+    for (const s of ubs.filter((x) => x.employment === "retired").slice(0, 6)) retirees.push(await ubsOpening(s.id));
+    retirees.push(pensionerFor({ ...accountOpening(PROFILES[1]), pillar2: 400_000, pillar3a: 80_000 }));
+    let worstNw = 0;
+    let worstSpend = 0;
+    const rows: string[] = [];
+    for (const r of retirees) {
+      const a = stepperYear(r);
+      const b = simulatorYear(r);
+      worstNw = Math.max(worstNw, Math.abs(a - b) / Math.max(1, Math.abs(b)));
+      // A double retirement cut (0.8 × non-housing spending) would show as 20% of a year's non-housing spending.
+      worstSpend = Math.max(worstSpend, Math.abs(a - b) / Math.max(1, (r.expenses - r.rent) * 12));
+      rows.push(`${r.name} ${Math.round(a).toLocaleString("en")} vs ${Math.round(b).toLocaleString("en")}`);
+    }
+    check("retirees: one-year stepper ≈ simulator median (within 1% of net worth and 5% of a year's non-housing spending)", worstNw < 0.01 && worstSpend < 0.05, rows.join(" · ") + ` · worst ${(worstNw * 100).toFixed(2)}% / ${(worstSpend * 100).toFixed(1)}%`);
+
+    // The dashboard's rules on the same input count the annuity's capital: that is what saturated the evaluation.
+    const r0 = retirees[0];
+    const input = toSimInput(r0, r0.age + 1, REGIME.normal, 2000, 11);
+    const withCapital = simulate({ ...input, shocks: undefined, conventions: undefined }).bands[1].p50;
+    const without = simulate({ ...input, shocks: undefined }).bands[1].p50;
+    check("retirees: an annuity is income, not capital, in the game's net worth", withCapital - without > 0.5 * input.profile.pillar2 && Math.abs(without - netWorth(r0)) / netWorth(r0) < 0.15, `${r0.name}: CHF ${Math.round(without).toLocaleString("en")} (game) vs ${Math.round(withCapital).toLocaleString("en")} with the dashboard's rule · position CHF ${Math.round(netWorth(r0)).toLocaleString("en")}`);
+
+    // A retiree with a spending gap: odds that tell moves apart, and running out of savings is a cash crunch.
+    const pensioner = retirees[retirees.length - 1];
+    const short = { ...pensioner, cash: 20_000, portfolio: 120_000, expenses: pensionNet(pensioner) + 1500, expenseDelta: 0, check: null };
+    const shortGoal = withFiGoal({ ...short, goal: { ...short.goal, startNetWorth: netWorth(short), startAge: short.age } });
+    const e = evaluatePosition(shortGoal, shortGoal.age + 10, REGIME.normal, S.weights, { paths: 200, seed: 3 });
+    const a = analyse(shortGoal, S, { candidates: ["downsize", "nicerFlat", "hold"], budget: { scenarios: 12, paths: 48 } });
+    const odds = a.candidates.map((c) => `${c.card} P(goal) ${(c.parts.pGoal * 100).toFixed(0)}% P(crunch) ${(c.parts.pCrunch * 100).toFixed(0)}%`);
+    const spread = Math.max(...a.candidates.map((c) => c.parts.pCrunch)) - Math.min(...a.candidates.map((c) => c.parts.pCrunch));
+    check("retirees: savings that run out are a cash crunch, and the odds differ between moves", e.pCrunch > 0.5 && spread > 0.1, `hold for ten years: P(crunch) ${(e.pCrunch * 100).toFixed(0)}% · ${odds.join(" · ")}`);
+
+    // A player who started working and retired: the target is the liquid capital still needed, not the old target
+    // that included the pension fund (which is an annuity now).
+    const started = accountOpening(PROFILES[1]);
+    const retired = pensionerFor({ ...started, pillar2: 400_000, pillar3a: 80_000 });
+    const liquid = started.goal.retired!.liquid;
+    check(
+      "retired after a working start: the target is the liquid capital still needed until 95",
+      !!started.goal.retired && targetAt(started, 65) === started.goal.target && Math.abs(targetAt({ ...retired, age: 65 }, 65) - liquid) < 1 && targetAt({ ...retired, age: 80 }, 80) < liquid && targetAt({ ...retired, age: 80 }, 80) > 0,
+      `target at 65 CHF ${started.goal.target.toLocaleString("en")} = liquid ${liquid.toLocaleString("en")} + pension fund · retired at 65: ${Math.round(targetAt({ ...retired, age: 65 }, 65)).toLocaleString("en")} · at 80: ${Math.round(targetAt({ ...retired, age: 80 }, 80)).toLocaleString("en")}`,
+    );
+  }
+
+  // ---------- A3. openings keep the profile's loans and pension-fund status ----------
+  {
+    const viaUbs = await ubsOpening(indebted.id);
+    const viaAccount = accountOpening(indebted);
+    const same = (s: GameState) => s.debts.length === indebted.liabilities!.length && s.debts.every((d, i) => d.principal === indebted.liabilities![i].principal && d.rate === indebted.liabilities![i].annualRate && Math.abs(d.monthlyPayment - indebted.liabilities![i].monthlyPayment) < 1e-9);
+    const l = indebted.liabilities![0];
+    check("openings: a profile's loans keep their principal, rate and payment (UBS profile and account alike)", same(viaUbs) && same(viaAccount) && Math.abs(viaUbs.goal.startNetWorth - viaAccount.goal.startNetWorth) < 1e-6, `${indebted.id}: CHF ${Math.round(l.principal).toLocaleString("en")} at ${(l.annualRate * 100).toFixed(1)}%, CHF ${Math.round(l.monthlyPayment)}/month → game ${viaUbs.debts.map((d) => `${(d.rate * 100).toFixed(1)}% CHF ${Math.round(d.monthlyPayment)}/month`).join(", ")}`);
+
+    const se = await ubsOpening(selfEmployed.id);
+    const year = stepYear(se, marketYear(REGIME.normal, MEDIAN_BUCKET));
+    const credits = year.ledger.flows.filter((f) => f.account === "pillar2" && f.kind === "credit").reduce((a, f) => a + f.amount, 0);
+    const insured = stepYear({ ...se, bvgInsured: undefined }, marketYear(REGIME.normal, MEDIAN_BUCKET));
+    const insuredCredits = insured.ledger.flows.filter((f) => f.account === "pillar2" && f.kind === "credit").reduce((a, f) => a + f.amount, 0);
+    const rollout = simulate({ ...toSimInput(se, se.age + 1, REGIME.normal, 400, 3), shocks: undefined });
+    check("openings: no pension fund (bvgInsured false) means no pillar 2 credits, in the year and in the rollouts", credits === 0 && insuredCredits > 0 && Math.abs(stepperYear(se) - rollout.bands[1].p50 * (1 + REGIME.normal.inflation)) / Math.max(1, stepperYear(se)) < 0.03, `${selfEmployed.id}: CHF ${Math.round(credits)} credits (insured it would be CHF ${Math.round(insuredCredits).toLocaleString("en")})`);
+
+    // A hand-made account: only the required Profile fields (no origin, loans, goals list, premium, as-of date).
+    const bare: Profile = {
+      id: "user-bare", name: "Bare", age: 41, city: "Bern", canton: "BE", tagline: { key: "profile.user.tagline" }, grossIncomeYear: 84_000, netIncomeMonth: 5600,
+      expensesMonth: 4300, rentMonth: 1700, cash: 18_000, portfolio: 9000, pillar2: 95_000, pillar3a: 12_000, contributes3a: true, investShare: 0.3, marginalTaxRate: 0.22,
+      riskProfile: "balanced", retirementAge: 65, goal: { label: { key: "profile.user.tagline" }, target: 0, age: 30 }, events: [], transactions: [], trades: [], history: { soldInDrawdown: false, drawdownSellPct: 0 },
+    };
+    const variants: [string, Profile][] = [
+      ["working", bare],
+      ["retired", { ...bare, id: "user-retired", age: 72, retirementAge: 65, pillar2: 300_000 }],
+      ["older than the end age", { ...bare, id: "user-97", age: 97, retirementAge: 65 }],
+      ["in debt", { ...bare, id: "user-debt", cash: 500, portfolio: 0, liabilities: [{ id: "L1", kind: "personal_loan", label: { key: "profile.user.tagline" }, principal: 40_000, annualRate: 0.079, monthlyPayment: 0 }] }],
+    ];
+    const played: string[] = [];
+    let ok = true;
+    for (const [name, p] of variants) {
+      let g = newGame(accountOpening(p), S);
+      let n = 0;
+      while (!isOver(g) && n < 60) {
+        const legal = legalMoves(g);
+        ok &&= legal.length > 0;
+        if (!legal.length) break;
+        g = play(g, legal[n % legal.length]);
+        n++;
+      }
+      const last = currentPosition(g);
+      ok &&= isOver(g) && Object.values(last).every((v) => typeof v !== "number" || Number.isFinite(v));
+      if (n > 0 && !isOver(g)) ok = false;
+      const a = analyse(g.positions[0], S, { budget: { scenarios: 6, paths: 32 } });
+      ok &&= a.candidates.every((c) => Number.isFinite(c.e));
+      played.push(`${name}: ${n} moves, ${last.status}`);
+    }
+    const debtOpen = accountOpening(variants[3][1]);
+    ok &&= debtOpen.debts.length === 1 && debtOpen.debts[0].monthlyPayment > 0;
+    check("openings: hand-made accounts with the optional Profile fields missing play to the end", ok, played.join(" · ") + ` · a loan without a payment gets the 60-month annuity CHF ${Math.round(debtOpen.debts[0]?.monthlyPayment ?? 0)}/month`);
+  }
+  void alexia;
+}
+
 async function main() {
   const alexia = await ubsOpening(ALEXIA_ID);
   const S = settings();
+  if (process.env.PLAY_CHECK === "audit") {
+    await auditChecks(alexia, S);
+    return report();
+  }
 
   // ---------- worked example: Alexia's first move ----------
   {
@@ -337,6 +491,11 @@ async function main() {
     check("a review fits the budget (< 2.5 s in Node)", ms < 2500, `${a.candidates.length} candidates, ${a.stats.iterations} iterations, ${a.stats.leafEvals} rollouts × ${a.stats.paths} paths, ${ms.toFixed(0)} ms`);
   }
 
+  await auditChecks(alexia, S);
+  report();
+}
+
+function report() {
   console.log("");
   for (const r of results) console.log(r);
   console.log(failures ? `\n${failures} check(s) failed` : `\nAll ${results.length} Doppel Play checks passed`);

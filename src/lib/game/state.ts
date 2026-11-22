@@ -26,7 +26,8 @@ import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
 import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX } from "@/lib/finance/swissRules";
 import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
-import type { IncomePhase, SimInput } from "./sim";
+import type { IncomePhase, PlayConventions, SimInput } from "./sim";
+import { DEFAULT_LOAN_TERM_MONTHS, annuityPayment } from "@/lib/finance/debt";
 import type { Text } from "@/lib/i18n/types";
 import type { AlexiaPath } from "@/lib/ubs";
 import { type MarketYear, type Regime, simAssumptions, uniform } from "./regime";
@@ -116,6 +117,12 @@ export interface GameGoal {
   age: number;
   startNetWorth: number;
   startAge: number;
+  /**
+   * Working-age starts only: how the target splits at the goal age. Once the player retires the pension fund is an
+   * annuity (income, no longer in net worth), so the target becomes the liquid capital that still covers the gap
+   * between spending and pensions until `endAge` at `rate` real (see `targetAt`).
+   */
+  retired?: { liquid: number; endAge: number; rate: number };
 }
 
 export type GameStatus = "playing" | "won" | "mate" | "ended";
@@ -128,6 +135,8 @@ export interface GameState {
   canton: string;
   marginalTaxRate: number;
   retirementAge: number;
+  /** false = no pension fund (self-employed, unemployed: `Profile.bvgInsured`): no pillar 2 credits. Absent = insured. */
+  bvgInsured?: boolean;
   /**
    * Pensions once retired (nominal CHF/month): the pension-fund annuity (fixed) and the AHV pension (from 65,
    * indexed with prices). `formerGross` is the last salary, kept for the simulator's AHV rule. null = still working.
@@ -254,7 +263,8 @@ export function incomeAt(s: GameState, month: number): { net: number; gross: num
     return { net: pensionNet(s) + (work?.net ?? 0), gross: 0, bvg: false };
   }
   const ph = phaseAt(s, month);
-  return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg } : { net: s.net, gross: s.gross, bvg: !s.abroad };
+  const insured = s.bvgInsured !== false;
+  return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg && insured } : { net: s.net, gross: s.gross, bvg: !s.abroad && insured };
 }
 
 /** Monthly living costs (incl. rent, excl. ownership and loan costs) at a month from now. */
@@ -290,6 +300,21 @@ export function glideTarget(g: GameGoal, age: number): number {
   if (age >= g.age || g.age <= g.startAge) return g.target;
   const f = (age - g.startAge) / (g.age - g.startAge);
   return g.startNetWorth + (g.target - g.startNetWorth) * Math.max(0, f);
+}
+
+const annuity = (years: number, rate: number) => (years <= 0 ? 0 : rate > 0 ? (1 - Math.pow(1 + rate, -years)) / rate : years);
+
+/**
+ * The target a position is measured against at `age` (start-year CHF). While working: the glide path to the goal
+ * (liquid capital plus the pension fund). Once a player who started working is retired, the pension fund has become
+ * an annuity and left the net worth, so the target is the liquid capital that still covers the pension gap from
+ * `age` to the end age (more than the goal's liquid part before the goal age, less after it).
+ */
+export function targetAt(s: GameState, age: number): number {
+  const r = s.goal.retired;
+  if (!s.pension || !r) return glideTarget(s.goal, age);
+  const full = annuity(r.endAge - s.goal.age, r.rate);
+  return full > 0 ? (r.liquid * annuity(r.endAge - age, r.rate)) / full : r.liquid;
 }
 
 // ---------------- the ledger ----------------
@@ -394,16 +419,31 @@ export interface StartOptions {
   /** Years to play; default: to the end age (80 for working-age players). */
   lengthTurns?: number;
   ubs: UbsContext;
-  /** Opening debt from the UBS summary (rate unknown there → engine default 5%, 5-year repayment). */
+  /**
+   * Opening debt when the profile lists no `liabilities` (a total without terms → engine default 5%, 5-year
+   * repayment). A profile's own liabilities (UBS data, the dashboard) always win: their rates and payments are used.
+   */
   openingDebt?: number;
   /** "student" makes the first decision the study / work / abroad choice. */
   student?: boolean;
 }
 
 export function initialState(p: Profile, o: StartOptions): GameState {
-  const debts: Debt[] = o.openingDebt && o.openingDebt > 0
-    ? [{ id: "debt-opening", kind: "personal", principal: o.openingDebt, rate: 0.05, monthlyPayment: Math.round(o.openingDebt / 60), startMonth: 0 }]
-    : [];
+  // Loans: the profile's own (principal, rate and contractual payment as in the data and on the dashboard). A loan
+  // without a usable payment gets the annuity over the default term, so it is always repaid.
+  const owed = (p.liabilities ?? []).filter((l) => l.principal > 0);
+  const debts: Debt[] = owed.length
+    ? owed.map((l, i) => ({
+        id: "debt-" + (l.id || i),
+        kind: "personal" as const,
+        principal: l.principal,
+        rate: Math.max(0, l.annualRate || 0),
+        monthlyPayment: l.monthlyPayment > 0 ? l.monthlyPayment : annuityPayment(l.principal, Math.max(0, l.annualRate || 0), l.termMonths ?? DEFAULT_LOAN_TERM_MONTHS),
+        startMonth: 0,
+      }))
+    : o.openingDebt && o.openingDebt > 0
+      ? [{ id: "debt-opening", kind: "personal", principal: o.openingDebt, rate: 0.05, monthlyPayment: Math.round(o.openingDebt / 60), startMonth: 0 }]
+      : [];
   const s: GameState = {
     profileId: p.id,
     name: p.name,
@@ -411,6 +451,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     canton: p.canton,
     marginalTaxRate: p.marginalTaxRate,
     retirementAge: p.retirementAge,
+    ...(p.bvgInsured === false ? { bvgInsured: false } : {}),
     startAge: p.age,
     age: p.age,
     turn: 0,
@@ -464,8 +505,11 @@ export function initialState(p: Profile, o: StartOptions): GameState {
  * The existing simulator, started from this position: profile values become "today", phases and loans keep their
  * remaining months, the goal is the glide-path target at the horizon (in this year's CHF).
  */
+/** The stepper's bookkeeping rules, which the game's rollouts follow (see `PlayConventions` in sim.ts). */
+export const PLAY_CONVENTIONS: PlayConventions = { premiumYearly: true, annuityNotCapital: true, crunchWhenRetired: true };
+
 export function toSimInput(s: GameState, horizonAge: number, regime: Regime, paths: number, seed: number): SimInput {
-  const target = glideTarget(s.goal, horizonAge) * s.priceIndex;
+  const target = targetAt(s, horizonAge) * s.priceIndex;
   const events: LifeEvent[] = s.oneOffs
     .filter((o) => o.month >= 0)
     .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount }));
@@ -508,6 +552,7 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     marginalTaxRate: s.marginalTaxRate,
     riskProfile: s.riskProfile,
     retirementAge: s.pension ? Math.min(s.retirementAge, s.age) : s.retirementAge,
+    ...(s.bvgInsured === false ? { bvgInsured: false } : {}),
     goal: { label: { key: "profile.user.tagline" }, target, age: Math.max(horizonAge, s.age + 1) },
     events,
     transactions: [],
@@ -524,7 +569,8 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     monthlyInvest: s.monthlyInvest,
     assumptions: simAssumptions(regime),
     shocks: regime.shocks,
-    phases,
+    incomePhases: phases,
+    conventions: PLAY_CONVENTIONS,
     home: s.home ? { value: s.home.value, mortgage: s.home.mortgage, floor: s.home.floor, rate: s.home.rate } : undefined,
     debts: s.debts.map((d) => ({ principal: d.principal, rate: d.rate, monthlyPayment: d.monthlyPayment, startMonth: d.startMonth })),
   };
