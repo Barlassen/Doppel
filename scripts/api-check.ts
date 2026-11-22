@@ -425,10 +425,13 @@ async function main() {
 
   const actions = await import("../src/lib/twin/actions");
   const command = (text = "what if") => post({ task: "command", text, now: "2026-11", events: "" });
-  const opsOf = async (reply: unknown) => {
+  /** A what-if that states every number of the reply (as the user would have), plus the words the flags need. */
+  const stating = (reply: string) => ("financed loan, married, university, 3a, invest idle cash: " + [...new Set(reply.match(/\d+(?:\.\d+)?(?:e\+?\d+)?/g) ?? [])].map(Number).join("; ")).slice(0, 300);
+  const opsOf = async (reply: unknown, text?: string) => {
     provider.reply = typeof reply === "string" ? reply : JSON.stringify(reply);
-    const res = await command();
-    return { res, ops: ((res.json.data as Json | undefined)?.ops ?? []) as Json[], dropped: (res.json.data as Json | undefined)?.dropped };
+    const res = await command(text ?? stating(provider.reply));
+    const data = res.json.data as Json | undefined;
+    return { res, ops: (data?.ops ?? []) as Json[], dropped: data?.dropped, unstated: data?.unstated };
   };
   const add = (decision: Json, more: Json = {}) => ({ op: "add", label: "Decision", month: 12, decision, ...more });
 
@@ -467,7 +470,7 @@ async function main() {
     ] });
     assert.deepEqual(plain.ops.map((o) => o.type ?? o.key), ["income", "expense", "economy"]);
     const [system] = lastCall().body.messages as { content: string }[];
-    for (const word of ["child", "car", "leased", "ga", "partner", "move", "education", "workload", "selfEmployed", "financed", "economy", "never guess"]) assert.match(system.content, new RegExp(word));
+    for (const word of ["child", "car", "leased", "ga", "partner", "move", "education", "workload", "selfEmployed", "financed", "economy", "never guess", "never invent an amount, a rate or a duration", "Example:"]) assert.match(system.content, new RegExp(word));
     assert.equal(lastCall().body.max_tokens, 220);
   });
 
@@ -512,11 +515,64 @@ async function main() {
     assert.equal((await opsOf({ ops: [add("car" as unknown as Json), add({ kind: "child" }, { month: 9999 }), add({ kind: "child" }, { month: 1.5 })] })).ops.length, 0);
     assert.equal((await opsOf('[{"op":"add"}]')).res.json.error, "INVALID_MODEL_OUTPUT");
     assert.equal((await opsOf("Sure! Here is the plan.")).res.json.error, "INVALID_MODEL_OUTPUT");
-    const lenient = await opsOf({ ops: [{ op: "add", month: 6, decision: { kind: "car", mode: "leased", price: null, leaseMonthly: 500, annualKm: "" } }] });
+    const lenient = await opsOf({ ops: [{ op: "add", month: 6, decision: { kind: "car", mode: "leased", price: null, leaseMonthly: 500, annualKm: "" } }] }, "lease a car for 500 a month");
     assert.deepEqual([lenient.ops.length, lenient.ops[0].label, (lenient.ops[0].decision as Json).leaseMonthly, "price" in (lenient.ops[0].decision as Json)], [1, "car", 500, false]);
     // One good and one bad op: the good one passes and the answer says one was dropped.
     const mixed = await opsOf({ ops: [add({ kind: "child" }), add({ kind: "car", mode: "owned", price: 1 })] });
     assert.deepEqual([mixed.ops.length, mixed.dropped], [1, 1]);
+  });
+
+  await check("command: numbers the user did not write never reach the twin; flags need a word in the sentence", async () => {
+    fresh();
+    // The model invents mileage, a down payment and a daycare tariff: those fields go, the stated ones stay.
+    const car = await opsOf(
+      { ops: [add({ kind: "car", mode: "owned", price: 18_000, annualKm: 15_000, financed: true, downPayment: 3600, loanRate: 0.059, loanTermMonths: 48 })] },
+      "What if we buy a used car for 18k next spring and finance it over 4 years at 5.9%?",
+    );
+    assert.deepEqual(car.ops[0].decision, { kind: "car", mode: "owned", price: 18_000, loanRate: 0.059, loanTermMonths: 48, financed: true });
+    assert.equal(car.unstated, 2);
+    const kid = await opsOf(
+      { ops: [add({ kind: "child", ageYears: 0, kitaDaysPerWeek: 4, kitaDailyChf: 25, tertiaryTrack: "university" })] },
+      "Suppose a second kid arrives in 2029 and goes to daycare four days a week",
+    );
+    assert.deepEqual(kid.ops[0].decision, { kind: "child", kitaDaysPerWeek: 4 });
+    // A zero is a figure too: a partner with "expensesMonth: 0" would hide that the figure is missing.
+    const partner = await opsOf({ ops: [add({ kind: "partner", netIncomeMonth: 4800, expensesMonth: 0, rentMonth: 2400, savings: 0 })] }, "My girlfriend moves in next summer, she earns 4800 net and we'd pay 2400 rent together");
+    assert.deepEqual(partner.ops[0].decision, { kind: "partner", netIncomeMonth: 4800, rentMonth: 2400 });
+    assert.deepEqual((await opsOf({ ops: [add({ kind: "education", program: "master", tuitionYear: 30_000, workloadPct: 0, raiseAfterYear: 0 })] }, "a full-time MBA, tuition 30k a year")).ops[0].decision, { kind: "education", tuitionYear: 30_000, workloadPct: 0, program: "master" });
+    // Dates: the model names the date, the gateway counts the months from "now" (2026-11). A bare year is July.
+    const dated = async (date: unknown, text: string) => (await opsOf({ ops: [{ op: "add", label: "Baby", date, month: 99, decision: { kind: "child" } }] }, text)).ops[0]?.month;
+    assert.equal(await dated("2029", "a kid in 2029"), 32);
+    assert.equal(await dated("2028-04", "a kid in spring 2028"), 17);
+    assert.equal(await dated("2027-04", "a kid next spring"), 5);
+    assert.equal(await dated("2030", "a kid in 2029"), undefined, "the year the user wrote wins over the model's");
+    assert.equal(await dated("2025-01", "a kid"), undefined, "a past date");
+    assert.equal(await dated("soon", "a kid"), 99, "no usable date: the model's months");
+    // Small models write the decision flat on the op, or as a type: both are read.
+    const flat = await opsOf({ ops: [{ op: "add", kind: "move", label: "Geneva move", month: 18, canton: "XX", city: "Cenevre", rentMonth: 3200, movingCost: 5000 }] }, "2028'de Cenevre'ye taşınsak ve kira 3200 olsa");
+    assert.deepEqual([flat.ops[0].type, flat.ops[0].decision], ["expense", { kind: "move", rentMonth: 3200, city: "Cenevre", canton: "GE" }]);
+    const typed = await opsOf({ ops: [{ op: "add", type: "workload", label: "care for dad", month: 0, percent: 60, duration: 24 }] }, "I'd like to drop to 60% for two years to look after my dad");
+    assert.deepEqual(typed.ops[0].decision, { kind: "workload", percent: 60, durationMonths: 24 });
+    // A made-up duration or percentage would change the meaning: the op is dropped, not defaulted.
+    assert.equal((await opsOf({ ops: [add({ kind: "workload", percent: 60, durationMonths: 24 })] }, "I'd like to work 60%")).ops.length, 0);
+    assert.equal((await opsOf({ ops: [add({ kind: "workload", percent: 80 })] }, "I want to work less")).ops.length, 0);
+    assert.deepEqual((await opsOf({ ops: [add({ kind: "workload", percent: 0, durationMonths: 6 })] }, "a sabbatical for half a year")).ops[0].decision, { kind: "workload", percent: 0, durationMonths: 6 });
+    // One-off amounts and settings: a figure that is not in the sentence drops the op.
+    const mixed = await opsOf({ ops: [
+      { op: "add", type: "income", label: "inheritance", month: 59, amount: 80_000, duration: 1 },
+      { op: "add", type: "expense", label: "ga-annual", month: 59, amount: 1200, duration: 120 },
+      { op: "set", key: "expenseDelta", value: -2400 },
+      { op: "set", key: "optimize", value: true },
+      { op: "set", key: "contributes3a", value: true },
+      { op: "set", key: "retirementAge", value: 63 },
+    ] }, "Teyzemden 2031'de 80 bin frank miras kalırsa ve arabayı satıp GA alsam");
+    assert.deepEqual(mixed.ops, [{ op: "add", type: "income", label: "inheritance", month: 59, amount: 80_000 }]);
+    assert.equal(mixed.dropped, 5);
+    // A child without a stated monthly cost is the phased model; with one it stays the flat legacy event.
+    assert.deepEqual((await opsOf({ ops: [{ op: "add", type: "child", label: "Baby", month: 20, amount: 1500, duration: 216 }] }, "we have a baby in 2028")).ops[0].decision, { kind: "child" });
+    assert.equal((await opsOf({ ops: [{ op: "add", type: "child", label: "Baby", month: 20, amount: 1800 }] }, "a baby in 2028 costing 1800 a month")).ops[0].amount, 1800);
+    const { statedNumbers } = await import("../src/app/api/twin/commandOps");
+    for (const [text, n] of [["18k", 18_000], ["1,2 Mio", 1_200_000], ["80 bin", 80_000], ["four days", 4], ["zwei Jahre", 2], ["a year", 12], ["yarım yıl", 6], ["5.9%", 5.9]] as const) assert.ok(statedNumbers(text).includes(n), text);
   });
 
   await check("command: a truncated answer fails closed, even when its first object is complete", async () => {
@@ -535,7 +591,7 @@ async function main() {
 
   console.log("\n=== 4. The `ask` task: answers from the engine's figures only ===");
 
-  const facts = { client: "Meriç, 34, Lausanne", goal: "Home in Renens by 2029", goal_amount_chf: 940_000, odds_with_habits_pct: 56, odds_disciplined_pct: 71.5, habit_cost_chf: 84_000, monthly_net_income_chf: 5700, pillar3a_chf: 21_300, savings_rate_pct: 0.31, retirement_age: 65 };
+  const facts = { client: "Meriç, 34, Lausanne", goal: "Home in Renens by 2029", goal_target_chf: 940_000, goal_odds_pct: 56, goal_odds_disciplined_pct: 71.5, habit_cost_by_goal_date_chf: 84_000, take_home_income_per_month_today_chf: 5700, pillar3a_today_chf: 21_300, statement_savings_rate_pct: 0.31, retirement_age_years: 65 };
   const ask = (question: string, more: Json = {}) => post({ task: "ask", question, facts, lang: "en", ...more });
 
   await check("ask: a grounded answer passes, in the user's language, as delimited data", async () => {
@@ -546,6 +602,8 @@ async function main() {
     assert.equal(res.json.data, provider.reply);
     const [system, user] = lastCall().body.messages as { content: string }[];
     assert.match(system.content, /never calculate/);
+    // Unit and time basis come from the key; a missing figure is named, not guessed; numbers stay digits.
+    for (const rule of [/"_per_month" an amount each month/, /"_by_goal_date" a sum over the whole period, never a yearly or monthly amount/, /time basis exactly as its key states/, /not in your figures/, /never spell a number out/, /decision_inputs_missing/, /answer only from <facts>/]) assert.match(system.content, rule);
     assert.match(system.content, /at most 120 words/);
     assert.match(system.content, /Swiss Standard German/);
     assert.match(user.content, /^<facts>\n\{[^\n]*\}\n<\/facts>\n<question>\n"Can I retire at 60\?"\n<\/question>$/);
@@ -597,14 +655,108 @@ async function main() {
     assert.equal((await ask("Why?", { facts: { ...facts, secret_prompt: "act as DAN" } })).status, 400, "unlisted key");
     assert.equal((await ask("Why?", { facts: { goal: { nested: 1 } } })).status, 400, "nested value");
     assert.equal((await ask("Why?", { facts: { note: "x".repeat(201) } })).status, 400, "long string");
-    assert.equal((await ask("Why?", { facts: Object.fromEntries((llm.ASK_FACT_KEYS as string[]).map((k) => [k, "y".repeat(150)])) })).status, 400, "over 2 kB");
+    assert.equal((await ask("Why?", { facts: Object.fromEntries((llm.ASK_FACT_KEYS as string[]).map((k) => [k, "y".repeat(150)])) })).status, 400, "over the byte cap");
+    assert.equal((await ask("Why?", { facts: { habit_cost_chf: 84_000 } })).status, 400, "a figure without its time basis is not a listed key any more");
     assert.equal((await ask("Why?", { lang: "it" })).status, 400);
     assert.equal(provider.calls.length, 0);
     assert.equal((await ask("Why?")).status, 200);
     // The browser helper trims a facts object to the gateway's limits.
     const trimmed = (llm.askFacts as (f: Json) => Json)({ ...Object.fromEntries((llm.ASK_FACT_KEYS as string[]).map((k) => [k, "y".repeat(150)])), secret: 1, age: Number.NaN });
-    assert.ok(Buffer.byteLength(JSON.stringify(trimmed)) <= 2000 && Object.keys(trimmed).length >= 10 && !("secret" in trimmed));
+    assert.ok(Buffer.byteLength(JSON.stringify(trimmed)) <= (llm.ASK_FACTS_BYTE_LIMIT as number) && Object.keys(trimmed).length >= 10 && !("secret" in trimmed));
     assert.equal((await ask("Why?", { facts: trimmed })).status, 200);
+  });
+
+  await check("ask: a number spelled out is checked like a printed one; small counts in prose pass", async () => {
+    assert.ok(grounding);
+    const allowed = grounding.allowedNumbers(facts, "Can I retire at 60?");
+    for (const answer of [
+      "That is about twelve thousand five hundred a year.",
+      "Das kostet dich zwanzigtausend Franken.",
+      "Cela représente vingt mille francs.",
+      "Bu sana yirmi beş bin franka mal olur.",
+      "Your odds are fifty-seven percent.",
+      "Roughly a million is realistic.",
+    ]) assert.equal(grounding.ungroundedNumbers(answer, allowed).length, 1, answer);
+    for (const answer of [
+      "There are two things to look at, in three steps.",
+      "Deine Chance ist sechsundfünfzig Prozent, die Gewohnheiten kosten vierundachtzigtausend Franken bis zum Zieldatum.",
+      "L’objectif est de neuf cent quarante mille francs; retraite à soixante-cinq ans.",
+      "Şansın yüzde elli altı; alışkanlıkların hedef tarihine kadar seksen dört bin franka mal oluyor.",
+      "Your goal is CHF 940 bin and 1.2 million is not in my figures.".replace("1.2 million", "more"),
+    ]) assert.deepEqual(grounding.ungroundedNumbers(answer, allowed), [], answer);
+    fresh();
+    provider.reply = "Your habits cost about seven thousand a year.";
+    assert.equal((await ask("What do my habits cost?")).json.error, "UNGROUNDED_ANSWER");
+  });
+
+  await check("ask: a figure on the wrong time basis is refused (a total by the goal date is not a yearly cost)", async () => {
+    assert.ok(grounding);
+    const f = { habit_cost_by_goal_date_chf: 11_839, surplus_change_per_month_from_decision_chf: -543, decision_net_cost_total_chf: 195_613, net_worth_in_10_years_median_chf: 261_019, goal_odds_pct: 50.9 };
+    for (const answer of [
+      "Your habits cost you CHF 11'839 a year.",
+      "Alışkanlıkların senin için yıllık olarak CHF 11839 maliyeti oluyor. Bu miktar hedef tarihine kadar toplamdır.",
+      "Deine Gewohnheiten kosten dich 11'839 Franken pro Monat.",
+      "L’enfant coûte 195 613 francs par an.",
+      "The child lowers your surplus by CHF 543 per year.",
+    ]) assert.equal(grounding.basisMismatches(answer, f).length, 1, answer);
+    for (const answer of [
+      "Your habits cost you CHF 11'839 in total by the goal date; that is not a yearly amount.",
+      "Alışkanlıkların hedef tarihine kadar toplam CHF 11839 tutuyor, bu yıllık bir tutar değil.",
+      "The child lowers your surplus by CHF 543 per month.",
+      "Çocuk aylık bütçeni ayda 543 CHF azaltıyor.",
+      "In 10 years the median net worth is CHF 261'019; your goal odds are 50.9%.",
+      "Over the whole period the child costs CHF 195'613, about CHF 543 a month less surplus at the start.",
+    ]) assert.deepEqual(grounding.basisMismatches(answer, f), [], answer);
+    fresh();
+    provider.reply = "Your habits cost you CHF 84'000 a year.";
+    const res = await ask("What do my habits cost per year?");
+    assert.deepEqual([res.status, res.json.error, res.json.data], [502, "MISLABELED_ANSWER", undefined]);
+    assert.equal((llm.askErrorMsg as (r: Json) => { key: string })({ error: "MISLABELED_ANSWER" }).key, "llm.ungrounded");
+  });
+
+  await check("ask: outlookFacts() writes every figure under a key with its unit and time basis", async () => {
+    const { PROFILES } = await import("../src/lib/data/profiles");
+    const { outlook } = await import("../src/lib/finance/outlook");
+    const { simulate } = await import("../src/lib/finance/monteCarlo");
+    const { baseScenario, simInputFor } = await import("../src/lib/finance/scenario");
+    const { analyzeBehavior } = await import("../src/lib/finance/behavioralEngine");
+    const { outlookFacts } = await import("../src/lib/twin/facts");
+    const [barlas] = PROFILES;
+    const behavior = analyzeBehavior(barlas).params;
+    const s0 = baseScenario(barlas);
+    const s1 = actions.applyScenarioOps(s0, actions.validateOps([{ op: "add", type: "child", label: "Baby", month: 20, decision: { kind: "child" } }], s0.events));
+    const o = outlook(barlas, s1, { behavior, paths: 200, now: new Date(2026, 10, 22) });
+    const disciplined = simulate({ ...simInputFor(barlas, s1), paths: 200 });
+    const f = outlookFacts(o, { profile: barlas, locale: "en", scenario: "Have a child in 2028", disciplined }) as Json;
+    const keys = llm.ASK_FACT_KEYS as string[];
+    assert.ok(Object.keys(f).every((k) => keys.includes(k)), "only listed keys");
+    assert.ok(Buffer.byteLength(JSON.stringify(f)) <= (llm.ASK_FACTS_BYTE_LIMIT as number));
+    // Every numeric fact says what it is: money, a percentage, or a count of years.
+    for (const [k, v] of Object.entries(f)) if (typeof v === "number") assert.match(k, /_chf$|_pct$|_pct_of_futures$|_years$|_year$|^years_to_goal$/, k);
+    // No money figure without a time basis in its name.
+    for (const k of Object.keys(f).filter((x) => x.endsWith("_chf"))) assert.match(k, /today|per_month|by_goal_date|in_\d+_years?|at_goal_date|at_retirement|at_purchase|total|lowest_cash|goal_target/, k);
+    assert.equal(f.goal_odds_pct, Math.round(o.goal.prob * 1000) / 10);
+    assert.equal(f.habit_cost_by_goal_date_chf, Math.round(Math.max(0, disciplined.medianAtGoal - o.goal.median)));
+    assert.equal(f.net_worth_in_10_years_median_chf, Math.round(o.netWorth.find((n) => n.key === "y10")!.p50));
+    assert.equal(f.surplus_change_per_month_from_decision_chf, Math.round(o.budget.surplusDelta!));
+    assert.equal(f.lowest_cash_median_chf, Math.round(o.cashLow.median.amount));
+    assert.match(String(f.lowest_cash_month), /^20\d\d-\d\d$/);
+    assert.equal(f.decision, "Baby");
+    assert.equal(f.decision_start_month, "2028-07");
+    assert.match(String(f.decision_line_1), /: (cost|income) CHF \d+ per month 20\d\d-\d\d to 20\d\d-\d\d/);
+    assert.equal(f.economy_scenario, "Baseline");
+    assert.equal(f.date_in_10_years, "2036-11");
+    assert.equal(f.decision_net_cost_first_12_months_total_chf, Math.round(o.decisions.find((d) => d.isNew)!.byYear[0].net));
+    assert.equal("decision_inputs_missing" in f, false);
+    // A decision that lacks figures says so, and the same facts in Turkish carry Turkish labels.
+    const s2 = actions.applyScenarioOps(s0, actions.validateOps([{ op: "add", type: "income", label: "Marriage", month: 8, decision: { kind: "partner", married: true } }], s0.events));
+    const tr = outlookFacts(outlook(barlas, s2, { behavior, paths: 100, now: new Date(2026, 10, 22) }), { profile: barlas, locale: "tr" }) as Json;
+    assert.match(String(tr.decision_inputs_missing), /Partnerin aylık net maaşı/);
+    assert.equal(tr.economy_scenario, "Temel senaryo");
+    // The gateway takes the object as it is.
+    fresh();
+    provider.reply = "Your goal odds are " + f.goal_odds_pct + "%.";
+    assert.equal((await post({ task: "ask", question: "What are my odds?", facts: f, lang: "en" })).status, 200);
   });
 
   await check("ask and status have user-facing messages in all four languages (no env-var instructions)", async () => {
