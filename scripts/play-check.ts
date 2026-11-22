@@ -17,7 +17,7 @@ import { simulate, type SimInput } from "../src/lib/game/sim";
 import { simulate as dashboardSimulate } from "../src/lib/finance/monteCarlo";
 import type { Profile } from "../src/lib/finance/types";
 import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
-import { analyse, bruteForce, reviewMove, treeTurns, turnLuck } from "../src/lib/game/engine";
+import { analyse, bruteForce, reviewMove, treeTurns, turnLuck, type Analysis } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
@@ -27,6 +27,8 @@ import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime, uniform } fro
 import { accountOpening, ubsOpening, withFiGoal } from "../src/lib/game/start";
 import { type GameState, initialState, ledgerError, netWorth, stepYear, targetAt, toSimInput, monthlyOutflow, pensionNet } from "../src/lib/game/state";
 import { ALEXIA_ID, listUbsProfiles, loadUbsProfile } from "../src/lib/ubs";
+import { EngineCancelled, EngineClient, type WorkerLike } from "../src/components/play/engineClient";
+import { keyAction, type KeyInput } from "../src/components/play/keys";
 
 let failures = 0;
 const results: string[] = [];
@@ -352,6 +354,66 @@ async function auditChecks(alexia: GameState, S: GameSettings) {
     const retiredRich = pensionerFor({ ...accountOpening(PROFILES[1]), pillar2: 400_000, portfolio: 3_000_000 });
     const gr = newGame(retiredRich, S);
     check("an opening that is already financially independent is won before the first move (retirees play on)", first.status === "won" && first.goalReached && g.moves.length === 0 && legalMoves(g).length === 0 && rating.player.kind === "independent" && replay(JSON.parse(JSON.stringify(toRecord(g)))).positions.length === 1 && currentPosition(gr).status === "playing", `status ${first.status} with ${g.moves.length} moves · Elo ${rating.elo} · retiree: ${currentPosition(gr).status}`);
+  }
+
+  // ---------- A10. keyboard: Tab is free, a held key plays once, nothing fires from a control ----------
+  {
+    const k = (key: string, over: Partial<KeyInput> = {}) => keyAction({ key, targetTag: "BODY", ...over })?.kind ?? null;
+    const cases: [string, unknown, unknown][] = [
+      ["Tab", k("Tab"), null],
+      ["Tab on a button", k("Tab", { targetTag: "BUTTON" }), null],
+      ["H", k("h"), "hold"],
+      ["H held down (auto-repeat)", k("h", { repeat: true }), null],
+      ["2", keyAction({ key: "2", targetTag: "BODY" })?.kind === "card" && (keyAction({ key: "2", targetTag: "BODY" }) as { index: number }).index, 1],
+      ["2 held down", k("2", { repeat: true }), null],
+      ["3 typed into the seed field", k("3", { targetTag: "INPUT" }), null],
+      ["h typed into the search field", k("h", { targetTag: "INPUT" }), null],
+      ["1 on a select", k("1", { targetTag: "SELECT" }), null],
+      ["1 with a button focused", k("1", { targetTag: "BUTTON" }), null],
+      ["H with a link focused", k("H", { targetTag: "A" }), null],
+      ["C", k("c"), "compare"],
+      ["C with a disclosure focused", k("C", { targetTag: "SUMMARY" }), null],
+      ["C held down", k("c", { repeat: true }), null],
+      ["← held down", k("ArrowLeft", { repeat: true }), "prev"],
+      ["→ on a button", k("ArrowRight", { targetTag: "BUTTON" }), "next"],
+      ["← in a field", k("ArrowLeft", { targetTag: "TEXTAREA" }), null],
+      ["Ctrl+H", k("h", { ctrlKey: true }), null],
+      ["5", k("5"), null],
+    ];
+    const wrong = cases.filter(([, got, want]) => got !== want).map(([name, got]) => `${name} → ${String(got)}`);
+    check("keys: Tab is left to the browser, a held key plays once, fields and focused controls are not hijacked", wrong.length === 0, wrong.length ? "WRONG: " + wrong.join("; ") : `${cases.length} cases · compare lines is C`);
+  }
+
+  // ---------- A11. a new game cancels the engine's running work ----------
+  {
+    const made: { posted: number[]; terminated: boolean; w: WorkerLike }[] = [];
+    const client = new EngineClient(() => {
+      const rec = { posted: [] as number[], terminated: false, w: null as unknown as WorkerLike };
+      rec.w = { onmessage: null, postMessage: (m) => void rec.posted.push(m.id), terminate: () => void (rec.terminated = true) };
+      made.push(rec);
+      return rec.w;
+    });
+    const request = { kind: "analyse" as const, state: alexia, settings: S };
+    const answer = (id: number) => ({ data: { id, result: { kind: "analyse" as const, analysis: { best: "from-worker-" + id } as unknown as Analysis, ms: 1 } } });
+    const outcome = (pr: Promise<unknown>) => pr.then((r) => (r as { analysis: { best: string } }).analysis.best, (e: unknown) => (e instanceof EngineCancelled ? "cancelled" : "error"));
+    const old1 = outcome(client.run(request));
+    const old2 = outcome(client.run(request));
+    client.reset(); // the new game
+    const fresh = outcome(client.run(request));
+    made[0].w.onmessage?.(answer(made[0].posted[0])); // a late answer of the terminated worker
+    made[1].w.onmessage?.(answer(made[1].posted[0]));
+    const got = await Promise.all([old1, old2, fresh]);
+    const workerOk = made.length === 2 && made[0].terminated && !made[1].terminated && made[0].posted.length === 2 && made[1].posted.length === 1 && got[0] === "cancelled" && got[1] === "cancelled" && got[2] === "from-worker-" + made[1].posted[0] && client.waiting === 0;
+
+    // Without worker support the request waits a frame on the main thread; a reset before that drops it unrun.
+    const deferred: (() => void)[] = [];
+    const inline = new EngineClient(() => null, (run) => void deferred.push(run));
+    const dropped = outcome(inline.run(request));
+    inline.reset();
+    const t0 = performance.now();
+    deferred.forEach((run) => run());
+    const idle = performance.now() - t0;
+    check("engine client: a new game terminates the worker, cancels what was waiting and ignores late answers", workerOk && (await dropped) === "cancelled" && idle < 50, `old requests: ${got[0]}, ${got[1]} · new request: ${got[2]} · workers started ${made.length}, first terminated ${made[0]?.terminated} · no-worker fallback dropped unrun (${idle.toFixed(1)} ms)`);
   }
   void alexia;
 }
