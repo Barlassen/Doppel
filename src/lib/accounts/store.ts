@@ -13,6 +13,7 @@ import { monthlySpend, withDerivedBehavior } from "@/lib/finance/investBehavior"
 import type { InvestmentTrade, Profile, Transaction } from "@/lib/finance/types";
 import type { TransactionCategory } from "@/lib/finance/types";
 import { merchantKey } from "@/lib/import/text";
+import { isUbsId, loadUbsProfile } from "@/lib/ubs/load";
 import type { Account, AccountRecord, AccountsState, ImportInput, ImportRecord, LocalData, NewAccountInput, ProfileFields } from "./types";
 
 export const ACTIVE_KEY = "doppel:account";
@@ -23,6 +24,8 @@ interface Persisted {
   local: Record<string, LocalData>;
   /** User-created accounts: their original data (transactions and trades included). */
   users: Profile[];
+  /** UBS synthetic profiles opened from the picker, in opening order (their data is loaded from the bundle). */
+  ubs?: string[];
 }
 
 const BUILT_IN = new Map(PROFILES.map((p) => [p.id, p]));
@@ -83,7 +86,9 @@ export function materialize(base: Profile, local: LocalData): Profile {
     netIncomeMonth:
       f.netIncomeMonth ?? (incomeChanged ? takeHomeMonth(f.grossIncomeYear ?? base.grossIncomeYear, f.marginalTaxRate ?? base.marginalTaxRate) : base.netIncomeMonth),
   };
-  const derived = withDerivedBehavior(merged);
+  // Without any trades there is nothing to derive the investing inputs from: keep the base profile's
+  // (identical for the built-in accounts, whose values were derived from the same empty list).
+  const derived = trades.length || base.trades.length ? withDerivedBehavior(merged) : merged;
   return {
     ...derived,
     ...(investShare !== undefined ? { investShare } : {}),
@@ -117,18 +122,23 @@ function versionOf(id: string, local: LocalData): string {
 let persisted: Persisted = { v: 1, local: {}, users: [] };
 let activeId = DEFAULT_ACCOUNT_ID;
 const accountCache = new Map<string, { local: LocalData; base: Profile; account: Account }>();
+/** Loaded base data of the opened UBS profiles. */
+const ubsBases = new Map<string, Profile>();
+/** A stored active UBS account whose data is still loading. */
+let pendingActive: string | null = null;
 
 function baseOf(id: string): Profile | undefined {
-  return BUILT_IN.get(id) ?? persisted.users.find((u) => u.id === id);
+  return BUILT_IN.get(id) ?? persisted.users.find((u) => u.id === id) ?? ubsBases.get(id);
 }
 
-function buildAccount(base: Profile, builtIn: boolean): Account {
+function buildAccount(base: Profile, builtIn: boolean, ubs = false): Account {
   const local = persisted.local[base.id] ?? emptyLocal();
   const cached = accountCache.get(base.id);
   if (cached && cached.local === local && cached.base === base) return cached.account;
   const account: Account = {
     id: base.id,
     builtIn,
+    ...(ubs ? { ubs: true } : {}),
     profile: materialize(base, local),
     receipts: local.receipts,
     localChanges: countChanges(local),
@@ -139,7 +149,11 @@ function buildAccount(base: Profile, builtIn: boolean): Account {
 }
 
 function buildState(hydrated: boolean): AccountsState {
-  const accounts = [...PROFILES.map((p) => buildAccount(p, true)), ...persisted.users.map((u) => buildAccount(u, false))];
+  const ubs = (persisted.ubs ?? []).flatMap((id) => {
+    const base = ubsBases.get(id);
+    return base ? [buildAccount(base, false, true)] : [];
+  });
+  const accounts = [...PROFILES.map((p) => buildAccount(p, true)), ...persisted.users.map((u) => buildAccount(u, false)), ...ubs];
   const active = accounts.some((a) => a.id === activeId) ? activeId : DEFAULT_ACCOUNT_ID;
   return { hydrated, activeId: active, accounts };
 }
@@ -190,7 +204,8 @@ export function hydrateAccounts(): void {
     if (parsed && parsed.v === 1) {
       const local: Record<string, LocalData> = {};
       for (const [id, l] of Object.entries(parsed.local ?? {})) local[id] = { ...emptyLocal(), ...l };
-      persisted = { v: 1, local, users: Array.isArray(parsed.users) ? parsed.users : [] };
+      const ubs = Array.isArray(parsed.ubs) ? [...new Set(parsed.ubs.filter((id): id is string => typeof id === "string" && isUbsId(id)))] : [];
+      persisted = { v: 1, local, users: Array.isArray(parsed.users) ? parsed.users : [], ...(ubs.length ? { ubs } : {}) };
     }
   } catch {
     // Corrupt or blocked storage: start from the original data.
@@ -198,12 +213,49 @@ export function hydrateAccounts(): void {
   try {
     const stored = localStorage.getItem(ACTIVE_KEY);
     if (stored && baseOf(stored)) activeId = stored;
+    else if (stored && persisted.ubs?.includes(stored)) pendingActive = stored;
   } catch {
     // ignore
   }
   state = buildState(true);
   for (const l of listeners) l();
+  // Opened UBS profiles: load their data (one small chunk each), then show them.
+  for (const id of persisted.ubs ?? []) {
+    loadUbsProfile(id)
+      .then((p) => {
+        ubsBases.set(id, p);
+        if (pendingActive === id) {
+          activeId = id;
+          pendingActive = null;
+        }
+        emit();
+      })
+      .catch(() => {
+        // Unknown id (data changed): drop it from the list.
+        persisted = { ...persisted, ubs: (persisted.ubs ?? []).filter((x) => x !== id) };
+        save();
+        emit();
+      });
+  }
 }
+
+/**
+ * Opens a UBS synthetic profile as a read-only base account (its local layer works like any account's) and keeps
+ * it in the stored list. Resolves with the account id (= the UBS profile id). Does not activate it.
+ */
+export async function openUbsProfile(ubsId: string): Promise<string> {
+  const p = await loadUbsProfile(ubsId);
+  ubsBases.set(ubsId, p);
+  if (!persisted.ubs?.includes(ubsId)) {
+    persisted = { ...persisted, ubs: [...(persisted.ubs ?? []), ubsId] };
+    save();
+  }
+  emit();
+  return p.id;
+}
+
+/** UBS profiles opened in this browser, in opening order. */
+export const openedUbsProfiles = (): string[] => [...(persisted.ubs ?? [])];
 
 // ---------------- public API ----------------
 
@@ -358,12 +410,14 @@ export function createAccount(input: NewAccountInput): string {
   return id;
 }
 
-/** Deletes a user-created account (built-in accounts can only be reset). */
+/** Deletes a user-created account or closes an opened UBS profile (built-in accounts can only be reset). */
 export function deleteAccount(id: string): void {
   if (BUILT_IN.has(id)) throw new Error("Built-in accounts cannot be deleted; use resetAccount()");
   const { [id]: _gone, ...local } = persisted.local;
   void _gone;
-  persisted = { ...persisted, local, users: persisted.users.filter((u) => u.id !== id) };
+  const ubs = persisted.ubs?.filter((x) => x !== id);
+  persisted = { ...persisted, local, users: persisted.users.filter((u) => u.id !== id), ...(ubs ? { ubs } : {}) };
+  ubsBases.delete(id);
   if (activeId === id) setActiveAccount(DEFAULT_ACCOUNT_ID);
   save();
   emit();

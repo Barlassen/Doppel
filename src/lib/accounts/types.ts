@@ -127,6 +127,8 @@ export interface NewAccountInput {
 export interface Account {
   id: string;
   builtIn: boolean;
+  /** A UBS synthetic profile opened from the picker: read-only base data, local layer on top, can be closed. */
+  ubs?: boolean;
   /** The profile the engine runs on (local additions applied, behaviour inputs derived). */
   profile: Profile;
   /** Snapped receipts saved for this account (the app's base scenario starts with them as `extraTx`). */
