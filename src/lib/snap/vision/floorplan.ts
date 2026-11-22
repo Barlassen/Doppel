@@ -583,3 +583,18 @@ export function offlineFloorPlanFromOcr(ocrText: string): FloorPlanExtraction {
     ],
   };
 }
+
+/** Name-only equivalence: preserve digits and words, ignore typography and accents. */
+export function normalizeRoomName(name: string): string {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+/** One-to-one matching; never loosen area tolerance or merge distinct numbered rooms. */
+export function countMatchedRooms(truth: Record<string, number>, rooms: {name:string;areaM2:number}[]): number {
+  const used = new Set<number>();
+  let count = 0;
+  for (const [name, area] of Object.entries(truth)) {
+    const i = rooms.findIndex((r,i) => !used.has(i) && normalizeRoomName(r.name) === normalizeRoomName(name) && Math.abs(r.areaM2-area)<=0.25);
+    if(i>=0){used.add(i);count++;}
+  }
+  return count;
+}

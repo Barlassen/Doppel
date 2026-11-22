@@ -466,6 +466,10 @@ export const de = {
   },
 
   vision: {
+    pixelMeasured: "Anteile aus Pixeln gemessen; das Modell las nur die Legende.",
+    pixelFallback: "Pixelgeometrie unsicher; prüfe die Modellschätzungen.",
+    pixelDisagreement: "Pixelanteile weichen um über 10 Prozentpunkte ab; Pixelwerte verwendet.",
+
     whyHeading: "Warum Bildverständnis nötig war",
     whyOcrSufficient: "Gedruckter Text ist linear; lokale OCR und Suchmuster reichen aus (0 Vision-Tokens).",
     whyPlan:

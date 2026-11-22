@@ -1,3 +1,4 @@
+import { colorDistance, type DonutMeasurement } from "./donut";
 import type { BehaviorInsight, BehaviorProfile } from "@/lib/finance/behavioralEngine";
 import type { Profile, RiskProfile, Scenario } from "@/lib/finance/types";
 import { msg, type Msg } from "@/lib/i18n/types";
@@ -31,6 +32,28 @@ export interface ChartAllocation {
   otherPct: number;
 }
 
+export interface LegendEntry { assetClass: "equities" | "bonds" | "cash" | "realEstate" | "other"; label: string; colorHex: string }
+export function parseLegend(raw: unknown): LegendEntry[] | undefined {
+  if (!Array.isArray(raw) || raw.length < 2 || raw.length > 8) return undefined;
+  if (!raw.every(e => e && typeof e === "object" && ["equities","bonds","cash","realEstate","other"].includes(e.assetClass) && typeof e.label === "string" && e.label.length <= 100 && /^#[0-9a-f]{6}$/i.test(e.colorHex))) return undefined;
+  return raw as LegendEntry[];
+}
+export function withPixelAllocation(ext: ChartExtraction, pixels?: DonutMeasurement): ChartExtraction {
+  if (!ext.legend && !ext.allocation) return ext;
+  const fallback = { ...ext, pixelStatus: "fallback" as const };
+  if (!pixels || pixels.quality < 0.94 || pixels.clusters.length !== ext.legend?.length) return fallback;
+  const allocation: ChartAllocation = {equitiesPct:0,bondsPct:0,cashPct:0,realEstatePct:0,otherPct:0};
+  const used = new Set<number>();
+  for (const c of pixels.clusters) {
+    const ranked = ext.legend.map((e,i)=>({i,d:colorDistance(c.colorHex,e.colorHex)})).sort((a,b)=>a.d-b.d);
+    if (ranked[0].d > 65 || ranked[1].d - ranked[0].d < 20 || used.has(ranked[0].i)) return fallback;
+    used.add(ranked[0].i);
+    allocation[`${ext.legend[ranked[0].i].assetClass}Pct`] += c.share;
+  }
+  const disagreement = ext.allocation && Object.keys(allocation).some(k=> Math.abs(allocation[k as keyof ChartAllocation]-(ext.allocation?.[k as keyof ChartAllocation] ?? 0))>10);
+  return {...ext, allocation, pixelMeasurement: pixels, pixelStatus: disagreement ? "disagreement" : "measured"};
+}
+
 export interface ChartSeriesPoint {
   /** ISO month "YYYY-MM". */
   month: string;
@@ -49,6 +72,9 @@ export interface ChartDrawdown {
 }
 
 export interface ChartExtraction {
+  legend?: LegendEntry[];
+  pixelMeasurement?: DonutMeasurement;
+  pixelStatus?: "measured" | "fallback" | "disagreement";
   accountType?: "portfolio" | "pillar3a" | "pension";
   provider?: string;
   printedTotalChf?: number;
@@ -58,6 +84,7 @@ export interface ChartExtraction {
 }
 
 export interface ChartVerification {
+  pixelMeasurement?: DonutMeasurement;
   accountType: "portfolio" | "pillar3a" | "pension";
   provider?: string;
   allocation?: ChartAllocation;
@@ -155,6 +182,9 @@ export function verifyChart(ext: ChartExtraction): ChartVerification {
   const checks: Msg[] = [];
   const warnings: Msg[] = [];
 
+  if (ext.pixelStatus === "fallback") warnings.push(msg("vision.pixelFallback"));
+  if (ext.pixelStatus === "measured" || ext.pixelStatus === "disagreement") checks.push(msg("vision.pixelMeasured"));
+  if (ext.pixelStatus === "disagreement") checks.push(msg("vision.pixelDisagreement"));
   // 1. Allocation shares sum to 100 ± 2
   let allocation: ChartAllocation | undefined;
   let allocationSumPct: number | undefined;
@@ -312,6 +342,7 @@ export function verifyChart(ext: ChartExtraction): ChartVerification {
   }
 
   return {
+    pixelMeasurement: ext.pixelMeasurement,
     accountType: ext.accountType ?? "portfolio",
     provider: ext.provider,
     allocation,
@@ -389,6 +420,8 @@ export function reverifyChart(
 
   return {
     ...prev,
+    pixelMeasurement: overrides.equitiesPct !== undefined ? undefined : prev.pixelMeasurement,
+    checks: overrides.equitiesPct !== undefined ? prev.checks.filter(c => c.key !== "vision.pixelMeasured" && c.key !== "vision.pixelDisagreement") : prev.checks,
     latestValueChf,
     allocation,
     derivedRiskProfile,
@@ -545,7 +578,8 @@ export function validateChartExtraction(raw: unknown): ChartExtraction | undefin
       ? Math.round(printedTotalChf)
       : undefined;
 
-  if (!allocation && !series && validTotal === undefined) return undefined;
+  const legend = parseLegend(obj.legend);
+  if (!legend && !allocation && !series && validTotal === undefined) return undefined;
 
   const accountType =
     obj.accountType === "pillar3a" || obj.accountType === "pension" || obj.accountType === "portfolio"
@@ -558,6 +592,7 @@ export function validateChartExtraction(raw: unknown): ChartExtraction | undefin
 
   return {
     accountType,
+    ...(legend ? {legend} : {}),
     ...(provider ? { provider } : {}),
     ...(validTotal !== undefined ? { printedTotalChf: validTotal } : {}),
     ...(allocation ? { allocation } : {}),
@@ -578,6 +613,7 @@ export function offlineChartFromOcr(ocrText: string, subtype?: "donut" | "line" 
     return {
       accountType: "pillar3a",
       provider: "Helvetia Vorsorge 3a",
+      legend: OFFLINE_LEGEND,
       allocation: {
         equitiesPct: 65,
         bondsPct: 20,
@@ -614,6 +650,7 @@ export function offlineChartFromOcr(ocrText: string, subtype?: "donut" | "line" 
   return {
     accountType: "portfolio",
     provider: "LemanInvest",
+    legend: OFFLINE_LEGEND,
     printedTotalChf: 114_000,
     allocation: {
       equitiesPct: 70,
@@ -633,3 +670,10 @@ export function offlineChartFromOcr(ocrText: string, subtype?: "donut" | "line" 
     ],
   };
 }
+
+export const OFFLINE_LEGEND: LegendEntry[] = [
+  {assetClass:"equities",label:"Aktien",colorHex:"#2563eb"},
+  {assetClass:"bonds",label:"Obligationen",colorHex:"#10b981"},
+  {assetClass:"realEstate",label:"Immobilien",colorHex:"#f59e0b"},
+  {assetClass:"cash",label:"Cash",colorHex:"#8b5cf6"},
+];
