@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PROFILES } from "@/lib/data/profiles";
+import { hydrateAccounts, useAccounts } from "@/lib/accounts";
 import type { Profile } from "@/lib/finance/types";
 import { type Analysis, type DepthId, type EngineSettings, reviewMove } from "@/lib/game/engine";
 import { type MoveLabel, type PresetId, type Weights, WEIGHT_PRESETS, mateValue } from "@/lib/game/evaluate";
@@ -37,6 +37,11 @@ export default function PlayApp() {
 
   // ---------------- setup ----------------
   const ubsProfiles = useMemo(() => [...playableUbsProfiles()].sort((a, b) => Number(b.id === ALEXIA_ID) - Number(a.id === ALEXIA_ID)), []);
+  // Doppel's own accounts: the built-ins and the ones created in this browser (wizard), with their local data.
+  // Opened UBS profiles are already in the UBS group. Before hydration this is the built-in list (as on the server).
+  const { accounts: stored } = useAccounts();
+  useEffect(() => hydrateAccounts(), []);
+  const accounts = useMemo(() => stored.filter((a) => !a.ubs).map((a) => a.profile), [stored]);
   const [startId, setStartId] = useState(`ubs:${ALEXIA_ID}`);
   const [regime, setRegime] = useState<RegimeId>("normal");
   const [seed, setSeed] = useState(2026);
@@ -57,14 +62,14 @@ export default function PlayApp() {
         const [state, profile] = await Promise.all([ubsOpening(id), loadUbsProfile(id)]);
         return { id: startId, state, profile };
       }
-      const profile = PROFILES.find((p) => p.id === id) ?? PROFILES[0];
+      const profile = accounts.find((p) => p.id === id) ?? accounts[0];
       return { id: startId, state: accountOpening(profile), profile };
     };
     load().then((o) => alive && setOpening(o));
     return () => {
       alive = false;
     };
-  }, [startId]);
+  }, [startId, accounts]);
 
   // ---------------- game ----------------
   const [game, setGame] = useState<Game | null>(null);
@@ -277,7 +282,7 @@ export default function PlayApp() {
 
         <SetupPanel
           ubsProfiles={ubsProfiles}
-          accounts={PROFILES}
+          accounts={accounts}
           startId={startId}
           onStartId={setStartId}
           regime={regime}

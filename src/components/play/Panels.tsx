@@ -79,6 +79,7 @@ export function SetupPanel(props: {
   const shown = q
     ? props.ubsProfiles.filter((p) => `${p.name} ${p.id} ${p.city} ${p.canton} ${p.age}`.toLowerCase().includes(q) || `ubs:${p.id}` === props.startId)
     : props.ubsProfiles;
+  const shownAccounts = q ? props.accounts.filter((p) => `${p.name} ${p.city} ${p.age}`.toLowerCase().includes(q) || `acct:${p.id}` === props.startId) : props.accounts;
   return (
     <section className="card p-4 sm:p-5" aria-labelledby="play-setup">
       <CardHeader title={<span id="play-setup">{t("play.setup.title")}</span>} />
@@ -107,7 +108,7 @@ export function SetupPanel(props: {
               ))}
             </optgroup>
             <optgroup label={t("play.setup.accountsGroup")}>
-              {props.accounts.map((p) => (
+              {shownAccounts.map((p) => (
                 <option key={p.id} value={`acct:${p.id}`}>
                   {p.name}, {p.age} · {p.city}
                 </option>

@@ -473,7 +473,7 @@ export function AccountWizard({
                     inputMode="numeric"
                     min={0}
                     max={10_000_000}
-                    step={500}
+                    step="any"
                     required
                     value={grossInput}
                     onChange={(e) => setGrossInput(e.currentTarget.value)}
@@ -488,7 +488,7 @@ export function AccountWizard({
                     inputMode="numeric"
                     min={0}
                     max={1_000_000}
-                    step={50}
+                    step="any"
                     required
                     value={netInput}
                     onChange={(e) => setNetInput(e.currentTarget.value)}
@@ -528,7 +528,7 @@ export function AccountWizard({
                   inputMode="numeric"
                   min={0}
                   max={200_000}
-                  step={50}
+                  step="any"
                   required
                   value={rent}
                   onChange={(e) => {
@@ -547,7 +547,7 @@ export function AccountWizard({
                   inputMode="numeric"
                   min={0}
                   max={500_000}
-                  step={50}
+                  step="any"
                   required
                   value={expenses}
                   onChange={(e) => setExpenses(e.currentTarget.value)}
@@ -567,7 +567,7 @@ export function AccountWizard({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    step={500}
+                    step="any"
                     required
                     value={cash}
                     onChange={(e) => setCash(e.currentTarget.value)}
@@ -580,7 +580,7 @@ export function AccountWizard({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    step={500}
+                    step="any"
                     required
                     value={portfolio}
                     onChange={(e) => setPortfolio(e.currentTarget.value)}
@@ -593,7 +593,7 @@ export function AccountWizard({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    step={500}
+                    step="any"
                     required
                     value={pillar2}
                     onChange={(e) => setPillar2(e.currentTarget.value)}
@@ -606,7 +606,7 @@ export function AccountWizard({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    step={500}
+                    step="any"
                     required
                     value={pillar3a}
                     onChange={(e) => setPillar3a(e.currentTarget.value)}
@@ -655,7 +655,7 @@ export function AccountWizard({
                     inputMode="numeric"
                     min={10_000}
                     max={50_000_000}
-                    step={10_000}
+                    step="any"
                     required
                     value={goalTarget}
                     onChange={(e) => setGoalTarget(e.currentTarget.value)}
