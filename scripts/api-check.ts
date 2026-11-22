@@ -421,6 +421,118 @@ async function main() {
     assert.equal((await post({ task: "extract_text", text: "Quittung", receipt: true })).json.error, "MODEL_OUTPUT_TRUNCATED");
   });
 
+  console.log("\n=== 3b. The `command` task: life decisions come back as validated ops ===");
+
+  const actions = await import("../src/lib/twin/actions");
+  const command = (text = "what if") => post({ task: "command", text, now: "2026-11", events: "" });
+  const opsOf = async (reply: unknown) => {
+    provider.reply = typeof reply === "string" ? reply : JSON.stringify(reply);
+    const res = await command();
+    return { res, ops: ((res.json.data as Json | undefined)?.ops ?? []) as Json[], dropped: (res.json.data as Json | undefined)?.dropped };
+  };
+  const add = (decision: Json, more: Json = {}) => ({ op: "add", label: "Decision", month: 12, decision, ...more });
+
+  await check("command: every decision kind passes the gateway with its payload and carrier type", async () => {
+    fresh();
+    const kinds: [Json, string][] = [
+      [{ kind: "child", kitaDaysPerWeek: 3, tertiaryTrack: "university" }, "child"],
+      [{ kind: "car", mode: "owned", price: 35_000, financed: true, loanRate: 0.049, loanTermMonths: 48, downPayment: 5000 }, "expense"],
+      [{ kind: "car", mode: "leased", leaseMonthly: 450 }, "expense"],
+      [{ kind: "car", mode: "ga" }, "expense"],
+      [{ kind: "partner", married: true, netIncomeMonth: 5200, expensesMonth: 1800, rentMonth: 2600 }, "income"],
+      [{ kind: "move", canton: "zg", city: "Zug", rentMonth: 2900, movingCost: 4000 }, "expense"],
+      [{ kind: "education", program: "master", workloadPct: 60, raiseAfterYear: 12_000 }, "expense"],
+      [{ kind: "workload", percent: 80 }, "raise"],
+      [{ kind: "workload", percent: 0, durationMonths: 6 }, "raise"],
+      [{ kind: "selfEmployed", netIncomeMonth: 6500, incomeVolatility: 0.25 }, "raise"],
+    ];
+    for (const [decision, carrier] of kinds) {
+      const { res, ops, dropped } = await opsOf({ ops: [add(decision)] });
+      assert.equal(res.status, 200, JSON.stringify(decision));
+      assert.equal(ops.length, 1, JSON.stringify(decision));
+      assert.deepEqual([ops[0].type, ops[0].month, dropped], [carrier, 12, 0], JSON.stringify(decision));
+      assert.equal((ops[0].decision as Json).kind, decision.kind);
+      // The browser validates the same op again and the event carries the decision.
+      const valid = actions.validateOps(ops, []);
+      assert.equal(valid.length, 1, "validateOps: " + JSON.stringify(ops[0]));
+      assert.equal(actions.applyOps([], valid)[0].decision?.kind, decision.kind);
+    }
+    const move = (await opsOf({ ops: [add({ kind: "move", canton: "zg" })] })).ops[0].decision as Json;
+    assert.equal(move.canton, "ZG", "canton codes are normalised");
+    // A windfall and a large purchase stay one-off events; the economy is a setting.
+    const plain = await opsOf({ ops: [
+      { op: "add", type: "income", label: "Inheritance", month: 40, amount: 200_000 },
+      { op: "add", type: "expense", label: "Boat", month: 40, amount: 50_000 },
+      { op: "set", key: "economy", value: "recession" },
+    ] });
+    assert.deepEqual(plain.ops.map((o) => o.type ?? o.key), ["income", "expense", "economy"]);
+    const [system] = lastCall().body.messages as { content: string }[];
+    for (const word of ["child", "car", "leased", "ga", "partner", "move", "education", "workload", "selfEmployed", "financed", "economy", "never guess"]) assert.match(system.content, new RegExp(word));
+    assert.equal(lastCall().body.max_tokens, 220);
+  });
+
+  await check("command: malformed and out-of-range decisions are dropped, never clamped; the same bounds as the browser", async () => {
+    fresh();
+    const bad: Json[] = [
+      { kind: "spaceship" },
+      { kind: "car" },                                   // mode is mandatory
+      { kind: "car", mode: "rocket" },
+      { kind: "car", mode: "owned", price: 5 },
+      { kind: "car", mode: "owned", price: 35_000, financed: true, loanRate: 0.9 },
+      { kind: "car", mode: "owned", price: "35k" },
+      { kind: "child", kitaDaysPerWeek: 9 },
+      { kind: "child", tertiaryTrack: "harvard" },
+      { kind: "workload" },                              // percent is mandatory
+      { kind: "workload", percent: 180 },
+      { kind: "partner", netIncomeMonth: -1 },
+      { kind: "education", program: "master", durationMonths: 999 },
+      { kind: "selfEmployed", incomeVolatility: 5 },
+      { kind: "move", rentMonth: 1e9 },
+    ];
+    for (const decision of bad) {
+      const { res, ops, dropped } = await opsOf({ ops: [add(decision)] });
+      assert.deepEqual([res.status, ops.length, dropped], [200, 0, 1], JSON.stringify(decision));
+      assert.equal(actions.validateOps([add(decision)], []).length, 0, "the browser agrees: " + JSON.stringify(decision));
+    }
+    // Every bound of the shared table, one step outside on each side.
+    for (const [kind, fields] of Object.entries(actions.DECISION_BOUNDS)) {
+      const base: Json = kind === "car" ? { kind, mode: "owned" } : kind === "workload" ? { kind, percent: 80 } : { kind };
+      for (const [field, [lo, hi]] of Object.entries(fields)) {
+        fresh(); // a new minute for the rate limit
+        for (const value of [lo - 1, hi + 1]) {
+          const { ops } = await opsOf({ ops: [add({ ...base, [field]: value })] });
+          assert.equal(ops.length, 0, `${kind}.${field} = ${value}`);
+        }
+        const { ops } = await opsOf({ ops: [add({ ...base, [field]: lo }), add({ ...base, [field]: hi })] });
+        assert.equal(ops.length, 2, `${kind}.${field} at its bounds`);
+      }
+    }
+    fresh();
+    // Not an object, a bad month, an array instead of ops, null fields ("not stated") and a missing label.
+    assert.equal((await opsOf({ ops: [add("car" as unknown as Json), add({ kind: "child" }, { month: 9999 }), add({ kind: "child" }, { month: 1.5 })] })).ops.length, 0);
+    assert.equal((await opsOf('[{"op":"add"}]')).res.json.error, "INVALID_MODEL_OUTPUT");
+    assert.equal((await opsOf("Sure! Here is the plan.")).res.json.error, "INVALID_MODEL_OUTPUT");
+    const lenient = await opsOf({ ops: [{ op: "add", month: 6, decision: { kind: "car", mode: "leased", price: null, leaseMonthly: 500, annualKm: "" } }] });
+    assert.deepEqual([lenient.ops.length, lenient.ops[0].label, (lenient.ops[0].decision as Json).leaseMonthly, "price" in (lenient.ops[0].decision as Json)], [1, "car", 500, false]);
+    // One good and one bad op: the good one passes and the answer says one was dropped.
+    const mixed = await opsOf({ ops: [add({ kind: "child" }), add({ kind: "car", mode: "owned", price: 1 })] });
+    assert.deepEqual([mixed.ops.length, mixed.dropped], [1, 1]);
+  });
+
+  await check("command: a truncated answer fails closed, even when its first object is complete", async () => {
+    fresh();
+    provider.finish = "length";
+    provider.reply = '{"ops":[{"op":"add","label":"Car","month":8,"decision":{"kind":"car","mode":"owned","price":35000}}]} {"ops":[{"op":"add","label":"Baby","mon';
+    const whole = await command();
+    assert.deepEqual([whole.status, whole.json.error, whole.json.data], [502, "MODEL_OUTPUT_TRUNCATED", undefined]);
+    provider.reply = '{"ops":[{"op":"add","label":"Car","month":8,"decision":{"kind":"car","mode":"ow';
+    const cut = await command();
+    assert.deepEqual([cut.status, cut.json.error, cut.json.data], [502, "MODEL_OUTPUT_TRUNCATED", undefined]);
+    assert.ok(cut.json.usage, "the refused answer is still in the token ledger");
+    provider.finish = "stop";
+    assert.equal((await command()).json.error, "INVALID_MODEL_OUTPUT", "cut-off JSON without the length flag is invalid, not applied");
+  });
+
   console.log("\n=== 4. The `ask` task: answers from the engine's figures only ===");
 
   const facts = { client: "Meriç, 34, Lausanne", goal: "Home in Renens by 2029", goal_amount_chf: 940_000, odds_with_habits_pct: 56, odds_disciplined_pct: 71.5, habit_cost_chf: 84_000, monthly_net_income_chf: 5700, pillar3a_chf: 21_300, savings_rate_pct: 0.31, retirement_age: 65 };
