@@ -1437,6 +1437,10 @@ export const fr = {
       years_other: "{count} ans",
     },
     param: {
+      retireAge: "Âge de la retraite",
+      withdrawalTax: "Impôt sur le retrait",
+      saleProceeds: "Produit de la vente",
+      newRent: "Nouveau loyer",
       income: "Salaire net",
       expenses: "Dépenses",
       moveCost: "Frais de déménagement",
@@ -1489,6 +1493,13 @@ export const fr = {
       resale: "Valeur de revente",
     },
     cards: {
+      retireEarly: { title: "Retraite à 60 ans", desc: "Arrêter de travailler à {retireAge} : taux de conversion plus bas à la caisse de pension, et l’épargne doit couvrir les années jusqu’à l’AVS à 65 ans." },
+      workLonger: { title: "Travailler jusqu’à 67 ans", desc: "Continuer jusqu’à {retireAge} : plus de salaire et de bonifications, un taux de conversion plus élevé et moins d’années à financer." },
+      lumpSum: { title: "Caisse de pension en capital", desc: "À la retraite, prendre {amount:chf} en capital au lieu d’une rente à vie, après {withdrawalTax:pct} d’impôt sur le retrait : souple et transmissible, mais aucune protection si vous vivez longtemps." },
+      workInRetirement: { title: "Temps partiel à la retraite", desc: "Gagner {income:chf}/mois pendant {months} mois en plus de vos rentes." },
+      downsize: { title: "Déménager dans plus petit", desc: "Le loyer baisse de {rentShare:pct} ({rentCut:chf}/mois) ; le déménagement coûte {moveCost:chf}." },
+      sellHome: { title: "Vendre le logement et louer", desc: "Vente : {saleProceeds:chf} après l’hypothèque et 3 % de frais ; ensuite un loyer de {newRent:chf}/mois." },
+      lifeCare: { title: "Frais de soins", desc: "Aide à domicile et soins : {monthly:chf}/mois de plus désormais." },
       hold: { title: "Attendre", desc: "Ne rien changer cette année." },
       pathWork: { title: "Commencer à travailler", desc: "Prendre un emploi maintenant  {income:chf}/mois net, {expenses:chf}/mois de dépenses." },
       pathMaster: { title: "Master à plein temps", desc: "Étudier {studyYears} ans avec {tuition:chf}/an de frais, vivre avec {incomeDuring:chf}/mois, puis gagner {incomeAfter:chf}/mois." },
@@ -1588,6 +1599,7 @@ export const fr = {
     selectPiece: "{piece} ({domain}) : voir les décisions",
     decisionsOf: "{piece} · {domain} : décisions",
     close: "Fermer",
+    details: "Analyse complète ↓",
     lost: "Perdu : {piece} ({domain})",
     took: "Pris à la vie : {piece} ({domain})",
     substituted: "Aucune pièce de ce type ({wanted}) ne pouvait jouer ; cette décision a été jouée par : {piece}.",
@@ -1644,5 +1656,15 @@ export const fr = {
         grandmaster: "Grand maître",
       },
     },
+  },
+  threat: {
+    buffer: "Menace : seulement {months:num1} mois de dépenses en liquidités. La vie ne peut pas encore donner échec sur l’échiquier, mais ce tour, seuls les coups qui protègent vos liquidités sont permis.",
+    crunch: "Menace : {p:pct} de risque de manquer de liquidités dans les 12 mois. La vie ne peut pas encore donner échec sur l’échiquier, mais ce tour, seuls les coups qui protègent vos liquidités sont permis.",
+    respond: "Vos liquidités sont menacées : jouez une carte qui les protège.",
+    board: "Menace sur le roi (anneau orange) : moins de 3 mois de réserve, ou un risque de manque de liquidités supérieur à 20 %. Aucune pièce de la vie ne peut encore donner échec ; la lueur rouge n’apparaît qu’en cas d’échec réel.",
+  },
+  retirePlay: {
+    phaseWork: "Travaille à la retraite encore {months} mois",
+    group: "Retraite",
   },
 } as const satisfies Messages;

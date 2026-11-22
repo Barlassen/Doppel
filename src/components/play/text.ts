@@ -25,6 +25,8 @@ export function paramValue({ t, fmt }: T, p: CardParam): string {
       return t("play.unit.months", { count: p.value });
     case "years":
       return t("play.unit.years", { count: p.value });
+    case "age":
+      return t("play.position.age", { age: p.value });
   }
 }
 

@@ -43,7 +43,7 @@ export const REGIME: Record<RegimeId, Regime> = {
     shocks: { jobLossProbYear: 0.02, jobLossMonths: 4, crashProbYear: 0.02 },
     lifeWeights: {
       "lifeWindfall": 3, "lifePromotion": 3, "lifeEmergency": 2, "lifeClaim": 2, "lifeRent": 1.5, "lifeMaintenance": 1,
-      "lifeDrawdown": 1, "lifeJobloss": 1, "lifeInflation": 0.5, "lifeEnergy": 0.5, "lifeFamily": 1, "lifeRate": 0.5,
+      "lifeDrawdown": 1, "lifeJobloss": 1, "lifeInflation": 0.5, "lifeEnergy": 0.5, "lifeCare": 3, "lifeFamily": 1, "lifeRate": 0.5,
     },
   },
   normal: {
@@ -58,7 +58,7 @@ export const REGIME: Record<RegimeId, Regime> = {
     shocks: { jobLossProbYear: 0.04, jobLossMonths: 6, crashProbYear: 0.05 },
     lifeWeights: {
       "lifeWindfall": 1.5, "lifePromotion": 2, "lifeEmergency": 2, "lifeClaim": 2, "lifeRent": 2, "lifeMaintenance": 1.5,
-      "lifeDrawdown": 2, "lifeJobloss": 2, "lifeInflation": 1.5, "lifeEnergy": 1, "lifeFamily": 1.5, "lifeRate": 1.5,
+      "lifeDrawdown": 2, "lifeJobloss": 2, "lifeInflation": 1.5, "lifeEnergy": 1, "lifeCare": 3, "lifeFamily": 1.5, "lifeRate": 1.5,
       "lifeRecession": 1,
     },
   },
@@ -74,7 +74,7 @@ export const REGIME: Record<RegimeId, Regime> = {
     shocks: { jobLossProbYear: 0.08, jobLossMonths: 8, crashProbYear: 0.1 },
     lifeWeights: {
       "lifeWindfall": 0.5, "lifePromotion": 0.5, "lifeEmergency": 2, "lifeClaim": 1.5, "lifeRent": 2, "lifeMaintenance": 2,
-      "lifeDrawdown": 3, "lifeJobloss": 3, "lifeInflation": 3, "lifeEnergy": 2, "lifeFamily": 1.5, "lifeRate": 2.5,
+      "lifeDrawdown": 3, "lifeJobloss": 3, "lifeInflation": 3, "lifeEnergy": 2, "lifeCare": 3, "lifeFamily": 1.5, "lifeRate": 2.5,
       "lifeRecession": 2.5, "lifeCompound": 1.5,
     },
   },

@@ -6,7 +6,7 @@ import type { Profile } from "@/lib/finance/types";
 import { ALEXIA_ID, alexiaPaths, listUbsProfiles, loadUbsProfile, ubsAssumptions } from "@/lib/ubs";
 import { FI_END_AGE, GOAL_AGE, GOAL_REAL_RATE, goalCapital } from "./independence";
 import { MEDIAN_BUCKET, REGIME, hashSeed, marketYear } from "./regime";
-import { type GameState, type UbsContext, initialState, monthlyOutflow, pensionNet, stepYear } from "./state";
+import { type GameState, type UbsContext, initialState, monthlyOutflow, netWorth, pensionNet, stepYear } from "./state";
 
 const annuityFactor = (years: number) => (years <= 0 ? 0 : (1 - Math.pow(1 + GOAL_REAL_RATE, -years)) / GOAL_REAL_RATE);
 
@@ -22,7 +22,10 @@ export function withFiGoal(s: GameState): GameState {
   if (s.pension) {
     const age = Math.min(FI_END_AGE, s.age + 10);
     const gapYear = (Math.max(0, monthlyOutflow(s) - pensionNet(s)) * 12) / s.priceIndex;
-    const target = Math.max(10_000, Math.round((gapYear * annuityFactor(FI_END_AGE - age)) / 1000) * 1000);
+    // The money for the spending gap until 95, and at least 80% of today's wealth kept in real terms (a retiree whose
+    // pensions cover everything still has a goal: keep the capital, for safety and for the heirs).
+    const keep = 0.8 * (netWorth(s) / s.priceIndex);
+    const target = Math.max(10_000, Math.round(Math.max(gapYear * annuityFactor(FI_END_AGE - age), keep) / 1000) * 1000);
     return { ...s, goal: { ...s.goal, label: { key: "fi.goalRetired", params: { age: FI_END_AGE } }, target, age } };
   }
   const age = Math.max(GOAL_AGE, s.age + 5);

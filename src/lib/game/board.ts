@@ -78,6 +78,12 @@ const CARD_INTENT: Record<string, PieceIntent> = {
   start3a: { piece: "b", bishop: "dark", motion: "build" },
   stop3a: { piece: "b", bishop: "dark", motion: "protect" },
   pauseInvest: { piece: "b", bishop: "dark", motion: "protect" },
+  retireEarly: { piece: "q", motion: "protect" },
+  workLonger: { piece: "q", motion: "build" },
+  lumpSum: { piece: "b", bishop: "dark", motion: "neutral" },
+  workInRetirement: { piece: "n", motion: "build" },
+  downsize: { piece: "r", motion: "protect" },
+  sellHome: { piece: "r", motion: "protect" },
 };
 
 /** How a decision moves on the board (for the legend and the panel). */
@@ -96,6 +102,7 @@ const LIFE_INTENT: Record<string, { piece: PieceSymbol; tone: LifeTone }> = {
   lifeMaintenance: { piece: "r", tone: "hit" },
   lifeRecession: { piece: "q", tone: "hit" },
   lifeCompound: { piece: "q", tone: "hit" },
+  lifeCare: { piece: "n", tone: "hit" },
   lifeWindfall: { piece: "p", tone: "gift" },
   lifePromotion: { piece: "n", tone: "gift" },
 };

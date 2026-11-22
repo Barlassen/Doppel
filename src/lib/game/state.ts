@@ -55,7 +55,7 @@ export interface Phase {
   /** false = no pillar 2 credits (studying, abroad, job gap). */
   bvg: boolean;
   /** What the phase is, for the position panel. */
-  kind: "study" | "jobless" | "leave" | "gap" | "training";
+  kind: "study" | "jobless" | "leave" | "gap" | "training" | "retiredWork";
 }
 
 export interface Debt {
@@ -108,6 +108,8 @@ export interface GameState {
    * indexed with prices). `formerGross` is the last salary, kept for the simulator's AHV rule. null = still working.
    */
   pension: { bvgMonth: number; ahvMonth: number; formerGross: number } | null;
+  /** Take the pension fund as a lump sum at retirement instead of an annuity (decided up to 3 years before). */
+  lumpSum: boolean;
   startAge: number;
   age: number;
   /** Years played. */
@@ -188,7 +190,14 @@ export function pensionNet(s: GameState): number {
  * that is already retired at the start (its spending already is retirement spending).
  */
 export function retireNow(s: GameState, L: LedgerBuilder, reduceSpending = true) {
-  const bvgMonth = (s.pillar2 * bvgConversionRate(Math.min(s.retirementAge, s.age))) / 12;
+  let bvgMonth = (s.pillar2 * bvgConversionRate(Math.min(s.retirementAge, s.age))) / 12;
+  if (s.lumpSum && s.pillar2 > 0) {
+    // Capital instead of an annuity: paid into the portfolio after the capital-withdrawal tax.
+    const paid = s.pillar2 * (1 - P3A_PAYOUT_TAX);
+    L.add("portfolio", "pension", paid);
+    s.portfolio += paid;
+    bvgMonth = 0;
+  }
   L.add("pillar2", "pension", -s.pillar2);
   s.pillar2 = 0;
   const formerGross = s.gross;
@@ -204,13 +213,16 @@ export function retireNow(s: GameState, L: LedgerBuilder, reduceSpending = true)
   if (reduceSpending) s.expenses = (s.expenses - s.rent) * ASSUMPTIONS.retirementSpending + s.rent;
   s.gross = 0;
   s.net = 0;
-  s.phases = [];
+  s.phases = s.phases.filter((p) => p.kind === "retiredWork");
   s.contributes3a = false;
   s.monthlyInvest = 0;
 }
 
 export function incomeAt(s: GameState, month: number): { net: number; gross: number; bvg: boolean } {
-  if (s.pension) return { net: pensionNet(s), gross: 0, bvg: false };
+  if (s.pension) {
+    const work = s.phases.find((p) => p.kind === "retiredWork" && month >= p.start && month < p.end);
+    return { net: pensionNet(s) + (work?.net ?? 0), gross: 0, bvg: false };
+  }
   const ph = phaseAt(s, month);
   return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg } : { net: s.net, gross: s.gross, bvg: !s.abroad };
 }
@@ -370,6 +382,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     turn: 0,
     endTurn: Math.max(1, o.lengthTurns ?? gameEndAge(p.age, p.retirementAge <= p.age) - p.age),
     pension: null,
+    lumpSum: false,
     priceIndex: 1,
     cash: p.cash,
     portfolio: p.portfolio,
@@ -419,6 +432,12 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
   const events: LifeEvent[] = s.oneOffs
     .filter((o) => o.month >= 0)
     .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount }));
+  // Work in retirement: the simulator pays pensions only once retired, so the extra pay goes in as monthly income.
+  if (s.pension) {
+    for (const ph of s.phases.filter((p) => p.kind === "retiredWork")) {
+      for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net });
+    }
+  }
   const phases: IncomePhase[] = s.phases.map((p) => ({
     startMonth: p.start,
     endMonth: p.end,

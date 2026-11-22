@@ -199,6 +199,12 @@ async function main() {
     samples.push(student);
     const rich = { ...accountOpening(PROFILES[1]), cash: 150_000, gross: 140_000, net: 8400 };
     samples.push(rich, applyCard(rich, "partTime", REGIME.normal).state);
+    // Retirement: a worker close to retirement, a pensioner (renting and owning), and an 81-year-old.
+    const nearRetirement = { ...accountOpening(PROFILES[1]), age: 62, pillar2: 380_000, pillar3a: 60_000 };
+    samples.push(nearRetirement);
+    const pensioner = stepYear({ ...nearRetirement, age: 65, retirementAge: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET)).state;
+    samples.push(pensioner, { ...pensioner, age: 81 });
+    samples.push(stepYear({ ...owner.state, age: 65, retirementAge: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET)).state);
     let worst = 0;
     let cards = 0;
     let years = 0;
@@ -257,6 +263,12 @@ async function main() {
     const p = yr.state.pension;
     const ok = !!p && yr.state.pillar2 === 0 && yr.state.pillar3a === 0 && Math.abs(p.bvgMonth - (400_000 * 0.055) / 12) < 1 && p.ahvMonth > 0 && ledgerError(yr.ledger) < 1e-6;
     check("retirement: annuity at the conversion rate, 3a paid out, AHV, ledger balances", ok, p ? `BVG CHF ${Math.round(p.bvgMonth)}/mo · AHV CHF ${Math.round(p.ahvMonth)}/mo · ledger error ${ledgerError(yr.ledger).toExponential(1)}` : "no pension");
+
+    // Lump sum: capital into the portfolio after the withdrawal tax, no annuity.
+    const lump = applyCard({ ...worker, age: 64 }, "lumpSum", REGIME.normal).state;
+    const yl = stepYear({ ...lump, age: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET));
+    const lp = yl.state.pension;
+    check("lump sum: the pension fund is paid out as capital, no annuity", !!lp && lp.bvgMonth === 0 && yl.state.portfolio > lump.portfolio + 400_000 * 0.9 && ledgerError(yl.ledger) < 1e-6, `portfolio CHF ${Math.round(lump.portfolio).toLocaleString("en")} → ${Math.round(yl.state.portfolio).toLocaleString("en")} · BVG annuity ${Math.round(lp?.bvgMonth ?? -1)}`);
 
     // Independence ends the game as a win.
     const rich = { ...accountOpening(PROFILES[1]), age: 55, cash: 400_000, portfolio: 3_000_000, check: null };

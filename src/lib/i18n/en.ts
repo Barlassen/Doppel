@@ -1426,6 +1426,10 @@ export const en = {
       years_other: "{count} years",
     },
     param: {
+      retireAge: "Retirement age",
+      withdrawalTax: "Withdrawal tax",
+      saleProceeds: "Sale proceeds",
+      newRent: "New rent",
       income: "Take-home pay",
       expenses: "Spending",
       moveCost: "Moving cost",
@@ -1478,6 +1482,13 @@ export const en = {
       resale: "Resale value",
     },
     cards: {
+      retireEarly: { title: "Retire at 60", desc: "Stop working at {retireAge}: a lower pension-fund conversion rate, and savings must bridge the years until AHV starts at 65." },
+      workLonger: { title: "Work until 67", desc: "Keep working until {retireAge}: more pay and pension credits, a higher conversion rate and fewer years to fund." },
+      lumpSum: { title: "Pension fund as a lump sum", desc: "At retirement take {amount:chf} as capital instead of a lifelong pension, after {withdrawalTax:pct} withdrawal tax: flexible and inheritable, but no protection if you live long." },
+      workInRetirement: { title: "Part-time work in retirement", desc: "Earn {income:chf}/month for {months} months on top of your pensions." },
+      downsize: { title: "Move to a smaller flat", desc: "Rent falls by {rentShare:pct} ({rentCut:chf}/month); moving costs {moveCost:chf}." },
+      sellHome: { title: "Sell the home and rent", desc: "Sell the home: {saleProceeds:chf} after the mortgage and 3% costs; then rent a flat for {newRent:chf}/month." },
+      lifeCare: { title: "Care costs", desc: "Help at home and care: {monthly:chf}/month more from now on." },
       hold: { title: "Hold", desc: "Change nothing this year." },
       pathWork: { title: "Start working", desc: "Take a job now: {income:chf}/month take-home, {expenses:chf}/month spending." },
       pathMaster: { title: "Full-time master’s", desc: "Study {studyYears} years at {tuition:chf}/year tuition on {incomeDuring:chf}/month, then earn {incomeAfter:chf}/month." },
@@ -1577,6 +1588,7 @@ export const en = {
     selectPiece: "{piece} ({domain}): show decisions",
     decisionsOf: "{piece} · {domain}: decisions",
     close: "Close",
+    details: "Full review ↓",
     lost: "Lost: {piece} ({domain})",
     took: "Taken from Life: {piece} ({domain})",
     substituted: "No {wanted} could move, so the {piece} played this decision.",
@@ -1633,5 +1645,15 @@ export const en = {
         grandmaster: "Grandmaster",
       },
     },
+  },
+  threat: {
+    buffer: "Threat: only {months:num1} months of spending in cash. Life cannot give check on the board yet, but this turn only moves that protect your cash are allowed.",
+    crunch: "Threat: {p:pct} chance of running out of cash within 12 months. Life cannot give check on the board yet, but this turn only moves that protect your cash are allowed.",
+    respond: "Your cash is under threat: play a card that protects it.",
+    board: "Threat on the king (amber ring): less than 3 months of buffer, or a cash-crunch risk above 20%. No Life piece can give check yet; the red glow appears only with a real check.",
+  },
+  retirePlay: {
+    phaseWork: "Working in retirement for {months} more months",
+    group: "Retirement",
   },
 } as const;

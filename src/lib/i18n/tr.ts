@@ -1434,6 +1434,10 @@ export const tr = {
       years_other: "{count} yıl",
     },
     param: {
+      retireAge: "Emeklilik yaşı",
+      withdrawalTax: "Çekim vergisi",
+      saleProceeds: "Satış geliri",
+      newRent: "Yeni kira",
       income: "Net maaş",
       expenses: "Harcamalar",
       moveCost: "Taşınma masrafı",
@@ -1486,6 +1490,13 @@ export const tr = {
       resale: "İkinci el değeri",
     },
     cards: {
+      retireEarly: { title: "60'ta emekli ol", desc: "Şu yaşta çalışmayı bırak: {retireAge}. Emeklilik fonunun dönüşüm oranı düşer ve birikim, AHV'nin başladığı 65 yaşına kadarki yılları karşılamak zorunda kalır." },
+      workLonger: { title: "67'ye kadar çalış", desc: "Şu yaşa kadar çalışmaya devam et: {retireAge}. Daha fazla maaş ve emeklilik katkısı, daha yüksek dönüşüm oranı ve finanse edilecek daha az yıl." },
+      lumpSum: { title: "Emeklilik fonunu toplu para al", desc: "Emeklilikte ömür boyu aylık yerine {amount:chf} tutarını sermaye olarak al; çekim vergisi {withdrawalTax:pct}. Esnek ve mirasa kalabilir, ama uzun yaşarsan koruması yok." },
+      workInRetirement: { title: "Emeklilikte yarı zamanlı çalış", desc: "Emekli maaşlarına ek olarak {months} ay boyunca ayda {income:chf} kazan." },
+      downsize: { title: "Daha küçük bir daireye taşın", desc: "Kira {rentShare:pct} düşer (ayda {rentCut:chf}); taşınma maliyeti {moveCost:chf}." },
+      sellHome: { title: "Evi sat ve kirala", desc: "Evi sat: ipotek ve %3 masraftan sonra {saleProceeds:chf}; ardından ayda {newRent:chf} kirayla oturursun." },
+      lifeCare: { title: "Bakım masrafları", desc: "Evde yardım ve bakım: bundan sonra ayda {monthly:chf} daha fazla." },
       hold: { title: "Bekle", desc: "Bu yıl hiçbir şeyi değiştirme." },
       pathWork: { title: "Çalışmaya başla", desc: "Şimdi bir işe gir: ayda net {income:chf}, ayda {expenses:chf} harcama." },
       pathMaster: { title: "Tam zamanlı yüksek lisans", desc: "{studyYears} yıl oku, yıllık öğrenim ücreti {tuition:chf}, ayda {incomeDuring:chf} ile geçin, sonra ayda {incomeAfter:chf} kazan." },
@@ -1585,6 +1596,7 @@ export const tr = {
     selectPiece: "{piece} ({domain}): kararları göster",
     decisionsOf: "{piece} · {domain}: kararlar",
     close: "Kapat",
+    details: "Ayrıntılı inceleme ↓",
     lost: "Kaybedilen: {piece} ({domain})",
     took: "Hayat'tan alınan: {piece} ({domain})",
     substituted: "Bu türden oynayabilecek taş kalmadı ({wanted}), kararı başka bir taş oynadı: {piece}.",
@@ -1641,5 +1653,15 @@ export const tr = {
         grandmaster: "Büyükusta",
       },
     },
+  },
+  threat: {
+    buffer: "Tehdit: nakit yalnızca {months:num1} aylık harcamaya yetiyor. Hayat tahtada henüz şah çekemiyor, ama bu tur yalnızca nakdini koruyan hamleler oynanabilir.",
+    crunch: "Tehdit: 12 ay içinde nakitsiz kalma riski {p:pct}. Hayat tahtada henüz şah çekemiyor, ama bu tur yalnızca nakdini koruyan hamleler oynanabilir.",
+    respond: "Nakdin tehdit altında: onu koruyan bir kart oyna.",
+    board: "Şaha tehdit (turuncu halka): tampon 3 aydan az ya da nakit sıkışması riski %20'nin üstünde. Hayat'ın hiçbir taşı henüz şah çekemiyor; kırmızı ışık yalnızca gerçek şahta yanar.",
+  },
+  retirePlay: {
+    phaseWork: "Emeklilikte {months} ay daha çalışıyor",
+    group: "Emeklilik",
   },
 } satisfies Messages;

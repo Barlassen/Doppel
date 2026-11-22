@@ -288,7 +288,7 @@ export default function PlayApp() {
           <div className="card mt-4 p-6 text-sm text-ink-3 pulse-soft">{t("play.evalBar.waiting")}</div>
         ) : (
           <>
-            <Banner position={live} />
+            <Banner position={live} boardCheck={!!line && line.turns.length > 1 && !!line.turns[line.turns.length - 2]?.black?.check} />
             <div className="mt-4 grid gap-4 lg:grid-cols-12">
               <div className="space-y-4 lg:col-span-7">
                 {line && (

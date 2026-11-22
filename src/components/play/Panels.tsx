@@ -130,9 +130,13 @@ export function SetupPanel(props: {
 
 // ---------------- banners ----------------
 
-export function Banner({ position: p }: { position: GameState }) {
+/**
+ * `boardCheck`: Life's last move gives check on the board. The word "check" is used only then; a financial danger
+ * the board cannot show as a check yet is a "threat" (the same forced response applies).
+ */
+export function Banner({ position: p, boardCheck }: { position: GameState; boardCheck: boolean }) {
   const { t } = useI18n();
-  let kind: "check" | "mate" | "won" | "ended" | null = null;
+  let kind: "check" | "threat" | "mate" | "won" | "ended" | null = null;
   let text = "";
   if (p.status === "mate") {
     kind = "mate";
@@ -143,14 +147,17 @@ export function Banner({ position: p }: { position: GameState }) {
   } else if (p.status === "ended") {
     kind = "ended";
     text = t("fi.ended", { age: p.age });
-  } else if (p.check) {
+  } else if (p.check && boardCheck) {
     kind = "check";
     text = p.check.reason === "buffer" ? t("play.banner.checkBuffer", { months: p.check.bufferMonths }) : t("play.banner.checkCrunch", { p: p.check.crunchProb });
+  } else if (p.check) {
+    kind = "threat";
+    text = p.check.reason === "buffer" ? t("threat.buffer", { months: p.check.bufferMonths }) : t("threat.crunch", { p: p.check.crunchProb });
   }
   if (!kind) return null;
-  const tone = { check: "text-warn", mate: "text-bad", won: "text-good", ended: "text-ink" }[kind];
-  const accent = { check: "var(--warn)", mate: "var(--bad)", won: "var(--good)", ended: "var(--ink-3)" }[kind];
-  const glyph = { check: "+", mate: "#", won: "★", ended: "½" }[kind];
+  const tone = { check: "text-bad", threat: "text-warn", mate: "text-bad", won: "text-good", ended: "text-ink" }[kind];
+  const accent = { check: "var(--bad)", threat: "var(--warn)", mate: "var(--bad)", won: "var(--good)", ended: "var(--ink-3)" }[kind];
+  const glyph = { check: "+", threat: "!", mate: "#", won: "★", ended: "½" }[kind];
   return (
     <div role="status" aria-live="polite" data-banner={kind} className={`card mt-4 flex items-start gap-3 px-4 py-3 text-sm font-medium ${tone}`} style={{ borderLeft: `4px solid ${accent}` }}>
       <span aria-hidden="true" className="num text-lg leading-5">{glyph}</span>
@@ -262,7 +269,7 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
   const chips: string[] = [];
   for (const ph of p.phases) {
     const months = ph.end - Math.max(0, ph.start);
-    const key = { study: "play.position.phaseStudy", jobless: "play.position.phaseJobless", leave: "play.position.phaseLeave", gap: "play.position.phaseGap", training: "play.position.phaseTraining" }[ph.kind] as MessageKey;
+    const key = { study: "play.position.phaseStudy", jobless: "play.position.phaseJobless", leave: "play.position.phaseLeave", gap: "play.position.phaseGap", training: "play.position.phaseTraining", retiredWork: "retirePlay.phaseWork" }[ph.kind] as MessageKey;
     chips.push(t(key, { months }));
   }
   if (p.abroad) chips.push(t("play.position.abroad"));
@@ -472,7 +479,7 @@ export function DecisionArea(props: {
         <p className="text-sm text-ink-2">{t("play.move.over")}</p>
       ) : (
         <>
-          <p className={`mb-3 text-xs ${props.position.check ? "font-medium text-warn" : "text-ink-3"}`}>{props.position.check ? t("play.move.checkHint") : t("play.move.hint")}</p>
+          <p className={`mb-3 text-xs ${props.position.check ? "font-medium text-warn" : "text-ink-3"}`}>{props.position.check ? t("threat.respond") : t("play.move.hint")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             {cards.map((c, k) => (
               <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} />

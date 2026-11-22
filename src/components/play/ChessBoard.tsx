@@ -145,7 +145,11 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
     return notes;
   }
 
-  const shownPlies: BoardPly[] = reviewing ? [turn?.white, turn?.black].filter((p): p is BoardPly => !!p) : lastPly ? [lastPly] : [];
+  // Live: the player's last move and Life's reply (the verdict sits right under the board, also on phones).
+  const prevTurn = line.turns[line.turns.length - 2];
+  const shownPlies: BoardPly[] = (reviewing ? [turn?.white, turn?.black] : [prevTurn?.white, prevTurn?.black]).filter((p): p is BoardPly => !!p);
+  const lastInfo = moves[moves.length - 1];
+  const plyLabel = reviewing ? label : lastInfo?.review?.label ?? null;
   const resultKey = !reviewing && line.result ? (`board.result.${line.result}` as MessageKey) : null;
 
   return (
@@ -238,7 +242,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
           )}
           {finCheck && (
             <p className={`rounded-lg border-l-4 px-3 py-2 text-xs text-ink ${boardCheck ? "border-bad bg-bad/10" : "border-warn bg-warn/10"}`}>
-              {t("board.finCheck")} {!boardCheck && t("board.finCheckNoBoard")}
+              {boardCheck ? t("board.finCheck") : t("threat.board")}
             </p>
           )}
           {shownPlies.map((ply) => {
@@ -248,7 +252,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
               <div key={ply.side + ply.san} className="rounded-lg bg-surface-2 px-3 py-2">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   <span className="num font-semibold text-ink">{isWhite ? "" : "… "}{ply.san}</span>
-                  {isWhite && label && reviewing && <span className={`num rounded-full px-1.5 text-[11px] font-bold text-white ${LABEL_BG[label]}`}>{LABEL_GLYPH[label]}</span>}
+                  {isWhite && plyLabel && <span className={`num rounded-full px-1.5 text-[11px] font-bold text-white ${LABEL_BG[plyLabel]}`}>{LABEL_GLYPH[plyLabel]}</span>}
                   <span className="text-ink">{isWhite ? t("board.yourMove", { card: title }) : t("board.lifeMove", { card: title })}</span>
                 </div>
                 <div className="text-[11px] text-ink-3">
@@ -262,6 +266,13 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
               </div>
             );
           })}
+          {!reviewing && lastInfo?.review && (
+            <p className="text-xs text-ink-2" data-testid="play-board-verdict">
+              {lastInfo.review.loss > 0.005 ? t("play.review.loss", { loss: lastInfo.review.loss }) : t("play.review.noLoss")}
+              {lastInfo.review.best !== lastInfo.move.card && <> · {t("play.review.bestIs", { move: cardTitle(i, lastInfo.review.best) })}</>}{" "}
+              <a href="#play-review" className="font-medium text-s1 underline-offset-2 hover:underline lg:hidden">{t("board.details")}</a>
+            </p>
+          )}
           {best && info?.review && (
             <p className="text-xs text-ink-2">
               {!best.sameSquares && <span className="font-medium text-good">→ {best.san} </span>}

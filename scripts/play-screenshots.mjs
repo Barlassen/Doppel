@@ -59,7 +59,7 @@ try {
       // Oktay spends what comes in: under three months of buffer, so the game opens in check.
       await page.locator("select").first().selectOption("acct:oktay");
       await page.locator("[data-testid=play-start]").click();
-      await page.locator("[data-banner=check]").waitFor({ timeout: 30_000 });
+      await page.locator("[data-banner=check], [data-banner=threat]").first().waitFor({ timeout: 30_000 });
       await shot("3-check");
       await page.locator("select").first().selectOption("ubs:P00001");
       await page.locator("[data-testid=play-start]").click();

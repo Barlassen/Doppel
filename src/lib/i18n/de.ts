@@ -1428,6 +1428,10 @@ export const de = {
       years_other: "{count} Jahre",
     },
     param: {
+      retireAge: "Pensionierungsalter",
+      withdrawalTax: "Kapitalbezugssteuer",
+      saleProceeds: "Verkaufserlös",
+      newRent: "Neue Miete",
       income: "Nettolohn",
       expenses: "Ausgaben",
       moveCost: "Umzugskosten",
@@ -1480,6 +1484,13 @@ export const de = {
       resale: "Wiederverkaufswert",
     },
     cards: {
+      retireEarly: { title: "Mit 60 in Pension", desc: "Mit {retireAge} aufhören zu arbeiten: tieferer Umwandlungssatz der Pensionskasse, und die Ersparnisse müssen die Jahre bis zur AHV mit 65 überbrücken." },
+      workLonger: { title: "Bis 67 arbeiten", desc: "Bis {retireAge} weiterarbeiten: mehr Lohn und Altersgutschriften, ein höherer Umwandlungssatz und weniger Jahre zu finanzieren." },
+      lumpSum: { title: "Pensionskasse als Kapital", desc: "Bei der Pensionierung {amount:chf} als Kapital statt einer lebenslangen Rente beziehen, nach {withdrawalTax:pct} Kapitalbezugssteuer: flexibel und vererbbar, aber kein Schutz bei langem Leben." },
+      workInRetirement: { title: "Teilzeit in der Pension", desc: "{months} Monate lang {income:chf}/Monat zusätzlich zu den Renten verdienen." },
+      downsize: { title: "In eine kleinere Wohnung ziehen", desc: "Die Miete sinkt um {rentShare:pct} ({rentCut:chf}/Monat); der Umzug kostet {moveCost:chf}." },
+      sellHome: { title: "Eigenheim verkaufen und mieten", desc: "Verkauf: {saleProceeds:chf} nach Hypothek und 3 % Kosten; danach eine Wohnung für {newRent:chf}/Monat mieten." },
+      lifeCare: { title: "Pflegekosten", desc: "Hilfe zu Hause und Pflege: ab jetzt {monthly:chf}/Monat mehr." },
       hold: { title: "Halten", desc: "Dieses Jahr nichts ändern." },
       pathWork: { title: "Arbeiten gehen", desc: "Jetzt eine Stelle antreten: {income:chf}/Monat netto, {expenses:chf}/Monat Ausgaben." },
       pathMaster: { title: "Master Vollzeit", desc: "{studyYears} Jahre studieren, {tuition:chf}/Jahr Studiengebühren, von {incomeDuring:chf}/Monat leben, danach {incomeAfter:chf}/Monat verdienen." },
@@ -1579,6 +1590,7 @@ export const de = {
     selectPiece: "{piece} ({domain}): Entscheide zeigen",
     decisionsOf: "{piece} · {domain}: Entscheide",
     close: "Schliessen",
+    details: "Ganze Analyse ↓",
     lost: "Verloren: {piece} ({domain})",
     took: "Dem Leben abgenommen: {piece} ({domain})",
     substituted: "Kein {wanted} konnte ziehen, darum spielte diese Figur den Entscheid: {piece}.",
@@ -1635,5 +1647,15 @@ export const de = {
         grandmaster: "Grossmeister",
       },
     },
+  },
+  threat: {
+    buffer: "Drohung: Nur {months:num1} Monate Ausgaben in bar. Das Leben kann auf dem Brett noch kein Schach geben, aber in diesem Zug sind nur Züge erlaubt, die deine Liquidität schützen.",
+    crunch: "Drohung: {p:pct} Risiko, innert 12 Monaten ohne Bargeld dazustehen. Das Leben kann auf dem Brett noch kein Schach geben, aber in diesem Zug sind nur Züge erlaubt, die deine Liquidität schützen.",
+    respond: "Deine Liquidität ist bedroht: Spiele eine Karte, die sie schützt.",
+    board: "Drohung gegen den König (gelber Ring): weniger als 3 Monate Reserve oder ein Engpass-Risiko über 20 %. Noch kann keine Figur des Lebens Schach geben; das rote Leuchten erscheint nur bei echtem Schach.",
+  },
+  retirePlay: {
+    phaseWork: "Arbeitet in der Pension noch {months} Monate",
+    group: "Pension",
   },
 } satisfies Messages;

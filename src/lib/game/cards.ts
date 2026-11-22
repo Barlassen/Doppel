@@ -9,6 +9,7 @@
  */
 import { EQUITY_WEIGHT } from "./sim";
 import { AMORTISATION_YEARS, ACTUAL_MORTGAGE_RATE, FIRST_MORTGAGE_SHARE, PILLAR_3A_MAX, closingCostRate, maxAffordablePrice, tragbarkeit } from "@/lib/finance/swissRules";
+import { P3A_PAYOUT_TAX } from "@/lib/finance/pension";
 import { type Regime, uniform } from "./regime";
 import {
   type GameState,
@@ -27,7 +28,7 @@ import {
 } from "./state";
 
 export type ParamSource = "ubs_synthetic_assumption" | "doppel_engine_default" | "user";
-export type ParamUnit = "chf" | "chfMonth" | "chfYear" | "pct" | "months" | "years";
+export type ParamUnit = "chf" | "chfMonth" | "chfYear" | "pct" | "months" | "years" | "age";
 
 export interface CardParam {
   key: string;
@@ -39,7 +40,7 @@ export interface CardParam {
 }
 
 export type CardKind = "decision" | "life";
-export type CardGroup = "path" | "career" | "housing" | "spending" | "saving" | "family" | "macro" | "life";
+export type CardGroup = "path" | "career" | "housing" | "spending" | "saving" | "family" | "macro" | "life" | "retirement";
 
 export interface CardDef {
   id: string;
@@ -60,6 +61,10 @@ export interface CardDef {
 }
 
 const D = "doppel_engine_default" as const;
+/** Selling a home: agent, notary and transfer costs (Doppel default). */
+const SALE_COSTS = 0.03;
+/** Renting a comparable flat after selling: gross rental yield on the home's value (Doppel default). */
+const RENT_YIELD = 0.035;
 const U = "ubs_synthetic_assumption" as const;
 const param = (key: string, value: number, unit: ParamUnit, source: ParamSource = D, ref?: string): CardParam => ({ key, value, unit, source, ref });
 const round = (x: number, step: number) => Math.round(x / step) * step;
@@ -627,6 +632,97 @@ export const DECISION_CARDS: CardDef[] = [
       s.partner = true;
     },
   },
+
+  // ---------------- retirement (UBS catalog S091, S092, S099; Doppel cards for downsizing and selling) ----------------
+  {
+    id: "retireEarly",
+    kind: "decision",
+    scenarioId: "S091",
+    group: "retirement",
+    cooldown: Infinity,
+    eligible: (s) => !s.pension && s.gross > 0 && s.age >= 55 && s.retirementAge > Math.max(60, s.age + 1),
+    params: (s) => [param("retireAge", Math.max(60, s.age + 1), "age", U, "S091 · Retire at 60")],
+    apply: (s, p) => {
+      s.retirementAge = p.retireAge;
+    },
+  },
+  {
+    id: "workLonger",
+    kind: "decision",
+    scenarioId: "S092",
+    group: "retirement",
+    cooldown: Infinity,
+    eligible: (s) => !s.pension && s.gross > 0 && s.age >= 58 && s.retirementAge < 67,
+    params: () => [param("retireAge", 67, "age", U, "S092 · Retire at 67")],
+    apply: (s, p) => {
+      s.retirementAge = p.retireAge;
+    },
+  },
+  {
+    id: "lumpSum",
+    kind: "decision",
+    scenarioId: "S099",
+    group: "retirement",
+    cooldown: Infinity,
+    eligible: (s) => !s.pension && !s.lumpSum && s.pillar2 > 0 && s.age >= s.retirementAge - 3,
+    params: (s) => [param("amount", round(s.pillar2, 1000), "chf"), param("withdrawalTax", P3A_PAYOUT_TAX, "pct")],
+    apply: (s) => {
+      s.lumpSum = true;
+    },
+  },
+  {
+    id: "workInRetirement",
+    kind: "decision",
+    scenarioId: "S092",
+    group: "retirement",
+    cooldown: Infinity,
+    eligible: (s) => !!s.pension && s.age < 72 && !s.phases.some((p) => p.kind === "retiredWork"),
+    params: () => [param("income", 1500, "chfMonth"), param("months", 36, "months")],
+    apply: (s, p) => {
+      s.phases.push({ start: 0, end: p.months, net: p.income, gross: (p.income * 12) / (1 - 0.13), bvg: false, kind: "retiredWork" });
+    },
+  },
+  {
+    id: "downsize",
+    kind: "decision",
+    scenarioId: "",
+    group: "retirement",
+    response: true,
+    cooldown: Infinity,
+    eligible: (s) => (!!s.pension || s.age >= 60) && !s.home && !s.sharedFlat && s.rent > 1200,
+    params: (s) => [param("rentShare", 0.3, "pct"), param("rentCut", round(s.rent * 0.3, 10), "chfMonth"), param("moveCost", 5000, "chf")],
+    apply: (s, p, L) => {
+      s.rent -= p.rentCut;
+      s.expenses -= p.rentCut;
+      pay(s, L, p.moveCost);
+    },
+  },
+  {
+    id: "sellHome",
+    kind: "decision",
+    scenarioId: "",
+    group: "retirement",
+    response: true,
+    cooldown: Infinity,
+    eligible: (s) => !!s.home && (!!s.pension || s.age >= 60),
+    params: (s) => {
+      const h = s.home!;
+      return [
+        param("saleProceeds", round(h.value * (1 - SALE_COSTS) - h.mortgage, 1000), "chf"),
+        param("newRent", round((h.value * RENT_YIELD) / 12, 10), "chfMonth"),
+      ];
+    },
+    apply: (s, p, L) => {
+      const h = s.home!;
+      L.add("homeValue", "sale", -h.value);
+      L.add("mortgage", "sale", -h.mortgage);
+      s.cash += p.saleProceeds;
+      L.add("cash", "sale", p.saleProceeds);
+      s.home = null;
+      s.rent = p.newRent;
+      s.expenses += p.newRent;
+    },
+  },
 ];
 
 // ---------------- Life's cards (White) ----------------
@@ -791,6 +887,17 @@ export const LIFE_CARDS: CardDef[] = [
       const lp = s.portfolio * EQUITY_WEIGHT[s.riskProfile] * p.drop;
       s.portfolio -= lp;
       L.add("portfolio", "event", -lp);
+    },
+  },
+  {
+    id: "lifeCare",
+    kind: "life",
+    scenarioId: "S100",
+    group: "life",
+    eligible: (s) => s.age >= 80,
+    params: (s, r) => [param("monthly", round(1500 * sev(r) * s.priceIndex, 10), "chfMonth")],
+    apply: (s, p) => {
+      s.expenses += p.monthly;
     },
   },
 ];
