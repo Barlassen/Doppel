@@ -27,6 +27,8 @@ State on 2026-11-22 04:30 (Europe/Zurich): `main` = `43446e8`. Contents:
 
 ## 3. Tasks for Oktay (each starts from `main`)
 
+Each task has a self-contained brief that an agent can run directly: [A](tasks/A-open-source-models.md) · [B](tasks/B-donut-pixels.md) · [C](tasks/C-judging-and-demo.md) · [D](tasks/D-smoke-wizard-import.md) · [E](tasks/E-tkt-bridge.md). Every agent reads [AGENTS.md](../AGENTS.md) first.
+
 | # | Task | Conflict risk | When |
 |---|---|---|---|
 | A | **Open-source models.** Switch `DOPPEL_TEXT_MODEL` / `DOPPEL_VISION_MODEL` defaults to open-weight models on OpenRouter (Qwen / Llama / Mistral; Qwen-VL for vision). Re-run `scripts/benchmark.ts` and `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`, then update `docs/BENCHMARK.md`, `docs/VISION_BENCHMARK.md` and the DECISIONS entry. The UBS brief asks for this explicitly. | Low: `.env.example`, `route.ts` defaults, docs | Now |

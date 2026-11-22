@@ -69,4 +69,6 @@ The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from pay
 
 All people, companies and documents in the demo are fictional.
 
+Contributors and coding agents: start with [AGENTS.md](AGENTS.md) and [docs/WORKPLAN.md](docs/WORKPLAN.md).
+
 More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
