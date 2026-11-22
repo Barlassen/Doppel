@@ -25,11 +25,22 @@ Start everything for the demo with `scripts/demo-with-tkt.ps1` (Windows) or `scr
 
 ```bash
 npm ci
-cp .env.example .env.local   # optional: OPENROUTER_API_KEY
+cp .env.example .env.local   # optional: a model endpoint (see below)
 npm run dev                  # http://localhost:3000
 ```
 
-Without a key, QR-bills, local OCR, regex extraction, the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
+**Connecting a model is optional and takes one of two forms** (all in `.env.local`, never committed):
+
+| | Set | Notes |
+|---|---|---|
+| OpenRouter (default) | `OPENROUTER_API_KEY` | Text, vision and the opt-in GPT-4o comparison work with the default models. |
+| Any OpenAI-compatible endpoint | `DOPPEL_LLM_BASE_URL`, `DOPPEL_TEXT_MODEL`, optionally `DOPPEL_LLM_API_KEY` and `DOPPEL_VISION_MODEL` | Groq, LM Studio, vLLM, or a local Ollama: `DOPPEL_LLM_BASE_URL=http://localhost:11434/v1` and `DOPPEL_TEXT_MODEL=llama3.2`, no key. A task family without a model stays offline. |
+
+`GET /api/twin` (or `twinStatus()` in `src/lib/llm.ts`) tells whether an assistant is connected: `{ configured, provider, textModel, visionModel, naiveModel }`, host and model names only. Providers without JSON mode or without usage figures work too: the gateway retries once without `response_format`, and token counts a provider does not report are estimated, labelled as estimates and kept out of the measured savings.
+
+The gateway is rate-limited (12 requests a minute per client, 60 in total) and stops spending for the day at `DOPPEL_DAILY_BUDGET_USD` (default 1) or `DOPPEL_DAILY_TOKEN_BUDGET` (default 2'000'000), whichever comes first. Behind your own reverse proxy set `DOPPEL_TRUSTED_PROXIES=1`, otherwise the client address cannot be trusted and all clients share the total. The counters live in the server process, so put a spending limit on the key itself as well. `.env.example` lists every variable.
+
+Without a model, QR-bills, local OCR, regex extraction, statement import (bank CSV, camt.053/054, MT940, broker and 3a files), the local what-if parser and the whole finance engine still work. Document extraction that would need a model falls back to local heuristics, and the banker summary uses a template. Free-form commands the local parser does not recognise need a model. The Inspector lists offline calls as `offline` and leaves them out of the savings figures.
 
 The OpenRouter defaults are Qwen3 30B A3B Instruct 2507 for text and Qwen3-VL 30B A3B Instruct for vision. To use the previous Gemini setup, set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` in `.env.local` and restart the app. The opt-in naive comparison defaults to `openai/gpt-4o`. See the [model selection and dated rates](docs/DECISIONS.md#16-open-weight-defaults-for-text-and-vision).
 
