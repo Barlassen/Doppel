@@ -137,6 +137,7 @@ Pitfalls the team already hit:
 - **Stale builds:** the smoke test runs `next start` on the existing `.next`. Rebuild after every change.
 - **Output-token caps:** model output can be cut off. Check `finish_reason`; a 320-token cap once truncated every floor-plan JSON.
 - **Live mode must not fall back to fixtures.** Record the miss.
+- **No key, no report commit.** Offline runs of `scripts/benchmark.ts` and `scripts/vision-benchmark.ts` overwrite `docs/BENCHMARK.md` and `docs/VISION_BENCHMARK.md`, which hold live measurements. Don't commit those files from an offline run.
 
 ## 6. How we work in parallel
 

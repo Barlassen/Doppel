@@ -40,6 +40,12 @@ A partial `donut.ts` was started in an old local worktree but never committed. S
 - Run live with your own key: `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`. Keep the "Live misses" section and the rule that live mode never falls back to a fixture.
 - Put new strings in the existing `vision` dictionary group, in all four languages (see `AGENTS.md` §4).
 
+## No API key? (current situation)
+Live runs need `OPENROUTER_API_KEY`. Without one:
+- Do the code part and pass all offline gates.
+- **Do not commit `docs/BENCHMARK.md` or `docs/VISION_BENCHMARK.md` regenerated offline.** The benchmark scripts overwrite these reports, and the committed versions hold real live measurements. Run `git checkout -- docs/BENCHMARK.md docs/VISION_BENCHMARK.md` before committing.
+- Write "live measurement pending: coordinator" in the PR. The coordinator merges the PR, runs the live benchmark with the key on `main`, and commits the report. A model that measures worse does not become the default.
+
 ## Stay inside
 `src/lib/snap/vision/*`, `src/components/VisionReview.tsx`, the vision tasks in `src/app/api/twin/route.ts`, `scripts/vision-benchmark.ts`, `scripts/make-vision-samples.ts`, `docs/VISION_BENCHMARK.md`, the Inspector's vision bits, and the `vision` dictionary group.
 

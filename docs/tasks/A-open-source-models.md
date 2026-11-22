@@ -19,6 +19,12 @@ UBS told teams to "use open-source LLMs (Llama, Qwen, Mistral)". Doppel currentl
    - Compare with the current Gemini numbers: accuracy, tokens, cost, latency. If an open model is clearly worse on a route, keep the better model for that route and say why.
 4. **Update the docs.** In `docs/DECISIONS.md`, add a decision entry for the model choice, with the alternatives you rejected and the measured evidence. In `README.md`, update the model names and the evidence table.
 
+## No API key? (current situation)
+Live runs need `OPENROUTER_API_KEY`. Without one:
+- Do the code part and pass all offline gates.
+- **Do not commit `docs/BENCHMARK.md` or `docs/VISION_BENCHMARK.md` regenerated offline.** The benchmark scripts overwrite these reports, and the committed versions hold real live measurements. Run `git checkout -- docs/BENCHMARK.md docs/VISION_BENCHMARK.md` before committing.
+- Write "live measurement pending: coordinator" in the PR. The coordinator merges the PR, runs the live benchmark with the key on `main`, and commits the report. A model that measures worse does not become the default.
+
 ## Done when
 - All gates in `AGENTS.md` §5 pass.
 - Both benchmark reports come from **live** runs with the new models. Misses are listed, nothing is hidden, and no fixture is presented as live.
