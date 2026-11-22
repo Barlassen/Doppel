@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { hydrateAccounts, useAccounts } from "@/lib/accounts";
 import type { Profile } from "@/lib/finance/types";
 import { type Analysis, type DepthId, type EngineSettings, reviewMove } from "@/lib/game/engine";
-import { type MoveLabel, type PresetId, type Weights, WEIGHT_PRESETS } from "@/lib/game/evaluate";
+import { type PresetId, type Weights, WEIGHT_PRESETS } from "@/lib/game/evaluate";
 import { type Game, currentPosition, isOver, legalMoves, newGame, play, truncate } from "@/lib/game/game";
 import { toRecord } from "@/lib/game/notation";
 import type { RegimeId } from "@/lib/game/regime";
@@ -85,6 +85,8 @@ export default function PlayApp() {
   const [mainLine, setMainLine] = useState<{ game: Game; from: number } | null>(null);
   const [view, setView] = useState<number | null>(null);
   const [compare, setCompare] = useState<"you" | "engine">("you");
+  /** The decision under the pointer or the focus in the card list (the board shows its move). */
+  const [previewCard, setPreviewCard] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, Analysis>>({});
   /** Luck of each move (points), by the moves that led to the position after it. */
   const [lucks, setLucks] = useState<Record<string, number>>({});
@@ -181,6 +183,7 @@ export default function PlayApp() {
       if (!game || isOver(game) || !legalMoves(game).includes(card)) return;
       setGame(play(game, card));
       setView(null);
+      setPreviewCard(null);
     },
     [game],
   );
@@ -217,12 +220,8 @@ export default function PlayApp() {
 
   const shown = view ?? (moves.length ? moves.length - 1 : null);
 
-  // The board: the same game rendered as legal chess moves; re-rendered when a review (label) arrives.
-  const labelsKey = moves.map((m) => m.review?.label ?? "").join(",");
-  const line = useMemo(
-    () => (game ? boardLine(game, labelsKey.split(",").map((l) => (l || null) as MoveLabel | null)) : null),
-    [game, labelsKey],
-  );
+  // The board: the same game rendered as legal chess moves. A review never changes a move that was played.
+  const line = useMemo(() => (game ? boardLine(game) : null), [game]);
   const sanList = useMemo(() => (line ? line.turns.map((tn) => ({ w: tn.white?.san, b: tn.black?.san })) : []), [line]);
   const liveAnalysis = live && game ? analysisAt(game.positions.length - 1) : undefined;
 
@@ -298,7 +297,6 @@ export default function PlayApp() {
         <div className="mb-5">
           <div className="label mb-1">{t("play.kicker")}</div>
           <h1 className="font-serif text-3xl leading-tight sm:text-4xl">{t("play.title")}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-ink-2">{t("play.subtitle")}</p>
           <Disclosure summary={t("play.how.summary")} className="mt-3">
             <ul className="max-w-3xl list-disc space-y-1.5 pl-5 text-sm text-ink-2">
               <li>{t("play.how.turn")}</li>
@@ -308,8 +306,8 @@ export default function PlayApp() {
               <li>{t("play.how.rules")}</li>
               <li>{t("play.how.advice")}</li>
             </ul>
-            <p className="mt-2 text-xs text-ink-3">{t("play.keys")}</p>
           </Disclosure>
+          <p className="mt-2 text-xs text-ink-3">{t("play.keys")}</p>
         </div>
 
         <SetupPanel
@@ -346,6 +344,7 @@ export default function PlayApp() {
                     hand={hand}
                     seed={game.settings.seed}
                     onPlay={onPlay}
+                    preview={view === null ? previewCard : null}
                   />
                 )}
                 <EvalCard
@@ -377,6 +376,7 @@ export default function PlayApp() {
                   onWhatIf={(card) => view !== null && whatIf(view, card)}
                   over={over && view === null}
                   thinking={view === null && !liveAnalysis && !over}
+                  onPreview={setPreviewCard}
                 />
               </div>
               <div className="space-y-4 lg:col-span-5">
