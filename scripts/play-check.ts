@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { PROFILES } from "../src/lib/data/profiles";
 import { simulate, type SimInput } from "../src/lib/game/sim";
 import { simulate as dashboardSimulate } from "../src/lib/finance/monteCarlo";
-import type { Profile } from "../src/lib/finance/types";
+import type { LifeEvent, Profile } from "../src/lib/finance/types";
 import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
 import { analyse, bruteForce, reviewMove, treeTurns, turnLuck, type Analysis } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
@@ -23,7 +23,8 @@ import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game,
 import { holdLine, rateGame } from "../src/lib/game/rating";
 import { FI_THRESHOLD, fiProbability } from "../src/lib/game/independence";
 import { replay, toRecord } from "../src/lib/game/notation";
-import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime, uniform } from "../src/lib/game/regime";
+import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, simAssumptions, type Regime, uniform } from "../src/lib/game/regime";
+import { BASELINE } from "../src/lib/finance/params";
 import { accountOpening, ubsOpening, withFiGoal } from "../src/lib/game/start";
 import { type GameState, initialState, ledgerError, netWorth, stepYear, targetAt, toSimInput, monthlyOutflow, pensionNet } from "../src/lib/game/state";
 import { ALEXIA_ID, listUbsProfiles, loadUbsProfile } from "../src/lib/ubs";
@@ -108,12 +109,45 @@ async function auditChecks(alexia: GameState, S: GameSettings) {
     cases.push(["a home purchase with other loans", { profile: { ...indebted, cash: 400_000 }, events: [{ id: "h", type: "house", label: "Home", month: 18, amount: 700_000 }], paths: 200, seed: 10, horizon: "goal" }]);
     cases.push(["dashboard cash-flow phases", { profile: b, events: [], paths: 200, seed: 11, horizon: "goal", phases: [{ startMonth: 0, endMonth: 24, netIncomeMonth: 1800, expensesMonth: 2100, grossIncomeYear: 24_000, bvgInsured: false }, { startMonth: 24, endMonth: 60, netIncomeMonth: 5200, expensesMonth: 3100, grossIncomeYear: 78_000 }] }]);
     cases.push(["accounting mode with a trace", { profile: indebted, events: [], paths: 2, seed: 12, horizon: "goal", accounting: true, trace: true }]);
+    // The engine's life decisions, economic scenarios and budget detail (merged 2026-11-22).
+    const ev = (id: string, type: LifeEvent["type"], month: number, decision: LifeEvent["decision"], amount = 0): LifeEvent => ({ id, type, label: id, month, amount, decision });
+    const family: LifeEvent[] = [
+      ev("kid", "child", 14, { kind: "child", kitaDaysPerWeek: 2 }),
+      ev("kid2", "child", 50, { kind: "child", tertiaryTrack: "university" }),
+      ev("car", "expense", 6, { kind: "car", mode: "owned" }, 45_000),
+      ev("partner", "income", 10, { kind: "partner", married: true, netIncomeMonth: 4200, expensesMonth: 1500, rentMonth: 2400 }),
+    ];
+    const career: LifeEvent[] = [
+      ev("lease", "expense", 3, { kind: "car", mode: "leased", leaseMonthly: 450 }),
+      ev("move", "expense", 20, { kind: "move", canton: "ZG", rentMonth: 2100, movingCost: 4000 }),
+      ev("master", "expense", 30, { kind: "education", program: "master", workloadPct: 50, raiseAfterYear: 9000 }),
+      ev("eighty", "raise", 70, { kind: "workload", percent: 80, durationMonths: 24 }),
+      ev("self", "raise", 110, { kind: "selfEmployed", netIncomeMonth: 6000, incomeVolatility: 0.25, durationMonths: 60 }),
+      { id: "bonus", type: "income", label: "Bonus", month: 9, amount: 8000 },
+      { id: "fee", type: "expense", label: "Fee", month: 15, amount: 3000, nominal: true },
+    ];
+    cases.push(["life decisions: children, a car, a partner", { profile: b, events: family, paths: 150, seed: 13, horizon: "full" }]);
+    cases.push(["life decisions: lease, move, master's, 80%, self-employed, one-offs", { profile: PROFILES[1], events: career, paths: 150, seed: 14, horizon: "full" }]);
+    cases.push(["budget detail with decisions", { profile: b, events: family, paths: 60, seed: 15, horizon: "goal", detail: true }]);
+    for (const economy of ["high_inflation", "recession", "low_rates", "climate_transition"] as const) cases.push([`economy ${economy}`, { profile: PROFILES[1], events: PROFILES[1].events, paths: 120, seed: 16, horizon: "full", economy }]);
+    cases.push(["a custom economy with a home purchase", { profile: { ...indebted, cash: 400_000 }, events: [{ id: "h", type: "house", label: "Home", month: 30, amount: 700_000 }], paths: 120, seed: 17, horizon: "goal", economy: { id: "mine", label: { key: "economy.name.high_inflation" }, summary: { key: "economy.summary.baseline" }, phases: [{ years: 4, label: { key: "economy.phase.high" }, regime: { inflation: 0.03, wageGrowth: 0.02, mortgageRate: 0.04, jobLossRisk: 0.05 }, equityShock: -0.2, sources: [] }] } }]);
+    cases.push(["a fractional age and an invalid path count", { profile: { ...b, age: b.age + 0.4 }, events: [], paths: 77.6, seed: 18, horizon: "goal" }]);
     const differing = cases.filter(([, input]) => comparable(simulate(input)) !== comparable(dashboardSimulate(input))).map(([name]) => name);
     check(
       "simulator parity: without game extensions the game's simulator returns exactly the dashboard engine's result",
       differing.length === 0,
-      differing.length ? `DIFFERENT: ${differing.join("; ")} — mirror the change of src/lib/finance/monteCarlo.ts in src/lib/game/sim.ts` : `${cases.length} runs identical (built-ins, Alexia, loans, no pension fund, retired, behaviour, optimiser, home, phases, accounting)`,
+      differing.length ? `DIFFERENT: ${differing.join("; ")} — mirror the change of src/lib/finance/monteCarlo.ts in src/lib/game/sim.ts` : `${cases.length} runs identical (built-ins, Alexia, loans, no pension fund, retired, behaviour, optimiser, home, phases, accounting, life decisions, economic scenarios, budget detail)`,
     );
+
+    // The game's "normal" regime is the engine's baseline table: same numbers, and the same simulation result.
+    const n = REGIME.normal;
+    const table =
+      n.equity.mu === BASELINE.equityMu.value && n.equity.sigma === BASELINE.equitySigma.value && n.bonds.mu === BASELINE.bondMu.value && n.bonds.sigma === BASELINE.bondSigma.value &&
+      n.home.mu === BASELINE.homeMu.value && n.home.sigma === BASELINE.homeSigma.value && n.inflation === BASELINE.inflation.value && n.wageGrowth === BASELINE.wageGrowth.value;
+    const plain: SimInput = { profile: b, events: b.events, paths: 200, seed: 21, horizon: "full" };
+    const sameRun = comparable(simulate({ ...plain, assumptions: simAssumptions(n) })) === comparable(dashboardSimulate(plain));
+    const stressDiffers = comparable(simulate({ ...plain, assumptions: simAssumptions(REGIME.stress) })) !== comparable(dashboardSimulate(plain));
+    check("regime: \"normal\" reads the engine's baseline table and simulates exactly like the dashboard's baseline economy", table && sameRun && stressDiffers, `equity ${n.equity.mu}/${n.equity.sigma} · bonds ${n.bonds.mu}/${n.bonds.sigma} · home ${n.home.mu}/${n.home.sigma} · inflation ${n.inflation} · wages ${n.wageGrowth} · identical run: ${sameRun}`);
   }
 
   // ---------- A2. retirees: the stepper and the simulator agree; the three stepper conventions are the only gap ----------

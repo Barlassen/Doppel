@@ -24,7 +24,7 @@ import {
 } from "@/lib/finance/pension";
 import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "@/lib/finance/canton";
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
-import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX } from "@/lib/finance/swissRules";
+import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX, PILLAR_3A_MAX_NO_PENSION_FUND, PILLAR_3A_NO_PENSION_FUND_SHARE } from "@/lib/finance/swissRules";
 import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
 import type { IncomePhase, PlayConventions, SimInput } from "./sim";
 import { DEFAULT_LOAN_TERM_MONTHS, annuityPayment } from "@/lib/finance/debt";
@@ -506,17 +506,18 @@ export function initialState(p: Profile, o: StartOptions): GameState {
  * remaining months, the goal is the glide-path target at the horizon (in this year's CHF).
  */
 /** The stepper's bookkeeping rules, which the game's rollouts follow (see `PlayConventions` in sim.ts). */
-export const PLAY_CONVENTIONS: PlayConventions = { premiumYearly: true, annuityNotCapital: true, crunchWhenRetired: true };
+export const PLAY_CONVENTIONS: PlayConventions = { premiumYearly: true, annuityNotCapital: true, crunchWhenRetired: true, priceLevel: 1 };
 
 export function toSimInput(s: GameState, horizonAge: number, regime: Regime, paths: number, seed: number): SimInput {
   const target = targetAt(s, horizonAge) * s.priceIndex;
   const events: LifeEvent[] = s.oneOffs
     .filter((o) => o.month >= 0)
-    .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount }));
+    // The game schedules one-offs in the CHF of their date (`nominal`), as `stepYear` pays them.
+    .map((o, i) => ({ id: "oneoff-" + i, type: "expense", label: "One-off", month: o.month, amount: o.amount, nominal: true }));
   // Work in retirement: the simulator pays pensions only once retired, so the extra pay goes in as monthly income.
   if (s.pension) {
     for (const ph of s.phases.filter((p) => p.kind === "retiredWork")) {
-      for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net });
+      for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net, nominal: true });
     }
   }
   const phases: IncomePhase[] = s.phases.map((p) => ({
@@ -570,7 +571,7 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     assumptions: simAssumptions(regime),
     shocks: regime.shocks,
     incomePhases: phases,
-    conventions: PLAY_CONVENTIONS,
+    conventions: { ...PLAY_CONVENTIONS, priceLevel: s.priceIndex },
     home: s.home ? { value: s.home.value, mortgage: s.home.mortgage, floor: s.home.floor, rate: s.home.rate } : undefined,
     debts: s.debts.map((d) => ({ principal: d.principal, rate: d.rate, monthlyPayment: d.monthlyPayment, startMonth: d.startMonth })),
   };
@@ -672,7 +673,8 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
 
     // --- income and spending ---
     const inc = incomeAt(s, m);
-    const income = retired ? inc.net : inc.net * wage;
+    // Income cannot fall below zero (the engine's rule for a pay cut).
+    const income = Math.max(0, retired ? inc.net : inc.net * wage);
     s.cash += income;
     L.add("cash", "income", income);
     const living = livingAt(s, m) * price;
@@ -727,7 +729,13 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
         surplus -= order;
       }
       if (s.contributes3a && !s.abroad && inc.gross > 0 && surplus > 0) {
-        const c = Math.min(PILLAR_3A_MAX / 12, surplus);
+        // The ceiling of the year in the CHF of its date (the engine's rule): with a pension fund the small one;
+        // without, 20% of earned income after social deductions, up to the large one.
+        const level = s.priceIndex * price;
+        const cap = inc.bvg
+          ? PILLAR_3A_MAX * level
+          : Math.min(PILLAR_3A_MAX_NO_PENSION_FUND * level, PILLAR_3A_NO_PENSION_FUND_SHARE * inc.gross * wage * (1 - SOCIAL_DEDUCTIONS));
+        const c = Math.min(cap / 12, surplus);
         L.move("cash", "pillar3a", "contribution", c);
         s.cash -= c;
         s.pillar3a += c;
