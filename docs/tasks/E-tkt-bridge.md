@@ -6,15 +6,13 @@ Read `AGENTS.md` here and TKT's own `AGENTS.md`, `README.md` and `docs/plan/*` f
 ## Idea
 "Your financial twin on the desk." TKT turns a desk-facing camera into a touchpad: hand tracking, thumb click and drag, two-finger scroll, and three- or four-finger shortcuts. Doppel's `/play` life game and dashboard become playable by hand, and documents placed on the desk can be captured by the same camera.
 
-## Level 1: no TKT code changes
-TKT already sends OS mouse and keyboard input.
-- On the Doppel side, `/play` gets keyboard shortcuts and large targets (planned in `docs/PLAY.md` §11):
-  - ←/→: step through moves
-  - 1–4: pick a card
-  - H: hold
-  - Tab: compare lines
-- Map TKT's three- and four-finger shortcuts to these keys in TKT's existing shortcut config. Two-finger scroll scrolls the timeline.
-- Deliverable: a short `docs/TKT.md` in Doppel with the mapping table and a 30-second demo flow.
+## Level 0: works today, no code changes
+TKT drives the OS mouse and keyboard, so pointer, thumb click and two-finger scroll already control Doppel in the browser: tap a ringed piece, pick a decision, scroll to the review. `scripts/demo-with-tkt.ps1` / `.sh` start both; `docs/TKT.md` has the mapping and a 30-second demo.
+
+## Level 1: gestures as Doppel shortcuts (TKT change, owner's approval)
+- `/play` already has the keys: ←/→ step through moves, 1–4 pick a card, H hold, Tab compare lines.
+- **Correction (checked 2026-11-22):** TKT has no configurable shortcut map. Swipes are hard-wired to OS actions (`desktop_left`, `desktop_right`, `mission_control` in `src/tkt/control/gestures.py`). Sending ←/→/Tab while the Doppel window is in front needs a change in TKT's `app`/`control` layer and new config keys, which TKT's rules reserve for the owner's approval.
+- Deliverable: the TKT PR, and the mapping table in `docs/TKT.md` updated with the final gesture names.
 
 ## Level 2: a local bridge (TKT PR, needs approval)
 - **Event stream.** TKT's `app` layer publishes a versioned JSON event stream on localhost. Use the Python standard library only, e.g. Server-Sent Events over `http.server` / `asyncio`, because TKT's rules forbid new dependencies without approval. Events carry gesture semantics:
