@@ -80,7 +80,15 @@ function enableTestSpeech(context) {
   });
 }
 
+/** Document photos are the secondary entry of the statement card: open "Other documents" when it is closed. */
+async function openOtherDocs(page) {
+  const docs = page.getByTestId("other-docs");
+  await docs.waitFor();
+  if (!(await docs.evaluate((el) => el.open))) await docs.locator("summary").click();
+}
+
 async function scan(page, sample) {
+  await openOtherDocs(page);
   await page.getByRole("button", { name: sample, exact: true }).click();
   const card = page.getByRole("form", { name: "Review scan" });
   await card.waitFor({ timeout: 45_000 });
@@ -98,6 +106,7 @@ async function scan(page, sample) {
 
 async function uploadReceipt(page, locale) {
   const L = (key, params) => translate(locale, key, params);
+  await openOtherDocs(page);
   const filePicker = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: L("snap.uploadAria") }).click();
   await (await filePicker).setFiles("public/samples/receipt-market.svg");
@@ -478,11 +487,11 @@ try {
   ];
   for (const { name, code, tag, percent } of localeCases) {
     const L = (key, params) => translate(code, key, params);
-    const language = page.getByRole("button", { name });
-    await language.focus();
-    await language.press("Enter");
+    const language = page.getByTestId("lang-select");
+    assert.equal(await language.locator(`option[value="${code}"]`).getAttribute("aria-label"), name);
+    await language.selectOption(code);
     await page.waitForFunction((lang) => document.documentElement.lang === lang, tag);
-    assert.equal(await language.getAttribute("aria-pressed"), "true");
+    assert.equal(await language.inputValue(), code);
     assert.equal(await page.evaluate(() => localStorage.getItem("doppel:locale")), code);
     const headline = await page.locator("h1 .num").textContent();
     assert.ok(code === "tr" ? headline.startsWith(percent) : headline.endsWith(percent), headline);
@@ -680,6 +689,95 @@ try {
     await playPage.getByRole("button", { name: "Dictate your what-if" }).waitFor();
     await play.close();
     console.log("Doppel Play: two moves reviewed (" + first + "), branch and return to the main line, nav back to the dashboard passed at 320px");
+  }
+
+
+  // Dashboard UX: 320px header in every language, the statement-first card, the chart reading, the wizard and delete.
+  {
+    const ux = await browser.newContext({ locale: "en-US", viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+    const uxPage = await ux.newPage();
+    uxPage.on("pageerror", (error) => errors.push(error.message));
+    trackHydration(uxPage, errors);
+    await visit(uxPage);
+    const U = (key, params) => translate("en", key, params);
+
+    // Header: the Play link stays reachable (nothing lies on top of it) and the logo keeps its size, in each language.
+    for (const code of ["de", "fr", "tr", "en"]) {
+      await uxPage.getByTestId("lang-select").selectOption(code);
+      await uxPage.waitForFunction((lang) => localStorage.getItem("doppel:locale") === lang, code);
+      const header = await uxPage.evaluate(() => {
+        const link = document.querySelector('header a[href="/play"]');
+        const box = link.getBoundingClientRect();
+        const hit = [box.left + 3, (box.left + box.right) / 2, box.right - 3].every((x) => document.elementFromPoint(x, box.top + box.height / 2) === link);
+        return { hit, logo: Math.round(document.querySelector("header span[aria-hidden]").getBoundingClientRect().width) };
+      });
+      assert.deepEqual(header, { hit: true, logo: 28 }, code);
+      await assertNoOverflow(uxPage);
+    }
+    assert.equal(await uxPage.title(), U("ux.docTitle"));
+
+    // Statement first: the upload is the first data action, document photos are collapsed below it.
+    const statement = uxPage.getByTestId("statement-card");
+    await statement.getByRole("button", { name: U("data.chooseFile") }).waitFor();
+    assert.equal(await statement.getByTestId("other-docs").evaluate((el) => el.open), false);
+    const learned = statement.getByTestId("learned");
+    assert.ok((await learned.locator("[data-learned]").count()) >= 4);
+    await statement.getByTestId("statement-samples").locator("summary").click();
+    await statement.getByRole("button", { name: U("data.sampleAria", { account: "Meriç", provider: "PostFinance", format: "camt.053" }) }).click();
+    const review = statement.getByRole("form", { name: U("data.reviewAria") });
+    await review.getByRole("button", { name: U("data.confirm", { count: 220 }) }).waitFor({ timeout: 30_000 });
+    const merchantWidth = await review.getByTestId("import-rows").locator("li span[title]").first().evaluate((el) => el.getBoundingClientRect().width);
+    assert.ok(merchantWidth > 60, `merchant column is ${merchantWidth}px wide`);
+    await assertNoOverflow(uxPage);
+    await review.getByRole("button", { name: U("data.confirm", { count: 220 }) }).click();
+    await learned.getByText(U("ux.learned.basisTrades", { transactions: 336, trades: 12, months: 5 })).waitFor();
+    await assertNoOverflow(uxPage);
+
+    // Chart: a text alternative, a plain-language reading, and the before line once a what-if is applied.
+    const chart = uxPage.getByTestId("cone-chart");
+    assert.equal(await chart.getAttribute("role"), "img");
+    assert.ok((await chart.getAttribute("aria-label")).length > 80);
+    const linesBefore = await uxPage.getByTestId("chart-reading").locator("li").count();
+    assert.ok(linesBefore >= 3);
+    assert.equal(await uxPage.getByRole("button", { name: U("cmd.examples.delay"), exact: true }).count(), 0, "no home on the timeline: the delay example is hidden");
+    await uxPage.getByRole("button", { name: U("cmd.examples.crash"), exact: true }).click();
+    await uxPage.getByTestId("chart-before").waitFor();
+    assert.equal(await uxPage.getByTestId("chart-reading").locator("li").count(), linesBefore + 1);
+    await uxPage.getByRole("textbox", { name: U("cmd.inputAria") }).fill("retire at 30");
+    await uxPage.keyboard.press("Enter");
+    await uxPage.getByText(U("ux.cmdRetireRange", { min: 55, max: 70 })).waitFor();
+    await assertNoOverflow(uxPage);
+
+    // Wizard: a validation message instead of a dead button, the statement step, then the review of that statement.
+    const switcherOf = (name) => uxPage.getByRole("button", { name: U("header.switchAria", { name }) });
+    await switcherOf("Barlas").click();
+    await uxPage.getByRole("menuitem", { name: U("data.newAccount") }).click();
+    const wizard = uxPage.getByRole("dialog", { name: U("data.wizardTitle") });
+    await wizard.getByTestId("wizard-next").click();
+    await wizard.getByText(U("ux.wiz.errName")).waitFor();
+    await wizard.getByLabel(U("data.wizardName")).fill("Smoke Test");
+    await wizard.getByTestId("wizard-next").click();
+    await wizard.getByRole("button", { name: /PostFinance/ }).click();
+    await wizard.getByTestId("wizard-facts").waitFor({ timeout: 20_000 });
+    await assertNoOverflow(uxPage);
+    for (let step = 0; step < 5; step++) await wizard.getByTestId("wizard-next").click();
+    await wizard.getByTestId("wizard-summary").waitFor();
+    await wizard.getByRole("button", { name: U("ux.wiz.createAndReview") }).click();
+    await switcherOf("Smoke Test").waitFor();
+    await uxPage.getByTestId("statement-card").getByRole("form", { name: U("data.reviewAria") }).waitFor({ timeout: 30_000 });
+    assert.equal(await uxPage.evaluate(() => document.activeElement?.closest("[data-testid=statement-card]") !== null), true);
+
+    // Delete asks once more, then focus is back on the account button.
+    await switcherOf("Smoke Test").click();
+    const remove = uxPage.getByTestId("delete-account");
+    await remove.click();
+    await remove.getByText(U("ux.confirmDelete", { name: "Smoke Test" })).waitFor();
+    await switcherOf("Smoke Test").waitFor();
+    await remove.click();
+    await switcherOf("Barlas").waitFor();
+    assert.equal(await uxPage.evaluate(() => document.activeElement?.getAttribute("aria-haspopup")), "menu");
+    await ux.close();
+    console.log("Dashboard UX: 320px header in four languages, statement-first card and review, chart reading, wizard validation + statement step, and confirmed delete passed");
   }
 
   assert.deepEqual(errors, []);
