@@ -15,6 +15,7 @@
  */
 import type { RiskProfile } from "@/lib/finance/types";
 import type { Op } from "../actions";
+import { lifeOps, type LifeVocab } from "./life";
 import { AMOUNT, amountValue, eventLabel, largestAmountAbove, monthOfYear, normalizeText, yearIn, type IntentContext, type IntentParser } from "./shared";
 
 const re = (s: string) => new RegExp(s, "u");
@@ -182,7 +183,50 @@ function homeShift(t: string): number | undefined {
   return s ? -months(s[1], s[2]) : undefined;
 }
 
-function parse({ text, house, now, retirementAge: base }: IntentContext): Op[] {
+/** Life decisions and economic scenarios (see `life.ts`); patterns run on the prepared (folded, suffix-free) text. */
+const LIFE: LifeVocab = {
+  perMonth: PER_MONTH,
+  // Turkish marks the price with a case suffix, not a preposition: the largest amount of the sentence is used.
+  forAmount: String.raw`(?!)`,
+  car: /(?<![\p{L}])(?:araba\p{L}*|otomobil\p{L}*|tesla|motosiklet\p{L}*|arac(?:i|imi|im)?(?![\p{L}]))/u,
+  lease: /leasing|kirala\p{L}*/u,
+  buy: /(?<![\p{L}])(?:satin\s+)?al(?:sam|sak|irsam|irsak|mak|ayim|alim|acag\p{L}*|in|ir|im|iyorum|iyoruz)?(?![\p{L}])|edin\p{L}*/u,
+  ga: /(?<![\p{L}])ga(?![\p{L}])|generalabo\p{L}*|genel\s+abonman\p{L}*/u,
+  home: re(HOUSE),
+  child: re(`bebe|cocug|cocuk|dogum|hamile|ebeveyn|${W}(?:anne|baba)\\s+ol`),
+  university: /universite\p{L}*|(?<![\p{L}])(?:eth|epfl)(?![\p{L}])|oku(?:rsa|sa|yacak|sun)\p{L}*/u,
+  apprenticeship: /cirak\p{L}*|meslek\s+egitim\p{L}*/u,
+  kitaDays: /(\d)\s*gun\p{L}*\s+(?:\p{L}+\s+)?(?:kres|yuva|kita|anaokul)\p{L}*/u,
+  workload: /(?:%|yuzde)\s*(\d{1,3})\s+(?:\p{L}+\s+)?(?:calis|is|mesai|part|yari)\p{L}*|(\d{1,3})\s*%\s*calis\p{L}*/u,
+  halfTime: /yari\s+zamanli/,
+  sabbatical: /sabbatical|ucretsiz\s+izin\p{L}*|kariyer\s+molasi|is\p{L}*\s+ara\s+ver\p{L}*/u,
+  forMonths: /(?<![\d.,])(\d{1,2})\s*ay(?:lik|ligina)?(?![\p{L}])(?!\s+(?:sonra|icinde|icerisinde))/u,
+  forYears: /(?<![\d.,])(\d(?:[.,]5)?)\s*(?:yil|sene)(?:lik|ligina)?(?![\p{L}])(?!\s+(?:sonra|icinde|icerisinde))/u,
+  moveTo: /(?<![\p{L}])((?:St\.\s+)?\p{Lu}[\p{L}.-]+?)['’]?(?:y?[aeAE])\s+ta[sşSŞ][ıiIİ]n/u,
+  move: /tasin\p{L}*/u,
+  rent: String.raw`(?<![\p{L}])kira(?:si|yi|m)?\s+(?:\p{L}+\s+)?`,
+  marry: /evlen\p{L}*|dugun\p{L}*|nikah\p{L}*/u,
+  partner: /birlikte\s+yasa\p{L}*|beraber\s+yasa\p{L}*|ayni\s+eve\s+(?:cik|tasin)\p{L}*/u,
+  partnerEarns: String.raw`(?<![\p{L}])(?:es(?:im|i|imin)|partner\p{L}*|karim|kocam|sevgili\p{L}*)\s+(?:\p{L}+\s+)?`,
+  master: /master\p{L}*|yuksek\s+lisans\p{L}*|(?<![\p{L}])mba(?![\p{L}])/u,
+  bachelor: /(?<!yuksek\s)(?<![\p{L}])lisans\p{L}*|bachelor/u,
+  education: /doktora\p{L}*|egitime\s+don\p{L}*|okula\s+don\p{L}*/u,
+  fullTime: /tam\s+zamanli/,
+  selfEmployed: /serbest\s+calis\p{L}*|kendi\s+is(?:imi|ini|imizi)|sirket\s+kur\p{L}*|freelanc\p{L}*|serbest\s+meslek/u,
+  earning: String.raw`(?!)`,
+  inherit: /miras\p{L}*|ikramiye\p{L}*|piyango\p{L}*/u,
+  heatPump: /isi\s+pompa\p{L}*/u,
+  economy: {
+    high_inflation: /yuksek\s+enflasyon|enflasyon\p{L}*\s+yuksek\s+kal\p{L}*|enflasyon\p{L}*\s+(?:artar|artarsa|yukselir|yukselirse|patlar|patlarsa|firlarsa)|faiz\p{L}*\s+(?:artar|artarsa|yukselir|yukselirse|cikarsa)/u,
+    recession: /resesyon\s+senaryo\p{L}*|ekonomik\s+kriz\s+senaryo\p{L}*/u,
+    low_rates: /dusuk\s+faiz\p{L}*|negatif\s+faiz\p{L}*|sifir\s+faiz\p{L}*/u,
+    climate_transition: /iklim\s+(?:senaryo|gecis|stres|sok)\p{L}*/u,
+    baseline: /temel\s+senaryo\p{L}*/u,
+  },
+};
+
+function parse(ctx: IntentContext): Op[] {
+  const { text, house, now, retirementAge: base } = ctx;
   const t = prepare(text);
   const when = monthFrom(t, now);
   const ops: Op[] = [];
@@ -226,13 +270,8 @@ function parse({ text, house, now, retirementAge: base }: IntentContext): Op[] {
   }
 
   // seneye borsa çökerse · piyasalar %30 düşerse · ekonomik kriz · resesyon · ayı piyasası
-  if (re(`(?:borsa|piyasa|hisse)\\p{L}*\\s+(?:\\S+\\s+){0,2}?(?:cok(?:er|se|me|tu|us|ecek)|dus(?:er|se|me|tu|us|ecek)|cak(?:il|ar))|cokus|resesyon|kriz|crash|krach|ayi\\s+piyasa`).test(t)) {
+  if (re(`(?:borsa|piyasa|hisse)\\p{L}*\\s+(?:\\S+\\s+){0,2}?(?:cok(?:er|se|me|tu|us|ecek)|dus(?:er|se|me|tu|us|ecek)|cak(?:il|ar))|cokus|resesyon|kriz|crash|krach|ayi\\s+piyasa`).test(t) && !/senaryo/.test(t)) {
     ops.push({ op: "add", type: "crash", ...eventLabel({ key: "event.crash" }), month: when ?? 12, amount: 0 });
-  }
-
-  // 2028'de bebeğimiz olursa · çocuğumuz olacak · hamile kalırsam · baba olsam · çocuk yapsak
-  if (re(`bebe|cocug|cocuk|dogum|hamile|ebeveyn|${W}(?:anne|baba)\\s+ol`).test(t)) {
-    ops.push({ op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: when ?? 18, amount: 1500, duration: 216 });
   }
 
   // yılda 10 bin zam · maaşıma 10 bin zam gelirse · terfi
@@ -240,6 +279,8 @@ function parse({ text, house, now, retirementAge: base }: IntentContext): Op[] {
   const raise = t.match(re(`(?:${zam}|terfi|maas\\s+artisi)\\D{0,20}${AMT}`)) ?? t.match(re(`${AMT}\\s*(?:\\p{L}+\\s+)?${zam}`));
   if (raise) ops.push({ op: "add", type: "raise", ...eventLabel({ key: "event.raise" }), month: when ?? 6, amount: amountValue(raise[1], raise[2]) });
 
+  // çocuk, araba, çalışma oranı, taşınma, evlilik, eğitim, serbest çalışma, miras, ekonomi senaryosu
+  ops.push(...lifeOps(LIFE, t, ctx, when, ops));
   return ops;
 }
 
