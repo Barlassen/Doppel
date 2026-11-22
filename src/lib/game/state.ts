@@ -22,7 +22,8 @@ import {
   coordinatedSalary,
   effectiveTaxRate,
 } from "@/lib/finance/pension";
-import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "@/lib/finance/canton";
+import { HEALTH_EXCESS_GROWTH, cantonMarginalRate } from "@/lib/finance/canton";
+import { healthPremiumOf } from "@/lib/finance/investBehavior";
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
 import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX, PILLAR_3A_MAX_NO_PENSION_FUND, PILLAR_3A_NO_PENSION_FUND_SHARE } from "@/lib/finance/swissRules";
 import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
@@ -494,7 +495,8 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     gross: p.grossIncomeYear,
     net: p.netIncomeMonth,
     expenses: p.expensesMonth,
-    healthPremium: p.healthPremiumMonth ?? defaultHealthPremium(p),
+    // The engine's one rule for the premium: the profile's, else what its statements show, else the canton's mean.
+    healthPremium: healthPremiumOf(p).value,
     rent: p.rentMonth,
     expenseDelta: 0,
     phases: [],

@@ -301,3 +301,9 @@ Deliberate differences inside the two shared models:
 - **No pay cut during parental leave.** The old card had one (three months at 80%); the engine has none, so the card has none.
 - **The car loan is the game's.** If cash is short the card takes a 48-month loan at 6.9%; the dashboard has no car loan and shows a cash crunch instead. The comparison in the check pays cash.
 - **Selling the car** ends its costs and the planned replacements; the engine has no such decision.
+
+### 21.4 Engine round 2 and the plan behind a move
+
+- **Simulator:** re-forked again after the engine's car loan, the crash reaction on its own coin and `healthPremiumOf()`; an opening uses the same premium rule (the profile's, else its statements', else the canton's mean). Parity holds on the same 29 runs.
+- **The move after next is chosen on paired futures.** The search proposes continuations; its statistics for two second replies come from different futures and cannot separate plans that differ by a fraction of a point. A weaker plan for the best move then made every other move look better (all losses of a position moved by 0.25 points between sets of futures). Now the two most visited second replies are compared on the same futures (an eighth of them) before the full scoring, and the proposal search runs on half the futures, so the cost is unchanged.
+- **The stability check states its rule:** on 8 sets of futures the best move is the same, no loss varies by more than 0.15 points, and every move whose graded loss is further than 0.15 from a threshold keeps its label. A move closer to a threshold than that is listed, not asserted.

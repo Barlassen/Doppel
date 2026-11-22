@@ -20,7 +20,7 @@ import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand, type CardPa
 import { outlook } from "../src/lib/finance/outlook";
 import { baseScenario } from "../src/lib/finance/scenario";
 import { analyse, bruteForce, reviewMove, treeTurns, turnLuck, type Analysis } from "../src/lib/game/engine";
-import { WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
+import { LABEL_CONFIDENCE, LABEL_THRESHOLDS, WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
 import { FI_THRESHOLD, fiProbability } from "../src/lib/game/independence";
@@ -277,33 +277,58 @@ async function auditChecks(alexia: GameState, S: GameSettings) {
       labelFor(0.03, false, false, 5) === "best" && labelFor(9, false, false, 0.4) === "blunder" && labelFor(0, true, false) === "brilliant";
     check("labels: a harsher label needs the loss to clear its threshold by two standard errors", unit, `2.5 ± 0 → ${labelFor(2.5, false, false)} · 2.5 ± 0.5 → ${labelFor(2.5, false, false, 0.5)} · 0.6 ± 0.2 → ${labelFor(0.6, false, false, 0.2)}`);
 
-    let g = newGame(accountOpening(PROFILES[0]), S);
-    for (let k = 0; k < 3; k++) g = advance(g, "hold");
-    const pos = currentPosition(g);
-    const cands = legalMoves(g);
-    const labels = new Map<string, Set<string>>();
-    const losses = new Map<string, number[]>();
-    const ses = new Map<string, number[]>();
-    const bests = new Set<string>();
-    for (let seed = 1; seed <= 8; seed++) {
-      const a = analyse(pos, S, { sampleSeed: seed });
-      bests.add(a.best);
-      for (const c of cands) {
-        const r = reviewMove(a, c);
-        labels.set(c, (labels.get(c) ?? new Set()).add(r.label));
-        losses.set(c, [...(losses.get(c) ?? []), r.loss]);
-        ses.set(c, [...(ses.get(c) ?? []), r.lossSe]);
+    // The rule of this check (it does not depend on where a persona's numbers happen to fall):
+    //  1. on 8 different sets of futures the best move is the same and no move's loss varies by more than
+    //     RESOLUTION points (before the engine compared continuations on paired futures, a different plan for the
+    //     best move shifted every loss of a position by 0.25 points);
+    //  2. every move whose graded loss (loss − 2 standard errors) is at least RESOLUTION away from the nearest
+    //     label threshold gets the same label on all 8. A move nearer to a threshold than the estimate can
+    //     resolve may get either neighbouring label; it is listed, not asserted.
+    // Positions: the fourth year of the first two built-in accounts after three holds (no hand-picking).
+    const RESOLUTION = 0.15;
+    const thresholds = [LABEL_THRESHOLDS.good, LABEL_THRESHOLDS.inaccuracy, LABEL_THRESHOLDS.mistake];
+    const rows: string[] = [];
+    let ok = true;
+    let asserted = 0;
+    for (const profile of PROFILES.slice(0, 2)) {
+      let g = newGame(accountOpening(profile), S);
+      for (let k = 0; k < 3; k++) g = advance(g, "hold");
+      const pos = currentPosition(g);
+      const cands = legalMoves(g);
+      const seen = new Map<string, { labels: Set<string>; loss: number[]; graded: number[]; se: number[] }>();
+      const bests = new Set<string>();
+      for (let seed = 1; seed <= 8; seed++) {
+        const a = analyse(pos, S, { sampleSeed: seed });
+        bests.add(a.best);
+        for (const c of cands) {
+          const r = reviewMove(a, c);
+          const x = seen.get(c) ?? { labels: new Set<string>(), loss: [], graded: [], se: [] };
+          x.labels.add(r.label);
+          x.loss.push(r.loss);
+          x.graded.push(r.loss - LABEL_CONFIDENCE * r.lossSe);
+          x.se.push(r.lossSe);
+          seen.set(c, x);
+        }
       }
+      ok &&= bests.size === 1;
+      const parts: string[] = [];
+      for (const c of cands) {
+        const x = seen.get(c)!;
+        const spread = Math.max(...x.loss) - Math.min(...x.loss);
+        const mean = x.graded.reduce((p, q) => p + q, 0) / x.graded.length;
+        const margin = Math.min(...thresholds.map((t) => Math.abs(mean - t)));
+        const isBest = bests.has(c);
+        const resolvable = isBest || margin >= RESOLUTION;
+        ok &&= spread <= RESOLUTION && (isBest || x.se.every((v) => v > 0));
+        if (resolvable) {
+          asserted++;
+          ok &&= x.labels.size === 1;
+        }
+        parts.push(`${c} ${[...x.labels].join("/")} (loss ${Math.min(...x.loss).toFixed(2)}–${Math.max(...x.loss).toFixed(2)}, ± ${Math.max(...x.se).toFixed(2)}${resolvable ? "" : ", within " + RESOLUTION + " of a threshold: not asserted"})`);
+      }
+      rows.push(`${pos.name}, year ${pos.turn + 1}, best ${[...bests].join("/")}: ${parts.join(" · ")}`);
     }
-    const spread = (v: number[]) => Math.max(...v) - Math.min(...v);
-    const worstSpread = Math.max(...cands.map((c) => spread(losses.get(c)!)));
-    const stable = bests.size === 1 && cands.every((c) => labels.get(c)!.size === 1);
-    const seReported = cands.every((c) => c === [...bests][0] || ses.get(c)!.every((x) => x > 0));
-    check(
-      "labels: the same position gets the same best move and the same labels on 8 different sets of futures",
-      stable && seReported && worstSpread < 0.6,
-      `${pos.name}, year ${pos.turn + 1}: ` + cands.map((c) => `${c} ${[...labels.get(c)!].join("/")} (loss ${Math.min(...losses.get(c)!).toFixed(2)}–${Math.max(...losses.get(c)!).toFixed(2)}, ± ${Math.max(...ses.get(c)!).toFixed(2)})`).join(" · "),
-    );
+    check(`labels: on 8 different sets of futures the best move is the same, no loss varies by more than ${RESOLUTION} points, and every move further than that from a threshold keeps its label`, ok && asserted >= 6, rows.join(" || ") + ` · ${asserted} labels asserted`);
   }
 
   // ---------- A6. the tree plays the game's turns; mated futures do not distort the money shown ----------

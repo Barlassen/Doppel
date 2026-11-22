@@ -361,8 +361,10 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
   let iterations = 0;
 
   // ---- search: UCT below the root, every root candidate on every future ----
+  // The search only proposes continuations (the two most visited replies at each ply); which of them is better is
+  // decided afterwards on paired futures. Half of the futures are enough for that, and that pays for the paired heats.
   if (ctx.plies > 0) {
-    for (let j = 0; j < N; j++) {
+    for (let j = 0; j < Math.ceil(N / 2); j++) {
       for (const a0 of roots) {
         const line = playLine(ctx, String(j), a0, sampled(ctx, j), (d, seq, opts) => {
           const prefix = seq.join(">");
@@ -420,6 +422,32 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
     return seq;
   };
 
+  /**
+   * The move after next. The search cannot tell two continuations apart that differ by a fraction of a point: its
+   * statistics come from different futures for each of them, and the plan it happened to prefer then moved every
+   * loss of the position (a plan worth 0.2 points less for the best move makes every other move look 0.2 points
+   * better). So the two most visited second replies are compared on the same futures, an eighth of them, and the
+   * better one is kept; its lines are reused by the full scoring.
+   */
+  const refine = (a0: string, plan: string[], run: (plan: string[], j: number) => Line): string[] => {
+    if (ctx.plies < 2 || plan.length < 3) return plan;
+    const seconds = childrenOf(plan.slice(0, 2).join(">")).slice(0, budget.alternatives);
+    if (seconds.length < 2) return plan;
+    const heat = Math.min(N, Math.max(8, Math.ceil(N / 8)));
+    let best = plan;
+    let bestE = -Infinity;
+    for (const m of seconds) {
+      const variant = pvOf(a0, [plan[0], plan[1], m]);
+      let sum = 0;
+      for (let j = 0; j < heat; j++) sum += run(variant, j).e.e;
+      if (sum > bestE + 1e-12) {
+        bestE = sum;
+        best = variant;
+      }
+    }
+    return best;
+  };
+
   // ---- scoring: each candidate with its own continuation on all N futures ----
   const hAgeYears = ctx.hAge - root.age;
   const scored = new Map<string, CandidateEval>();
@@ -429,15 +457,14 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
   for (const a0 of roots) {
     // Visit counts favour continuations that are dealt in many futures, not the best ones: re-score the most
     // visited next moves on all futures (open loop, hold when not dealt) and keep the best plan.
+    const run = (plan: string[], j: number) => playLine(ctx, String(j), a0, sampled(ctx, j), (d, _seq, opts) => (plan[d] && opts.includes(plan[d]) ? plan[d] : fallback(opts)));
     const firsts = ctx.plies > 0 ? childrenOf(a0).slice(0, budget.alternatives) : [];
-    const plans = firsts.length ? firsts.map((m) => pvOf(a0, [a0, m])) : [pvOf(a0)];
+    const plans = firsts.length ? firsts.map((m) => refine(a0, pvOf(a0, [a0, m]), run)) : [pvOf(a0)];
     let pv = plans[0];
     let best: ReturnType<typeof averaged> | null = null;
     for (const plan of plans) {
       const lines: Line[] = [];
-      for (let j = 0; j < N; j++) {
-        lines.push(playLine(ctx, String(j), a0, sampled(ctx, j), (d, _seq, opts) => (plan[d] && opts.includes(plan[d]) ? plan[d] : fallback(opts))));
-      }
+      for (let j = 0; j < N; j++) lines.push(run(plan, j));
       const res = averaged(lines);
       if (!best || res.e.e > best.e.e + 1e-12) {
         best = res;
