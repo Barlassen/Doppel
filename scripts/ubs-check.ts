@@ -10,7 +10,7 @@
  *  7. the solver's debt lever lands on its advertised odds
  *  8. the built-in accounts are bit-identical to the fingerprint taken before these changes
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { takeHomeMonth } from "../src/lib/data/profiles";
 import { analyzeBehavior } from "../src/lib/finance/behavioralEngine";
 import { debtSchedule, netWorthOf, totalDebt } from "../src/lib/finance/debt";
@@ -250,10 +250,15 @@ async function main() {
 
   // ---------------- 8. built-in accounts unchanged ----------------
   console.log("\n8. Built-in accounts (Barlas, Meriç, Oktay)");
-  const golden = readFileSync(GOLDEN_PATH, "utf8").trim();
   const now = JSON.stringify(personaFingerprint());
-  if (now === golden) ok("engine output is bit-identical to the fingerprint taken before liabilities and goals were added");
-  else fail("built-in accounts changed (scripts/fixtures/persona-golden.json)");
+  // A deliberate engine change re-pins the fingerprint: DOPPEL_UPDATE_GOLDEN=1 npx tsx scripts/ubs-check.ts
+  if (process.env.DOPPEL_UPDATE_GOLDEN === "1") {
+    writeFileSync(GOLDEN_PATH, now + "\n");
+    console.log("  fingerprint re-pinned (DOPPEL_UPDATE_GOLDEN=1)");
+  }
+  const golden = readFileSync(GOLDEN_PATH, "utf8").trim();
+  if (now === golden) ok("engine output is bit-identical to the pinned fingerprint (scripts/fixtures/persona-golden.json)");
+  else fail("built-in accounts changed (scripts/fixtures/persona-golden.json); re-pin with DOPPEL_UPDATE_GOLDEN=1 only for a deliberate engine change");
 
   // ---------------- population overview ----------------
   console.log("\nAll 1'200 profiles, headline (real twin, 200 futures)");

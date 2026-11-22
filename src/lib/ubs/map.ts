@@ -9,6 +9,7 @@
  * The constants below are the whole list of assumptions; `provenanceRows()` turns them into what the UI shows.
  */
 import { annuityPayment, DEFAULT_LOAN_TERM_MONTHS } from "@/lib/finance/debt";
+import { HEALTH_EXCESS_GROWTH, type HouseholdMembers, cantonMarginalRate, cantonTaxIndex, healthPremiumMonth, premiumDifferenceMonth, singleHousehold } from "@/lib/finance/canton";
 import { ASSUMPTIONS } from "@/lib/finance/monteCarlo";
 import {
   AHV_FULL_INCOME,
@@ -87,9 +88,22 @@ export const goalNameMsg = (name: string): Msg | string => (GOAL_KEY[name] ? { k
 
 // ---------------- derivations (engine rules) ----------------
 
-export function marginalTaxFor(netMonth: number): number {
+/** Marginal rate for a take-home pay; with a canton, scaled by its tax burden (src/lib/finance/canton.ts). */
+export function marginalTaxFor(netMonth: number, canton?: string): number {
   const year = netMonth * 12;
-  return MARGINAL_TAX_BRACKETS.find(([upTo]) => year < upTo)![1];
+  const average = MARGINAL_TAX_BRACKETS.find(([upTo]) => year < upTo)![1];
+  return canton ? cantonMarginalRate(average, canton) : average;
+}
+
+/**
+ * Who pays health premiums in a UBS household (`doppel_default`: the data has no household size). A family is
+ * two adults and two children; under 26 the young-adult premium applies.
+ */
+export function householdMembers(household: string, age: number): HouseholdMembers {
+  const one = singleHousehold(age);
+  if (household === "couple") return { adults: 2 * one.adults, youngAdults: 2 * (one.youngAdults ?? 0) };
+  if (household === "family") return { adults: 2 * one.adults, youngAdults: 2 * (one.youngAdults ?? 0), children: 2 };
+  return one;
 }
 
 /**
@@ -186,11 +200,13 @@ export function mapGoals(raw: UbsRawProfile): ProfileGoal[] {
 
 export function mapUbsProfile(raw: UbsRawProfile): Profile {
   const retired = raw.employment === "retired";
-  const marginalTaxRate = marginalTaxFor(raw.monthlyNetIncomeChf);
+  const marginalTaxRate = marginalTaxFor(raw.monthlyNetIncomeChf, raw.canton);
   const liabilities = mapLiabilities(raw);
   const debtService = liabilities.reduce((s, l) => s + l.monthlyPayment, 0);
   const disposable = Math.max(0, raw.monthlyNetIncomeChf - raw.monthlyRentChf - debtService);
-  const minLiving = MIN_LIVING[raw.household] ?? MIN_LIVING.single;
+  const members = householdMembers(raw.household, raw.age);
+  // The floors stand for an average UBS canton; the canton's premiums move them up or down.
+  const minLiving = (MIN_LIVING[raw.household] ?? MIN_LIVING.single) + premiumDifferenceMonth(raw.canton, members);
   const expensesMonth = round10(raw.monthlyRentChf + Math.max(minLiving, (1 - SAVED_SHARE) * disposable));
   const selfEmployed = raw.employment === "self_employed";
   const unemployed = raw.employment === "unemployed";
@@ -238,6 +254,7 @@ export function mapUbsProfile(raw: UbsRawProfile): Profile {
     contributes3a: false,
     investShare,
     marginalTaxRate,
+    healthPremiumMonth: healthPremiumMonth(raw.canton, members),
     riskProfile: retired ? RETIRED_RISK : DEFAULT_RISK,
     retirementAge,
     goal,
@@ -336,12 +353,29 @@ export function provenanceRows(p: Profile): ProvenanceRow[] {
             : { key: "ubs.why.pillar2" },
     },
     { field: "investShare", provenance: "derived", value: { pct: p.investShare }, note: { key: "ubs.why.investShare" } },
-    { field: "marginalTaxRate", provenance: "doppel_default", value: { pct: p.marginalTaxRate }, note: { key: "ubs.why.tax" } },
+    {
+      field: "marginalTaxRate",
+      provenance: "derived",
+      value: { pct: p.marginalTaxRate },
+      note: { key: "ubs.why.tax", params: { canton: p.canton, index: cantonTaxIndex(p.canton) } },
+    },
+    {
+      field: "healthPremiumMonth",
+      provenance: "derived",
+      value: { chf: p.healthPremiumMonth ?? 0 },
+      note: { key: "ubs.why.health", params: { canton: p.canton, growth: HEALTH_EXCESS_GROWTH } },
+    },
     {
       field: "expensesMonth",
       provenance: "doppel_default",
       value: { chf: p.expensesMonth },
-      note: { key: "ubs.why.expenses", params: { spent: 1 - SAVED_SHARE, min: MIN_LIVING[p.origin?.household ?? "single"] ?? MIN_LIVING.single } },
+      note: {
+        key: "ubs.why.expenses",
+        params: {
+          spent: 1 - SAVED_SHARE,
+          min: (MIN_LIVING[p.origin?.household ?? "single"] ?? MIN_LIVING.single) + premiumDifferenceMonth(p.canton, householdMembers(p.origin?.household ?? "single", p.age)),
+        },
+      },
     },
     { field: "pillar3a", provenance: "doppel_default", value: { chf: p.pillar3a }, note: { key: "ubs.why.pillar3a" } },
     { field: "riskProfile", provenance: "doppel_default", value: { text: { key: `risk.${p.riskProfile}` as MessageKey } }, note: { key: "ubs.why.risk" } },

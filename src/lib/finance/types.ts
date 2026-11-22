@@ -156,6 +156,11 @@ export interface Profile {
   /** Share of the monthly surplus the person actually invests (rest sits as cash). Derived from `trades`. */
   investShare: number;
   marginalTaxRate: number;
+  /**
+   * Monthly mandatory health-insurance premiums contained in `expensesMonth` (KVG, canton-dependent). They grow
+   * faster than prices (`HEALTH_EXCESS_GROWTH`). Absent = a one-person household in `canton` (see canton.ts).
+   */
+  healthPremiumMonth?: number;
   riskProfile: RiskProfile;
   retirementAge: number;
   goal: Goal;

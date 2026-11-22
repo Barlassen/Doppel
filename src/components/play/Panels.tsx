@@ -16,6 +16,7 @@ import { CardHeader, Disclosure } from "../ui";
 import { DonutTable, EvalBars, ImpactDonut, LinesChart } from "./Charts";
 import type { Opening } from "./PlayApp";
 import { cardGlyph } from "./ChessBoard";
+import { cantonLine } from "../CantonLine";
 import { LABEL_TONE, cardDesc, cardTitle, explain, paramLabel, paramValue } from "./text";
 
 export interface MoveInfo {
@@ -273,10 +274,11 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
         title={<span id="play-position">{t("play.position.title")}</span>}
         aside={<Chip>{t("play.position.year", { turn: Math.min(p.turn + 1, p.endTurn), total: p.endTurn })} · {t("play.position.age", { age: p.age })}</Chip>}
       />
-      <p className="mb-3 text-sm text-ink-2">
+      <p className="text-sm text-ink-2">
         <span className="font-medium text-ink">{p.name}</span>
         {profile && <> · {tm(profile.tagline)}</>} · {p.city}
       </p>
+      <p className="mb-3 text-[11px] text-ink-3" data-testid="play-canton">{cantonLine(t, p.canton, p.healthPremium / k)}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {stat(t("play.position.netWorth"), fmt.chf(nw))}
         {stat(t("play.position.cash"), fmt.chf(p.cash / k), t("play.position.buffer", { months: Math.min(99, bufferMonths(p)) }))}

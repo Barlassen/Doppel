@@ -112,7 +112,7 @@ const student = (s: GameState) => s.path === "student";
 
 function startStudy(s: GameState, p: Record<string, number>, L: LedgerBuilder) {
   const months = p.studyYears * 12;
-  const taxAfter = marginalTaxFor(p.incomeAfter);
+  const taxAfter = marginalTaxFor(p.incomeAfter, s.canton);
   s.phases = [{ start: 0, end: months, net: p.incomeDuring, gross: 0, expenses: p.expensesDuring, bvg: false, kind: "study" }];
   s.marginalTaxRate = taxAfter;
   s.net = p.incomeAfter;
@@ -160,7 +160,7 @@ export const DECISION_CARDS: CardDef[] = [
       return [param("income", a.phases[0].net, "chfMonth", a.src, a.ref), param("expenses", a.phases[0].exp, "chfMonth", a.src, a.ref)];
     },
     apply: (s, p) => {
-      s.marginalTaxRate = marginalTaxFor(p.income);
+      s.marginalTaxRate = marginalTaxFor(p.income, s.canton);
       s.net = p.income;
       s.gross = grossFromNet(p.income, s.marginalTaxRate);
       s.expenses = p.expenses;
@@ -211,7 +211,7 @@ export const DECISION_CARDS: CardDef[] = [
       ];
     },
     apply: (s, p, L) => {
-      s.marginalTaxRate = marginalTaxFor(p.income);
+      s.marginalTaxRate = marginalTaxFor(p.income, s.canton);
       s.net = p.income;
       s.gross = grossFromNet(p.income, s.marginalTaxRate);
       s.expenses = p.expenses;

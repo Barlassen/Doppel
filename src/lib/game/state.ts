@@ -12,6 +12,7 @@
  * Both write a ledger, and `checkLedger` proves opening + flows = closing for every account.
  */
 import { SOCIAL_DEDUCTIONS, bvgAgeCredit, coordinatedSalary, effectiveTaxRate } from "@/lib/finance/pension";
+import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "@/lib/finance/canton";
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
 import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX } from "@/lib/finance/swissRules";
 import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
@@ -109,6 +110,8 @@ export interface GameState {
   rent: number;
   /** Change of spending from decisions (car, children, cuts, lifestyle). */
   expenseDelta: number;
+  /** Monthly health-insurance premiums inside `expenses` (KVG, canton-dependent); they grow faster than prices. */
+  healthPremium: number;
   phases: Phase[];
   /** Scheduled one-off payments (months from now, CHF). */
   oneOffs: { month: number; amount: number }[];
@@ -304,6 +307,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     gross: p.grossIncomeYear,
     net: p.netIncomeMonth,
     expenses: p.expensesMonth,
+    healthPremium: p.healthPremiumMonth ?? defaultHealthPremium(p),
     rent: p.rentMonth,
     expenseDelta: 0,
     phases: [],
@@ -359,6 +363,7 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     grossIncomeYear: s.gross,
     netIncomeMonth: s.net,
     expensesMonth: s.expenses,
+    healthPremiumMonth: s.healthPremium,
     rentMonth: s.rent,
     cash: s.cash,
     portfolio: s.portfolio,
@@ -544,11 +549,15 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   s.net *= g;
   s.gross *= g;
   s.expenses *= infl;
+  // Health premiums: the part of their growth above inflation (once a year; the simulator does the same).
+  const premiumStep = s.healthPremium * infl * HEALTH_EXCESS_GROWTH;
+  s.expenses += premiumStep;
+  s.healthPremium *= infl * (1 + HEALTH_EXCESS_GROWTH);
   s.rent *= infl;
   s.expenseDelta *= infl;
   if (s.car) s.car = { value: s.car.value * 0.85, monthly: s.car.monthly * infl };
   s.phases = s.phases
-    .map((p) => ({ ...p, start: p.start - 12, end: p.end - 12, net: p.net * g, gross: p.gross * g, expenses: p.expenses === undefined ? undefined : p.expenses * infl }))
+    .map((p) => ({ ...p, start: p.start - 12, end: p.end - 12, net: p.net * g, gross: p.gross * g, expenses: p.expenses === undefined ? undefined : p.expenses * infl + premiumStep }))
     .filter((p) => p.end > 0)
     .map((p) => ({ ...p, start: Math.max(0, p.start) }));
   s.oneOffs = s.oneOffs.map((o) => ({ ...o, month: o.month - 12 })).filter((o) => o.month >= 0);
@@ -568,9 +577,8 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
 export const MIN_BUFFER_MONTHS = BUFFER_MONTHS;
 
 /** Engine default: rough marginal tax rate from monthly take-home (same brackets as the UBS stub). */
-export function marginalTaxFor(netMonth: number): number {
-  if (netMonth < 3000) return 0.1;
-  if (netMonth < 6000) return 0.2;
-  if (netMonth < 9000) return 0.28;
-  return 0.33;
+/** Marginal tax rate for a take-home pay, scaled by the canton's tax burden when a canton is given (canton.ts). */
+export function marginalTaxFor(netMonth: number, canton?: string): number {
+  const average = netMonth < 3000 ? 0.1 : netMonth < 6000 ? 0.2 : netMonth < 9000 ? 0.28 : 0.33;
+  return canton ? cantonMarginalRate(average, canton) : average;
 }

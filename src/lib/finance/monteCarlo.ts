@@ -21,6 +21,7 @@ import {
   effectiveTaxRate,
 } from "./pension";
 import { debtSchedule } from "./debt";
+import { HEALTH_EXCESS_GROWTH, defaultHealthPremium, premiumDrift } from "./canton";
 import type { GoalMetric, GoalStats, HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput, SimResult, YearBand } from "./types";
 
 /** Yearly nominal capital-market and household assumptions. */
@@ -47,6 +48,8 @@ export const ASSUMPTIONS = {
   raiseNetShare: 0.72,
   /** Market drawdown that can trigger a panic sale. */
   panicDrawdown: 0.15,
+  /** Health premiums grow this much faster than prices (BAG 1996–2026, conservative; see canton.ts). */
+  healthExcessGrowth: HEALTH_EXCESS_GROWTH,
 };
 
 /**
@@ -65,6 +68,7 @@ const ACCOUNTING: typeof ASSUMPTIONS = {
   wageVol: 0,
   pillar2Rate: 0,
   crashShock: 0,
+  healthExcessGrowth: 0,
 };
 
 export const EQUITY_WEIGHT: Record<RiskProfile, number> = {
@@ -145,6 +149,7 @@ export function simulate(input: SimInput): SimResult {
   const leakage = behavior?.leakageRate ?? 0;
   const monthlyInvest = Math.max(0, input.monthlyInvest ?? 0);
   const baseMonthly = Math.max(p.rentMonth, p.expensesMonth + (input.expenseDelta ?? 0));
+  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
   // Already retired at the start: today's spending already is retirement spending.
   const retSpending = p.retirementAge <= p.age ? 1 : A.retirementSpending;
   const bvgInsured = p.bvgInsured !== false;
@@ -233,7 +238,8 @@ export function simulate(input: SimInput): SimResult {
       // BVG savings credits stop during unemployment (ALV only insures death & disability).
       p2Credit[m] = retired || unemployed || !insured ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wageIdx) * wageIdx) / 12;
       const spend = retired ? (living - p.rentMonth) * retSpending + p.rentMonth : living;
-      baseExp[m] = spend * livingIdx + child;
+      // Health premiums grow faster than prices: the part above inflation is added on top (canton.ts).
+      baseExp[m] = spend * livingIdx + child + premiumDrift(premium, m + 1, price, false, A.healthExcessGrowth);
       rentArr[m] = p.rentMonth * price;
     }
   }

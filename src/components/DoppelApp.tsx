@@ -59,6 +59,8 @@ import { AffordabilityCard, BankerCard, BehaviorCard, RecipesCard, Timeline } fr
 import { RetirementCard } from "./RetirementCard";
 import { PlanCompare, type PinnedPlan } from "./PlanCompare";
 import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
+import { defaultHealthPremium } from "@/lib/finance/canton";
+import { cantonLine } from "./CantonLine";
 import { Hero } from "./Hero";
 import { CardHeader, Section } from "./ui";
 import { AccountSwitcher } from "./AccountSwitcher";
@@ -745,7 +747,12 @@ export default function DoppelApp() {
           sim={{ paths: real.paths, ms: real.ms }}
           impact={impact}
           taxTip={effProfile.contributes3a || scenario.optimize || effProfile.retirementAge <= effProfile.age ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
-          notes={debtToday > 0 ? <li>{t("ubs.heroDebt", { debt: debtToday })}</li> : undefined}
+          notes={
+            <>
+              {debtToday > 0 && <li>{t("ubs.heroDebt", { debt: debtToday })}</li>}
+              <li>{cantonLine(t, effProfile.canton, effProfile.healthPremiumMonth ?? defaultHealthPremium(effProfile))}</li>
+            </>
+          }
         >
           <InvestControls
             risk={effProfile.riskProfile}

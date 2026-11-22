@@ -1,4 +1,5 @@
 import { mulberry32, normalSampler } from "@/lib/finance/rng";
+import { HEALTH_EXCESS_GROWTH, defaultHealthPremium, premiumDrift } from "@/lib/finance/canton";
 import {
   ACTUAL_MORTGAGE_RATE,
   AMORTISATION_YEARS,
@@ -80,6 +81,8 @@ export const ASSUMPTIONS: SimAssumptions = {
   raiseNetShare: 0.72,
   /** Market drawdown that can trigger a panic sale. */
   panicDrawdown: 0.15,
+  /** Health premiums grow this much faster than prices (see src/lib/finance/canton.ts). */
+  healthExcessGrowth: HEALTH_EXCESS_GROWTH,
 };
 
 export interface SimAssumptions {
@@ -98,6 +101,7 @@ export interface SimAssumptions {
   retirementSpending: number;
   endAge: number;
   raiseNetShare: number;
+  healthExcessGrowth: number;
   panicDrawdown: number;
 }
 
@@ -143,6 +147,7 @@ export function simulate(input: SimInput): SimResult {
   const mortgageRate = startHome?.rate ?? ACTUAL_MORTGAGE_RATE;
   const debts0 = input.debts ?? [];
   const shocks = input.shocks;
+  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
 
   const endAge = Math.max(A.endAge, p.retirementAge + 1, p.goal.age + 1);
   const fullMonths = (endAge - p.age) * 12;
@@ -232,7 +237,8 @@ export function simulate(input: SimInput): SimResult {
       p2Credit[m] = retired || unemployed || phase?.bvg === false ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wage) * wage) / 12;
       const monthly = phase ? Math.max(p.rentMonth, phase.expensesMonth + (input.expenseDelta ?? 0)) : baseMonthly;
       const living = retired ? (monthly - p.rentMonth) * A.retirementSpending + p.rentMonth : monthly;
-      baseExp[m] = living * price + child;
+      // Premium growth above inflation, applied once a year like the game's year step (state.ts).
+      baseExp[m] = living * price + child + premiumDrift(premium, m, price, true, A.healthExcessGrowth);
       rentArr[m] = p.rentMonth * price;
     }
   }

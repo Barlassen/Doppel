@@ -130,6 +130,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
   }, [reviewing, info, turn, seed]);
 
   const finCheck = !reviewing && live.status === "playing" && !!live.check;
+  const boardCheck = !reviewing && lastPly?.side === "b" && lastPly.check;
   const whiteKing = fen ? kingSquare(fen, "w") : null;
   const pct = evalE === null ? 50 : Math.max(3, Math.min(97, evalE * 100));
 
@@ -168,7 +169,10 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
               const r = Number(square[1]);
               const light = (f + r) % 2 === 1;
               const last = lastPly && (lastPly.from === square || lastPly.to === square);
-              const isKingInCheck = whiteKing === square && (finCheck || (!reviewing && lastPly?.check && lastPly.side === "b"));
+              const isKing = whiteKing === square;
+              // Red: a real chess check on the board. Amber: financial check the board cannot show as a check yet.
+              const isKingInCheck = isKing && !reviewing && !!boardCheck;
+              const isKingWarned = isKing && finCheck && !boardCheck;
               const canSelect = playable.has(square);
               const isSel = sel === square;
               return (
@@ -181,6 +185,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
                   {last && <span aria-hidden="true" className="absolute inset-0 bg-[#f1c84b]/45" />}
                   {isSel && <span aria-hidden="true" className="absolute inset-0 bg-s1/35" />}
                   {isKingInCheck && <span aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle,rgba(220,40,30,.85)_0,transparent_70%)]" />}
+                  {isKingWarned && <span aria-hidden="true" className="absolute inset-[6%] rounded-full border-[3px] border-dashed border-warn" />}
                   {f === 0 && <span aria-hidden="true" className={`absolute top-0.5 left-0.5 text-[9px] font-semibold ${light ? "text-[#a98d6b]" : "text-[#ebe4d3]"}`}>{r}</span>}
                   {r === 1 && <span aria-hidden="true" className={`absolute right-0.5 bottom-0 text-[9px] font-semibold ${light ? "text-[#a98d6b]" : "text-[#ebe4d3]"}`}>{square[0]}</span>}
                   {piece &&
@@ -228,7 +233,11 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
 
         {/* What the shown plies mean. */}
         <div className="mt-3 space-y-2 text-sm" aria-live="polite">
-          {finCheck && <p className="rounded-lg border-l-4 border-bad bg-bad/10 px-3 py-2 text-xs text-ink">{t("board.finCheck")}</p>}
+          {finCheck && (
+            <p className={`rounded-lg border-l-4 px-3 py-2 text-xs text-ink ${boardCheck ? "border-bad bg-bad/10" : "border-warn bg-warn/10"}`}>
+              {t("board.finCheck")} {!boardCheck && t("board.finCheckNoBoard")}
+            </p>
+          )}
           {shownPlies.map((ply) => {
             const isWhite = ply.side === "w";
             const title = ply.card ? cardTitle(i, ply.card) : t("board.quiet");

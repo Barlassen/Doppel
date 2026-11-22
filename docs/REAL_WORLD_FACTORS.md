@@ -206,6 +206,8 @@ Federal statutory minima were raised on 1 January 2025 (first increase since 200
 
 ---
 
+> **Status (2026-11-22):** implemented in `src/lib/finance/canton.ts` — health-premium real drift (D, 2.5 pp/yr above CPI, canton premium level from the EDI ordinance on average premiums 2026) and cantonal income-tax scaling for the UBS profiles (ESTV-based burden of the cantonal capitals). Used by the dashboard engine, the UBS mapping and `/play`. The built-in accounts keep their payslip-derived tax rates; their premium is a one-person household in their canton.
+
 ## Part 2: Engine Design Proposal
 
 ### 2.1 Design Principles
