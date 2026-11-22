@@ -175,3 +175,19 @@ main .grid > * {
     animation: none;
   }
 }
+
+/* Doppel Play chessboard pieces (fixed colours: the board keeps its own palette in both themes). */
+.chess-glyph {
+  font-size: 10.5cqw; /* the board is the size container: ~85% of a square */
+  line-height: 1;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", serif;
+}
+.piece-w {
+  color: #fbfbf9;
+  -webkit-text-stroke: 1px #2b2a28;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.25);
+}
+.piece-b {
+  color: #24231f;
+  -webkit-text-stroke: 0.5px #000;
+}

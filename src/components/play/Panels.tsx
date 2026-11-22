@@ -15,6 +15,7 @@ import { type UbsProfileSummary, ubsScenarioCatalog } from "@/lib/ubs";
 import { CardHeader, Disclosure } from "../ui";
 import { DonutTable, EvalBars, ImpactDonut, LinesChart } from "./Charts";
 import type { Opening } from "./PlayApp";
+import { cardGlyph } from "./ChessBoard";
 import { LABEL_TONE, cardDesc, cardTitle, explain, paramLabel, paramValue } from "./text";
 
 export interface MoveInfo {
@@ -389,7 +390,10 @@ function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; 
           {index !== undefined && (
             <span aria-hidden="true" className="num grid h-6 w-6 shrink-0 place-items-center rounded-md bg-ink text-xs font-semibold text-bg">{index}</span>
           )}
-          <span className="font-serif text-lg leading-tight text-ink">{cardTitle(i, id)}</span>
+          <span className="font-serif text-lg leading-tight text-ink">
+            {cardGlyph(id) && <span aria-hidden="true" className="piece-w mr-1.5 text-base">{cardGlyph(id)}</span>}
+            {cardTitle(i, id)}
+          </span>
         </span>
         <span className="text-xs text-ink-2">{cardDesc(i, id, params)}</span>
         <Tags id={id} />
@@ -605,7 +609,7 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs }: { info: Mo
 
 // ---------------- move list ----------------
 
-export function MoveList({ moves, view, onView, mainLine, onMain, onExport }: { moves: MoveInfo[]; view: number | null; onView: (k: number | null) => void; mainLine: number | null; onMain: () => void; onExport: () => void }) {
+export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport }: { moves: MoveInfo[]; san?: { w?: string; b?: string }[]; view: number | null; onView: (k: number | null) => void; mainLine: number | null; onMain: () => void; onExport: () => void }) {
   const i = useI18n();
   const { t } = i;
   return (
@@ -645,11 +649,13 @@ export function MoveList({ moves, view, onView, mainLine, onMain, onExport }: { 
                   <span className="num w-6 shrink-0 text-xs text-ink-3">{k + 1}.</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-ink">
+                      {san?.[k]?.w && <span className="num mr-1.5 font-semibold">{san[k].w}</span>}
                       {cardTitle(i, m.move.card)}{" "}
                       {label && <span className={`num ${LABEL_TONE[label]}`}>{LABEL_GLYPH[label]}</span>}
                     </span>
                     <span className="block truncate text-[11px] text-ink-3">
-                      {t("play.position.age", { age: m.move.age })} · {t("play.moves.life", { card: m.life.card ? cardTitle(i, m.life.card) : t("play.moves.quiet") })}
+                      {t("play.position.age", { age: m.move.age })} · {san?.[k]?.b && <span className="num">… {san[k].b} </span>}
+                      {t("play.moves.life", { card: m.life.card ? cardTitle(i, m.life.card) : t("play.moves.quiet") })}
                     </span>
                   </span>
                   {m.luck !== null && <span className="num shrink-0 text-[11px] text-ink-3">{t("play.review.luckValue", { luck: m.luck })}</span>}

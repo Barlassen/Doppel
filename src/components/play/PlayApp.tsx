@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROFILES } from "@/lib/data/profiles";
 import type { Profile } from "@/lib/finance/types";
 import { type Analysis, type DepthId, type EngineSettings, reviewMove } from "@/lib/game/engine";
-import { type PresetId, type Weights, WEIGHT_PRESETS, mateValue } from "@/lib/game/evaluate";
+import { type MoveLabel, type PresetId, type Weights, WEIGHT_PRESETS, mateValue } from "@/lib/game/evaluate";
 import { type Game, currentPosition, isOver, legalMoves, newGame, play, truncate } from "@/lib/game/game";
 import { toRecord } from "@/lib/game/notation";
 import type { RegimeId } from "@/lib/game/regime";
@@ -15,6 +15,8 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ALEXIA_ID, loadUbsProfile } from "@/lib/ubs";
 import { SiteNav } from "../SiteNav";
 import { Disclosure } from "../ui";
+import { boardLine } from "@/lib/game/board";
+import { ChessBoard } from "./ChessBoard";
 import { AnalysisPanel, Banner, DecisionArea, EndReview, EvalCard, LifeCard, MoveList, PositionPanel, SetupPanel, type MoveInfo } from "./Panels";
 import { useEngine } from "./useEngine";
 
@@ -173,6 +175,14 @@ export default function PlayApp() {
   }, [game, analysisAt, weights]);
 
   const shown = view ?? (moves.length ? moves.length - 1 : null);
+
+  // The board: the same game rendered as legal chess moves; re-rendered when a review (label) arrives.
+  const labelsKey = moves.map((m) => m.review?.label ?? "").join(",");
+  const line = useMemo(
+    () => (game ? boardLine(game, labelsKey.split(",").map((l) => (l || null) as MoveLabel | null)) : null),
+    [game, labelsKey],
+  );
+  const sanList = useMemo(() => (line ? line.turns.map((tn) => ({ w: tn.white?.san, b: tn.black?.san })) : []), [line]);
   const liveAnalysis = live && game ? analysisAt(game.positions.length - 1) : undefined;
 
   // ---------------- keyboard ----------------
@@ -281,6 +291,19 @@ export default function PlayApp() {
             <Banner position={live} />
             <div className="mt-4 grid gap-4 lg:grid-cols-12">
               <div className="space-y-4 lg:col-span-7">
+                {line && (
+                  <ChessBoard
+                    line={line}
+                    moves={moves}
+                    view={view}
+                    live={live}
+                    over={over}
+                    evalE={view !== null ? moves[view]?.review?.e ?? null : liveAnalysis?.candidates[0]?.e ?? null}
+                    hand={hand}
+                    seed={game.settings.seed}
+                    onPlay={onPlay}
+                  />
+                )}
                 <EvalCard
                   engineE={shown !== null ? moves[shown]?.analysis?.candidates[0]?.e ?? null : liveAnalysis?.candidates[0]?.e ?? null}
                   youE={shown !== null ? moves[shown]?.review?.e ?? null : null}
@@ -317,6 +340,7 @@ export default function PlayApp() {
                 <AnalysisPanel info={shown !== null ? moves[shown] ?? null : null} compare={compare} onCompare={() => setCompare((c) => (c === "you" ? "engine" : "you"))} engineMs={engineMs} />
                 <MoveList
                   moves={moves}
+                  san={sanList}
                   view={view}
                   onView={setView}
                   mainLine={mainLine ? mainLine.from : null}
