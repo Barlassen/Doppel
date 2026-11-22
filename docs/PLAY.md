@@ -208,3 +208,9 @@ The game is also shown as a legal chess game: `src/lib/game/board.ts` (rendering
 - **Rating.** `rateGame` (rating.ts) replays the game holding every turn on the same dice and compares outcomes: Elo = 1200 + 0.6 × (player − hold) + 0.4 × (hold − 1200). Outcome scores: mate 400–1000 (by how long you lasted), time up 1000–1400 (by the end's independence chance), independence 1500 ± 25 per year before/after 65, plus up to 400 for the legacy target (per child a CHF 1M home, a CHF 60k car and CHF 120k education; without children a CHF 1M home and a CHF 150k care reserve). Tiers: mated, survived, independent, independent early, independent with a legacy, grandmaster (≥ 2400).
 - **Checks.** `npm run play:check` section 9: turn schedule, retirement conversion with a balanced ledger, independence wins, rating determinism and formula.
 
+## 17. Feedback round (arrears, clearer review, consistent directions)
+
+- **Check before mate.** A shortfall beyond the CHF 2'000 credit line with nothing left to sell becomes arrears: a 10% loan over 36 months, up to CHF 25'000 in total (`ARREARS_CAP`). Only beyond that is it mate. A full-time master's without a loan used to end Alexia's game in year 1; now it is a blunder (8% mate in the engine's futures) that leaves her in check with arrears.
+- **Review text.** The review says what the score compares (each option with the engine's best follow-up moves), shows where the points difference comes from (goal odds, never short of cash, median wealth, worst 10% of futures, weighted as in E), and explains why the rings (the move on its own, nothing changed afterwards) can disagree with the score.
+- **Directions on the board.** Building decisions (income, investing, study, a home) move forward; protecting decisions (buffer, cuts, flatmates, pausing) move back towards the king; spending pushes forward without developing (`motionForCard`).
+

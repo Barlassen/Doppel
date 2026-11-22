@@ -233,6 +233,9 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
 
         {/* What the shown plies mean. */}
         <div className="mt-3 space-y-2 text-sm" aria-live="polite">
+          {!reviewing && live.debts.some((d) => d.id === "debt-arrears" && d.principal > 0) && (
+            <p className="rounded-lg border-l-4 border-bad bg-bad/10 px-3 py-2 text-xs text-ink" data-testid="play-arrears">{t("board.arrears")}</p>
+          )}
           {finCheck && (
             <p className={`rounded-lg border-l-4 px-3 py-2 text-xs text-ink ${boardCheck ? "border-bad bg-bad/10" : "border-warn bg-warn/10"}`}>
               {t("board.finCheck")} {!boardCheck && t("board.finCheckNoBoard")}
@@ -318,7 +321,8 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
               <span>{t("board.legend.life")}</span>
             </li>
           </ul>
-          <p className="mt-2 text-[11px] text-ink-3">{t("board.legend.rule")}</p>
+          <p className="mt-2 text-[11px] text-ink-3">{t("board.legend.motion")}</p>
+          <p className="mt-1 text-[11px] text-ink-3">{t("board.legend.rule")}</p>
         </Disclosure>
       </div>
     </section>

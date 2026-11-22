@@ -35,8 +35,12 @@ export const PIECE_DOMAIN: Record<PieceSymbol, string> = {
 
 const VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 
+/** Direction of a decision on the board: building moves forward, protecting moves back towards the king. */
+export type Motion = "build" | "protect" | "spend" | "neutral";
+
 interface PieceIntent {
   piece: PieceSymbol | null;
+  motion?: Motion;
   /** Prefer the bishop on this square colour (equities = light, bonds/3a = dark). */
   bishop?: "light" | "dark";
   /** Prefer castling (buying a home). */
@@ -44,37 +48,40 @@ interface PieceIntent {
 }
 
 const CARD_INTENT: Record<string, PieceIntent> = {
-  hold: { piece: null },
-  pathWork: { piece: "q" },
-  pathMaster: { piece: "q" },
-  pathMasterLoan: { piece: "q" },
-  pathAbroad: { piece: "q" },
-  bootcamp: { piece: "q" },
-  sabbatical: { piece: "q" },
-  negotiate: { piece: "n" },
-  partTime: { piece: "n" },
-  fullTime: { piece: "n" },
-  sideJob: { piece: "n" },
-  buyHome: { piece: "r", castle: true },
-  flatmates: { piece: "r" },
-  nicerFlat: { piece: "r" },
-  repayDebt: { piece: "r" },
-  buyCar: { piece: "p" },
-  sellCar: { piece: "p" },
-  cutSpending: { piece: "p" },
-  lifestyle: { piece: "p" },
-  subscriptions: { piece: "p" },
-  emergencyFund: { piece: "p" },
-  haveChild: { piece: "p" },
-  movePartner: { piece: "p" },
-  investMonthly: { piece: "b", bishop: "light" },
-  investIdle: { piece: "b", bishop: "light" },
-  moreEquity: { piece: "b", bishop: "light" },
-  addBonds: { piece: "b", bishop: "dark" },
-  start3a: { piece: "b", bishop: "dark" },
-  stop3a: { piece: "b", bishop: "dark" },
-  pauseInvest: { piece: "b", bishop: "dark" },
+  hold: { piece: null, motion: "neutral" },
+  pathWork: { piece: "q", motion: "build" },
+  pathMaster: { piece: "q", motion: "build" },
+  pathMasterLoan: { piece: "q", motion: "build" },
+  pathAbroad: { piece: "q", motion: "build" },
+  bootcamp: { piece: "q", motion: "build" },
+  sabbatical: { piece: "q", motion: "spend" },
+  negotiate: { piece: "n", motion: "build" },
+  partTime: { piece: "n", motion: "protect" },
+  fullTime: { piece: "n", motion: "build" },
+  sideJob: { piece: "n", motion: "build" },
+  buyHome: { piece: "r", castle: true, motion: "build" },
+  flatmates: { piece: "r", motion: "protect" },
+  nicerFlat: { piece: "r", motion: "spend" },
+  repayDebt: { piece: "r", motion: "protect" },
+  buyCar: { piece: "p", motion: "spend" },
+  sellCar: { piece: "p", motion: "protect" },
+  cutSpending: { piece: "p", motion: "protect" },
+  lifestyle: { piece: "p", motion: "spend" },
+  subscriptions: { piece: "p", motion: "protect" },
+  emergencyFund: { piece: "p", motion: "protect" },
+  haveChild: { piece: "p", motion: "neutral" },
+  movePartner: { piece: "p", motion: "neutral" },
+  investMonthly: { piece: "b", bishop: "light", motion: "build" },
+  investIdle: { piece: "b", bishop: "light", motion: "build" },
+  moreEquity: { piece: "b", bishop: "light", motion: "build" },
+  addBonds: { piece: "b", bishop: "dark", motion: "protect" },
+  start3a: { piece: "b", bishop: "dark", motion: "build" },
+  stop3a: { piece: "b", bishop: "dark", motion: "protect" },
+  pauseInvest: { piece: "b", bishop: "dark", motion: "protect" },
 };
+
+/** How a decision moves on the board (for the legend and the panel). */
+export const motionForCard = (card: string): Motion => CARD_INTENT[card]?.motion ?? "neutral";
 
 const LIFE_INTENT: Record<string, { piece: PieceSymbol; tone: LifeTone }> = {
   lifeJobloss: { piece: "n", tone: "hit" },
@@ -225,6 +232,7 @@ const centre = (sq: Square) => {
 interface Want {
   side: Color;
   piece: PieceSymbol | null;
+  motion?: Motion;
   bishop?: "light" | "dark";
   castle?: boolean;
   quality?: Quality;
@@ -272,6 +280,12 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
     if (m.piece === "k" && !m.flags.match(/[kq]/)) s -= 8;
     if (w.target && m.to === w.target) s += 25;
     const act = centre(m.to) - centre(m.from);
+    // Direction follows the decision: building moves forward, protecting moves back towards the own king,
+    // spending pushes a pawn or piece forward loosely (it does not develop, it only advances).
+    const forward = (Number(m.to[1]) - Number(m.from[1])) * (w.side === "w" ? 1 : -1);
+    if (w.motion === "build") s += 4 * Math.sign(forward) + forward;
+    else if (w.motion === "protect") s += forward < 0 ? 8 : forward === 0 ? 2 : -6;
+    else if (w.motion === "spend") s += forward > 0 ? 3 : 0;
 
     if (w.side === "w") {
       switch (w.quality ?? "neutral") {
@@ -353,7 +367,7 @@ function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card
 
 function whiteWant(card: string, label: MoveLabel | null | undefined, target: Square | null, mate = false): Want {
   const intent = CARD_INTENT[card] ?? { piece: null };
-  return { side: "w", piece: intent.piece, bishop: intent.bishop, castle: intent.castle, quality: qualityFor(label), target, mate };
+  return { side: "w", piece: intent.piece, motion: intent.motion, bishop: intent.bishop, castle: intent.castle, quality: qualityFor(label), target, mate };
 }
 
 // ---------------------------------------------------------------- public API

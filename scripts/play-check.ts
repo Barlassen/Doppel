@@ -129,11 +129,16 @@ async function main() {
   // ---------- 4. mate when a hard constraint breaks ----------
   {
     const broke = initialState(
-      profileFor({ id: "broke", name: "Test broke", age: 30, grossIncomeYear: 36_000, netIncomeMonth: 2400, expensesMonth: 4300, rentMonth: 1800, cash: 3000, portfolio: 0, pillar2: 0, pillar3a: 0 }),
+      profileFor({ id: "broke", name: "Test broke", age: 30, grossIncomeYear: 36_000, netIncomeMonth: 2400, expensesMonth: 7200, rentMonth: 1800, cash: 3000, portfolio: 0, pillar2: 0, pillar3a: 0 }),
       { lengthTurns: 10, ubs: { alexiaPaths: null, s001: null } },
     );
     const yr = stepYear(broke, marketYear(REGIME.normal, MEDIAN_BUCKET));
-    check("mate: the year breaks the credit line", yr.mate, `min cash CHF ${Math.round(yr.minCash).toLocaleString("en")}`);
+    check("mate: the year breaks the credit line and the arrears cap", yr.mate, `min cash CHF ${Math.round(yr.minCash).toLocaleString("en")}`);
+    // A smaller shortfall becomes arrears (a loan) and leaves the player in check, not mate.
+    const tight = { ...broke, expenses: 3900, rent: 1800 };
+    const yt = stepYear(tight, marketYear(REGIME.normal, MEDIAN_BUCKET));
+    const arrears = yt.state.debts.find((d) => d.id === "debt-arrears");
+    check("arrears: a shortfall under the cap becomes a 10% loan, not mate", !yt.mate && !!arrears && arrears.principal > 0 && ledgerError(yt.ledger) < 1e-6, `arrears CHF ${Math.round(arrears?.principal ?? 0).toLocaleString("en")} · ledger error ${ledgerError(yt.ledger).toExponential(1)}`);
     let g = newGame(broke, S);
     const legal = currentPosition(g).check ? "in check" : "not in check";
     const move = analyse(currentPosition(g), S, { budget: { scenarios: 8, paths: 32 } });

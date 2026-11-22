@@ -558,7 +558,34 @@ function LuckMeter({ luck, bucket }: { luck: number | null; bucket: number }) {
   );
 }
 
-export function AnalysisPanel({ info, compare, onCompare, engineMs }: { info: MoveInfo | null; compare: "you" | "engine"; onCompare: () => void; engineMs: number }) {
+/** Where the points difference between the played move and the best move comes from (weights × parts). */
+function ScoreBreakdown({ mine, best, weights }: { mine: Analysis["candidates"][number]; best: Analysis["candidates"][number]; weights: Weights }) {
+  const { t, fmt } = useI18n();
+  const rows = [
+    { key: "goal", v: weights.goal * (mine.parts.pGoal - best.parts.pGoal) },
+    { key: "safety", v: weights.safe * (best.parts.pCrunch - mine.parts.pCrunch) },
+    { key: "wealth", v: weights.wealth * (mine.parts.wealthScore - best.parts.wealthScore) },
+    { key: "downside", v: -weights.down * (mine.parts.shortfall - best.parts.shortfall) },
+  ].map((r) => ({ ...r, v: r.v * 100 }));
+  const total = rows.reduce((a, r) => a + r.v, 0);
+  return (
+    <div className="mt-3 rounded-lg bg-surface-2 px-3 py-2" data-testid="play-breakdown">
+      <div className="mb-1 text-xs font-medium text-ink-2">{t("play.explain.breakdownTitle")}</div>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-sm">
+        {rows.map((r) => (
+          <div key={r.key} className="contents">
+            <dt className="text-ink-2">{t(`play.explain.part.${r.key}` as MessageKey)}</dt>
+            <dd className={`num text-right ${Math.abs(r.v) < 0.05 ? "text-ink-3" : r.v > 0 ? "text-good" : "text-bad"}`}>{fmt.signed(Math.round(r.v * 10) / 10)}</dd>
+          </div>
+        ))}
+        <dt className="border-t border-line pt-0.5 font-medium text-ink">{t("play.explain.part.total")}</dt>
+        <dd className="num border-t border-line pt-0.5 text-right font-medium text-ink">{fmt.signed(Math.round(total * 10) / 10)}</dd>
+      </dl>
+    </div>
+  );
+}
+
+export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: { info: MoveInfo | null; compare: "you" | "engine"; onCompare: () => void; engineMs: number; weights: Weights }) {
   const i = useI18n();
   const { t } = i;
   const a = info?.analysis;
@@ -602,6 +629,8 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs }: { info: Mo
               <p key={s}>{s}</p>
             ))}
           </div>
+          {r.card !== best.card && <ScoreBreakdown mine={mine} best={best} weights={weights} />}
+          {r.card !== best.card && <p className="mt-2 text-xs text-ink-2">{t("play.explain.scoreVsRings", { age: a.horizonAge })}</p>}
           <div className="mt-4">
             <div className="label mb-2">{t("play.review.donutTitle")}</div>
             <div className={`grid gap-3 ${r.card !== best.card ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -696,7 +725,7 @@ export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport 
 
 /** The game rating: computed after the review renders (it replays the game with "hold", about a second). */
 function GameRating({ game }: { game: Game }) {
-  const { t, fmt } = useI18n();
+  const { t } = useI18n();
   const [rating, setRating] = useState<Rating | null>(null);
   useEffect(() => {
     let alive = true;

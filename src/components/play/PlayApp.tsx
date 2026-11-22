@@ -337,7 +337,7 @@ export default function PlayApp() {
               </div>
               <div className="space-y-4 lg:col-span-5">
                 {over && view === null && <EndReview game={game} moves={moves} />}
-                <AnalysisPanel info={shown !== null ? moves[shown] ?? null : null} compare={compare} onCompare={() => setCompare((c) => (c === "you" ? "engine" : "you"))} engineMs={engineMs} />
+                <AnalysisPanel info={shown !== null ? moves[shown] ?? null : null} compare={compare} onCompare={() => setCompare((c) => (c === "you" ? "engine" : "you"))} engineMs={engineMs} weights={weights} />
                 <MoveList
                   moves={moves}
                   san={sanList}

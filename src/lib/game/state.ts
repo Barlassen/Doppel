@@ -33,6 +33,14 @@ import { type MarketYear, type Regime, simAssumptions } from "./regime";
 
 /** Overdraft the game tolerates before a payment is impossible (mate). Engine default. */
 export const CREDIT_LINE = 2000;
+/**
+ * Arrears (Doppel default): when cash falls below the credit line with nothing left to sell, the shortfall becomes
+ * a 10% loan repaid over 36 months, up to this total. Only beyond it is the position mate. So a ruinous move puts
+ * the player in check first (like a chess blunder), instead of ending the game on the spot.
+ */
+export const ARREARS_CAP = 25_000;
+export const ARREARS_RATE = 0.1;
+export const ARREARS_MONTHS = 36;
 /** Pillar 3a equity share (same as the simulator). */
 const P3A_EQUITY = 0.45;
 
@@ -608,8 +616,24 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
       s.cash += sell;
       soldToCover += sell;
     }
+    if (s.cash < -CREDIT_LINE * price) {
+      const need = -s.cash;
+      const arrears = s.debts.find((d) => d.id === "debt-arrears");
+      const owed = arrears?.principal ?? 0;
+      if (owed + need <= ARREARS_CAP * price) {
+        L.add("cash", "loan", need);
+        L.add("debt", "loan", need);
+        s.cash += need;
+        const principal = owed + need;
+        const r = ARREARS_RATE / 12;
+        const monthlyPayment = (principal * r) / (1 - Math.pow(1 + r, -ARREARS_MONTHS));
+        if (arrears) Object.assign(arrears, { principal, monthlyPayment, startMonth: m + 1 });
+        else s.debts.push({ id: "debt-arrears", kind: "personal", principal, rate: ARREARS_RATE, monthlyPayment, startMonth: m + 1 });
+      } else {
+        mate = true;
+      }
+    }
     minCash = Math.min(minCash, s.cash);
-    if (s.cash < -CREDIT_LINE * price) mate = true;
   }
 
   // --- the year turns: growth of salaries and prices, phases and schedules move 12 months closer ---

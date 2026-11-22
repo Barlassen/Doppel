@@ -39,37 +39,26 @@ export const LABEL_TONE: Record<MoveLabel, string> = {
   lifeChoice: "text-s1",
 };
 
-const pp = (x: number) => Math.round(x * 1000) / 10;
 
 /** The plain-language review: 1–4 sentences templated from the engine's numbers. */
 export function explain(i: T, a: Analysis, r: MoveReview): string[] {
-  const { t, fmt } = i;
+  const { t } = i;
   const mine = a.candidates.find((c) => c.card === r.card) ?? a.hold;
   const best = a.candidates[0];
   const out: string[] = [];
   const move = cardTitle(i, r.card);
   if (mine.lifeChoice) {
-    out.push(t("play.review.explainLifeChoice", { best: cardTitle(i, best.card), dGoal: fmt.signed(pp(mine.parts.pGoal - best.parts.pGoal)), median: mine.parts.median }));
+    out.push(t("play.explain.lifeChoice", { best: cardTitle(i, best.card), loss: r.loss }));
   } else if (r.card === best.card) {
-    out.push(t("play.review.explainBest", { move, goal: mine.parts.pGoal, crunch: mine.parts.pCrunch, age: a.horizonAge }));
+    out.push(t("play.explain.best", { move, goal: mine.parts.pGoal, crunch: mine.parts.pCrunch, age: a.horizonAge, median: mine.parts.median }));
   } else {
-    out.push(
-      t("play.review.explainLoss", {
-        best: cardTitle(i, best.card),
-        loss: r.loss,
-        dGoal: fmt.signed(pp(mine.parts.pGoal - best.parts.pGoal)),
-        dCrunch: fmt.signed(pp(mine.parts.pCrunch - best.parts.pCrunch)),
-        age: a.horizonAge,
-        median: mine.parts.median,
-        bestMedian: best.parts.median,
-      }),
-    );
+    out.push(t("play.explain.loss", { best: cardTitle(i, best.card), move, loss: r.loss, median: mine.parts.median, bestMedian: best.parts.median, age: a.horizonAge }));
   }
   if (mine.sacrifice) out.push(t("play.review.explainSacrifice", { short: (a.hold.e1 - mine.e1) * 100, long: (mine.e - a.hold.e) * 100, age: a.horizonAge }));
   if (mine.drain) out.push(t("play.review.explainDrain", { age: a.horizonAge }));
   if (mine.mateShare > 0.005) out.push(t("play.review.explainMate", { p: mine.mateShare }));
   const top = biggestChannel(mine);
-  if (top) out.push(t("play.review.explainChannel", { channel: t(`play.channel.${top.channel}` as MessageKey), amount: top.value }));
+  if (top) out.push(t("play.explain.channel", { channel: t(`play.channel.${top.channel}` as MessageKey), amount: top.value }));
   return out;
 }
 
