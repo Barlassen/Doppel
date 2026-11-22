@@ -7,7 +7,7 @@
   --line: #e2dfd6;
   --ink: #0f1115;
   --ink-2: #52514e;
-  --ink-3: #8a877f;
+  --ink-3: #6b6861; /* 4.8:1 on --surface-2, 5.4:1 on --surface (WCAG AA for the 11px labels) */
   --accent: #b3122e; /* Swiss red, used sparingly */
   --series-1: #2a78d6;
   --series-2: #eb6834;
