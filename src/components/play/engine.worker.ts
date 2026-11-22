@@ -1,23 +1,14 @@
 /// <reference lib="webworker" />
 /**
- * Doppel Play engine worker: runs the MCTS review off the main thread under the fixed budget. Pure computation on
- * the position it is sent; it never touches the network, storage or a model.
+ * Doppel Play engine worker: runs the MCTS review and the luck of a turn off the main thread under the fixed
+ * budget. Pure computation on the positions it is sent; it never touches the network, storage or a model.
  */
-import { analyse, type EngineSettings } from "@/lib/game/engine";
-import type { GameState } from "@/lib/game/state";
+import { compute, type EngineRequest } from "./engineClient";
 
-export interface EngineRequest {
-  id: number;
-  state: GameState;
-  settings: EngineSettings;
-}
-
-self.onmessage = (event: MessageEvent<EngineRequest>) => {
-  const { id, state, settings } = event.data;
+self.onmessage = (event: MessageEvent<{ id: number; request: EngineRequest }>) => {
+  const { id, request } = event.data;
   try {
-    const t0 = performance.now();
-    const analysis = analyse(state, settings);
-    self.postMessage({ id, analysis, ms: performance.now() - t0 });
+    self.postMessage({ id, result: compute(request) });
   } catch (error) {
     self.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
   }

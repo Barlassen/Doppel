@@ -8,7 +8,7 @@ import { DEPTHS } from "@/lib/game/engine";
 import { LABEL_GLYPH, PRESETS, type MoveLabel, type PresetId, type Weights } from "@/lib/game/evaluate";
 import type { Game, LifeRecord, MoveRecord } from "@/lib/game/game";
 import { REGIME, REGIMES, type RegimeId } from "@/lib/game/regime";
-import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlyOutflow, monthlySurplus, netWorth, pensionNet, realNetWorth } from "@/lib/game/state";
+import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlyOutflow, monthlySurplus, netWorth, pensionNet, realNetWorth, targetAt } from "@/lib/game/state";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { type UbsProfileSummary, ubsScenarioCatalog } from "@/lib/ubs";
@@ -169,7 +169,7 @@ export function SetupPanel(props: {
  * `boardCheck`: Life's last move gives check on the board. The word "check" is used only then; a financial danger
  * the board cannot show as a check yet is a "threat" (the same forced response applies).
  */
-export function Banner({ position: p, boardCheck }: { position: GameState; boardCheck: boolean }) {
+export function Banner({ position: p, boardCheck, atStart = false }: { position: GameState; boardCheck: boolean; atStart?: boolean }) {
   const { t } = useI18n();
   let kind: "check" | "threat" | "mate" | "won" | "ended" | null = null;
   let text = "";
@@ -178,7 +178,8 @@ export function Banner({ position: p, boardCheck }: { position: GameState; board
     text = t("play.banner.mate", { line: CREDIT_LINE });
   } else if (p.status === "won") {
     kind = "won";
-    text = t("fi.won", { age: p.age });
+    // An opening that is already independent: nothing was won by a move, and the banner says so.
+    text = atStart ? t("play.banner.wonAtStart", { age: p.age }) : t("fi.won", { age: p.age });
   } else if (p.status === "ended") {
     kind = "ended";
     text = t("fi.ended", { age: p.age });
@@ -293,7 +294,10 @@ export function PositionPanel({ position: p, profile, turn, regime, seed }: { po
   const homeEq = p.home ? (p.home.value - p.home.mortgage) / k : 0;
   const debt = debtTotal(p) / k;
   const nw = realNetWorth(p);
-  const progress = Math.max(0, Math.min(1, nw / Math.max(1, p.goal.target)));
+  // Once a player who started working is retired, the pension fund is an annuity: progress is measured against
+  // the liquid capital still needed (targetAt), not against the old target that included the fund.
+  const goalNow = p.pension && p.goal.retired ? targetAt(p, p.age) : p.goal.target;
+  const progress = Math.max(0, Math.min(1, nw / Math.max(1, goalNow)));
   const stat = (label: string, value: string, sub?: string) => (
     <div className="min-w-0 rounded-lg bg-surface-2 px-3 py-2">
       <div className="truncate text-[11px] text-ink-3">{label}</div>
@@ -686,6 +690,7 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
           </div>
           <p className="mt-1 text-sm text-ink-2">
             {r.loss > 0.005 ? t("play.review.loss", { loss: r.loss }) : t("play.review.noLoss")}
+            {r.loss > 0.005 && r.lossSe >= 0.05 && <> <span className="text-ink-3" data-testid="play-loss-noise">{t("play.review.lossNoise", { se: r.lossSe })}</span></>}
             {r.best !== r.card && <> · <span className="font-medium text-ink">{t("play.review.bestIs", { move: cardTitle(i, r.best) })}</span></>}
           </p>
           <div className="mt-3 space-y-1">

@@ -1,5 +1,4 @@
 import { mulberry32, normalSampler } from "@/lib/finance/rng";
-import { HEALTH_EXCESS_GROWTH, defaultHealthPremium, premiumDrift } from "@/lib/finance/canton";
 import {
   ACTUAL_MORTGAGE_RATE,
   AMORTISATION_YEARS,
@@ -21,15 +20,29 @@ import {
   coordinatedSalary,
   effectiveTaxRate,
 } from "@/lib/finance/pension";
-import type { HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput as BaseSimInput, SimResult, YearBand } from "@/lib/finance/types";
+import { debtSchedule } from "@/lib/finance/debt";
+import { defaultHealthPremium, premiumDrift } from "@/lib/finance/canton";
+import { ASSUMPTIONS as DASHBOARD_ASSUMPTIONS, EQUITY_WEIGHT as DASHBOARD_EQUITY_WEIGHT } from "@/lib/finance/monteCarlo";
+import type { GoalMetric, GoalStats, HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput as BaseSimInput, SimResult, YearBand } from "@/lib/finance/types";
 
 /*
- * Doppel Play's copy of the simulator (forked on 2026-11-22 when /play merged).
+ * Doppel Play's simulator: the dashboard's simulator (`src/lib/finance/monteCarlo.ts`) plus the game's extensions.
  *
- * The dashboard's simulator (`src/lib/finance/monteCarlo.ts`) gained liabilities, multiple goals, cash-flow phases
- * and an accounting mode in the same night that /play extended its own copy with regimes, indexed income phases,
- * a starting home, loans and random shocks. Both versions are validated by their own checks (ubs-check / engine-check
- * vs play-check, whose one-year stepper mirrors this file). Unifying them is tracked in docs/WORKPLAN.md.
+ * It is a copy, re-forked on 2026-11-22 from the dashboard's current code, and it must stay one: with none of the
+ * extensions below in the input, `simulate` here returns exactly what the dashboard's `simulate` returns (bands,
+ * odds, retirement, home, goals and debt statistics). `npm run play:check` compares the two on the built-in accounts
+ * and on UBS profiles with loans, without a pension fund, and in retirement, so a change to the dashboard engine that
+ * is not mirrored here fails the check instead of drifting silently. The capital-market assumptions are the
+ * dashboard's own object (imported, not copied).
+ *
+ * The extensions (all optional; the game passes them through `toSimInput` in state.ts):
+ *  - `assumptions`: an economic regime;
+ *  - `incomePhases`: the game's phases (study, leave, part-time, abroad). Unlike the dashboard's `phases` they are
+ *    indexed with wages and prices and end for good, because the game's year stepper (`stepYear`) carries them
+ *    from year to year that way;
+ *  - `home`, `debts`: a home and amortising loans that already exist at the start;
+ *  - `shocks`: random job losses and crashes on their own random stream;
+ *  - `conventions`: three bookkeeping rules of the game's stepper that differ from the dashboard on purpose.
  */
 
 export interface IncomePhase {
@@ -43,73 +56,56 @@ export interface IncomePhase {
   bvg?: boolean;
 }
 
-/** The dashboard's input plus Doppel Play's optional extensions. Absent → behaves exactly like the pre-fork engine. */
-export type SimInput = Omit<BaseSimInput, "phases"> & {
+/** Bookkeeping rules of the game's year stepper (state.ts). Absent = the dashboard's rules. */
+export interface PlayConventions {
+  /** Health premiums step up once a year, at the turn of the game year, instead of every month. */
+  premiumYearly?: boolean;
+  /** A pension fund that became an annuity is income, not capital: it no longer counts in net worth. */
+  annuityNotCapital?: boolean;
+  /** Savings that run out in retirement before the goal date count as a cash crunch, as they do while working. */
+  crunchWhenRetired?: boolean;
+}
+
+/** The dashboard's input plus Doppel Play's optional extensions. Absent → exactly the dashboard's engine. */
+export type SimInput = BaseSimInput & {
   /** Capital-market and household assumptions overriding `ASSUMPTIONS` (an economic regime). */
   assumptions?: Partial<SimAssumptions>;
-  /** Income/spending phases overriding the profile in [startMonth, endMonth) (study, abroad, part-time). Today's CHF. */
-  phases?: IncomePhase[];
+  /** The game's phases overriding the profile in [startMonth, endMonth). Today's CHF, indexed. */
+  incomePhases?: IncomePhase[];
   /** Start as a homeowner (value and mortgage in today's CHF). The profile's rent should then be 0. */
   home?: { value: number; mortgage: number; floor?: number; rate?: number };
   /** Amortising loans: interest accrues monthly, payments from `startMonth`. Outstanding principal counts against net worth. */
   debts?: { principal: number; rate: number; monthlyPayment: number; startMonth?: number }[];
   /** Random regime shocks on a separate stream: a job loss or a market crash in a given year. */
   shocks?: { jobLossProbYear: number; jobLossMonths: number; crashProbYear: number };
+  conventions?: PlayConventions;
 };
 
-/** Yearly nominal capital-market and household assumptions. */
-export const ASSUMPTIONS: SimAssumptions = {
-  equity: { mu: 0.065, sigma: 0.16 },
-  bonds: { mu: 0.02, sigma: 0.05 },
-  cashRate: 0.003,
-  overdraftRate: 0.06,
-  inflation: 0.012,
-  wageGrowth: 0.012,
-  /** Swiss residential property: +1.5%/yr on average, 5% yearly volatility. */
-  home: { mu: 0.015, sigma: 0.05 },
-  /** Career luck: yearly volatility of real wage growth (promotions, job changes, stagnation). */
-  wageVol: 0.01,
-  pillar2Rate: 0.0125,
-  unemploymentReplacement: 0.7,
-  /** Maximum insured salary for unemployment insurance (CHF/yr). */
-  unemploymentInsuredCap: 148_200,
-  crashShock: -0.3,
-  /** Non-housing spending in retirement vs. working life. */
-  retirementSpending: 0.8,
-  endAge: 90,
-  /** Share of a gross raise that reaches the bank account. */
-  raiseNetShare: 0.72,
-  /** Market drawdown that can trigger a panic sale. */
-  panicDrawdown: 0.15,
-  /** Health premiums grow this much faster than prices (see src/lib/finance/canton.ts). */
-  healthExcessGrowth: HEALTH_EXCESS_GROWTH,
+export type SimAssumptions = typeof DASHBOARD_ASSUMPTIONS;
+
+/** Yearly nominal capital-market and household assumptions: the dashboard's (one object, not a copy). */
+export const ASSUMPTIONS: SimAssumptions = DASHBOARD_ASSUMPTIONS;
+
+/**
+ * Accounting mode (`SimInput.accounting`): no returns, rates, inflation or wage growth, so the simulated cash must
+ * equal the plain ledger (same as the dashboard's).
+ */
+const ACCOUNTING: SimAssumptions = {
+  ...ASSUMPTIONS,
+  equity: { mu: 0, sigma: 0 },
+  bonds: { mu: 0, sigma: 0 },
+  cashRate: 0,
+  overdraftRate: 0,
+  inflation: 0,
+  wageGrowth: 0,
+  home: { mu: 0, sigma: 0 },
+  wageVol: 0,
+  pillar2Rate: 0,
+  crashShock: 0,
+  healthExcessGrowth: 0,
 };
 
-export interface SimAssumptions {
-  equity: { mu: number; sigma: number };
-  bonds: { mu: number; sigma: number };
-  cashRate: number;
-  overdraftRate: number;
-  inflation: number;
-  wageGrowth: number;
-  home: { mu: number; sigma: number };
-  wageVol: number;
-  pillar2Rate: number;
-  unemploymentReplacement: number;
-  unemploymentInsuredCap: number;
-  crashShock: number;
-  retirementSpending: number;
-  endAge: number;
-  raiseNetShare: number;
-  healthExcessGrowth: number;
-  panicDrawdown: number;
-}
-
-export const EQUITY_WEIGHT: Record<RiskProfile, number> = {
-  conservative: 0.3,
-  balanced: 0.5,
-  growth: 0.8,
-};
+export const EQUITY_WEIGHT: Record<RiskProfile, number> = DASHBOARD_EQUITY_WEIGHT;
 const P3A_EQUITY_WEIGHT = 0.45;
 
 /** Independent, reproducible random stream per path (so truncated runs and scenarios share the same markets). */
@@ -140,14 +136,15 @@ export function simulate(input: SimInput): SimResult {
   const { profile: p, behavior } = input;
   const paths = input.paths ?? 1000;
   const seed = input.seed ?? 42;
-  // Optional overrides (Doppel Play regimes). Without them every line below runs exactly as before.
-  const A: SimAssumptions = input.assumptions ? { ...ASSUMPTIONS, ...input.assumptions } : ASSUMPTIONS;
-  const phases = input.phases ?? [];
+  const acc = !!input.accounting;
+  // Optional overrides (Doppel Play regimes). Without them every line below runs exactly as the dashboard's.
+  const A: SimAssumptions = acc ? ACCOUNTING : input.assumptions ? { ...ASSUMPTIONS, ...input.assumptions } : ASSUMPTIONS;
+  const incomePhases = input.incomePhases?.length ? input.incomePhases : null;
   const startHome = input.home;
   const mortgageRate = startHome?.rate ?? ACTUAL_MORTGAGE_RATE;
-  const debts0 = input.debts ?? [];
+  const loans0 = input.debts ?? [];
   const shocks = input.shocks;
-  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
+  const conv = input.conventions ?? {};
 
   const endAge = Math.max(A.endAge, p.retirementAge + 1, p.goal.age + 1);
   const fullMonths = (endAge - p.age) * 12;
@@ -189,6 +186,16 @@ export function simulate(input: SimInput): SimResult {
   const leakage = behavior?.leakageRate ?? 0;
   const monthlyInvest = Math.max(0, input.monthlyInvest ?? 0);
   const baseMonthly = Math.max(p.rentMonth, p.expensesMonth + (input.expenseDelta ?? 0));
+  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
+  // Already retired at the start: today's spending already is retirement spending.
+  const retSpending = p.retirementAge <= p.age ? 1 : A.retirementSpending;
+  const bvgInsured = p.bvgInsured !== false;
+  const phases = input.phases?.length ? [...input.phases].sort((a, b) => a.startMonth - b.startMonth) : null;
+  const lastPhase = phases ? phases.reduce((a, b) => (b.endMonth > a.endMonth ? b : a)) : null;
+
+  // Loans: payments are fixed, so the schedule is the same in every future (computed once).
+  const debtLoans = p.liabilities?.filter((l) => l.principal > 0) ?? [];
+  const debt = debtLoans.length ? debtSchedule(debtLoans, months, input.extraDebtPayment ?? 0) : null;
 
   // ---------- path-independent monthly schedule (salary, spending, events) ----------
   const priceIdx = new Float64Array(months);
@@ -199,19 +206,59 @@ export function simulate(input: SimInput): SimResult {
   const rentArr = new Float64Array(months);
   const oneOff = new Float64Array(months);
   const crash = new Uint8Array(months);
+  /** 1 = income given by a phase (not scaled by career luck). */
+  const fixedIncome = new Uint8Array(months);
   {
     let wage = 1;
     let price = 1;
     const mWage = Math.pow(1 + A.wageGrowth, 1 / 12);
     const mInfl = Math.pow(1 + A.inflation, 1 / 12);
+    let wageEnd = 1;
+    let priceEnd = 1;
     for (let m = 0; m < months; m++) {
       wage *= mWage;
       price *= mInfl;
       priceIdx[m] = price;
       const retired = m >= retireMonth;
-      const phase = phases.length ? phases.find((ph) => m >= ph.startMonth && m < ph.endMonth) : undefined;
-      let gross = (phase ? phase.grossIncomeYear : p.grossIncomeYear) * wage;
-      let net = (phase ? phase.netIncomeMonth : p.netIncomeMonth) * wage;
+      let gross = p.grossIncomeYear * wage;
+      let net = p.netIncomeMonth * wage;
+      let living = baseMonthly;
+      let livingIdx = price;
+      let wageIdx = wage;
+      let insured = bvgInsured;
+      if (phases && lastPhase) {
+        const ph = phases.find((x) => m >= x.startMonth && m < x.endMonth);
+        if (m === lastPhase.endMonth) {
+          wageEnd = wage / mWage;
+          priceEnd = price / mInfl;
+        }
+        if (ph) {
+          // As given: nominal, not indexed, not scaled by career luck.
+          gross = ph.grossIncomeYear;
+          net = ph.netIncomeMonth;
+          living = Math.max(0, ph.expensesMonth + (input.expenseDelta ?? 0));
+          livingIdx = 1;
+          wageIdx = 1;
+          insured = bvgInsured && ph.bvgInsured !== false;
+          fixedIncome[m] = 1;
+        } else if (m >= lastPhase.endMonth) {
+          // After the last phase it continues, indexed from its end.
+          gross = lastPhase.grossIncomeYear * (wage / wageEnd);
+          net = lastPhase.netIncomeMonth * (wage / wageEnd);
+          living = Math.max(0, lastPhase.expensesMonth + (input.expenseDelta ?? 0));
+          livingIdx = price / priceEnd;
+          wageIdx = wage / wageEnd;
+          insured = bvgInsured && lastPhase.bvgInsured !== false;
+        }
+      }
+      // The game's phases: today's CHF, indexed with wages and prices, never below the rent (as in `stepYear`).
+      const gp = incomePhases ? incomePhases.find((x) => m >= x.startMonth && m < x.endMonth) : undefined;
+      if (gp) {
+        gross = gp.grossIncomeYear * wage;
+        net = gp.netIncomeMonth * wage;
+        living = Math.max(p.rentMonth, gp.expensesMonth + (input.expenseDelta ?? 0));
+        insured = insured && gp.bvg !== false;
+      }
       let unemployed = false;
       let child = 0;
       for (const e of events) {
@@ -234,11 +281,11 @@ export function simulate(input: SimInput): SimResult {
       netIncome[m] = retired ? 0 : net;
       grossInc[m] = retired ? 0 : gross;
       // BVG savings credits stop during unemployment (ALV only insures death & disability).
-      p2Credit[m] = retired || unemployed || phase?.bvg === false ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wage) * wage) / 12;
-      const monthly = phase ? Math.max(p.rentMonth, phase.expensesMonth + (input.expenseDelta ?? 0)) : baseMonthly;
-      const living = retired ? (monthly - p.rentMonth) * A.retirementSpending + p.rentMonth : monthly;
-      // Premium growth above inflation, applied once a year like the game's year step (state.ts).
-      baseExp[m] = living * price + child + premiumDrift(premium, m, price, true, A.healthExcessGrowth);
+      p2Credit[m] = retired || unemployed || !insured ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wageIdx) * wageIdx) / 12;
+      const spend = retired ? (living - p.rentMonth) * retSpending + p.rentMonth : living;
+      // Health premiums grow faster than prices: the part above inflation is added on top (canton.ts).
+      // The game's stepper raises them once a year instead (conventions.premiumYearly).
+      baseExp[m] = spend * livingIdx + child + premiumDrift(premium, conv.premiumYearly ? m : m + 1, price, !!conv.premiumYearly, A.healthExcessGrowth);
       rentArr[m] = p.rentMonth * price;
     }
   }
@@ -259,6 +306,13 @@ export function simulate(input: SimInput): SimResult {
   const liquidAtRet: number[] = [];
   const bvgReal: number[] = [];
   const spendRet: number[] = [];
+  const otherDebtAtPurchase: number[] = [];
+  // Goals: the headline metric, and every listed goal inside the horizon.
+  const metric: GoalMetric = p.goal.metric ?? "netWorth";
+  const listed = (p.goals ?? []).map((g) => ({ g, year: Math.max(0, g.age - p.age) })).filter((x) => x.year <= years);
+  const goalVals = listed.map(() => new Float64Array(paths));
+  const goalHits = listed.map(() => 0);
+  const trace = input.trace ? { cash: [] as number[], debt: [] as number[] } : undefined;
 
   for (let path = 0; path < paths; path++) {
     const ps = pathSeed(seed, path);
@@ -269,7 +323,7 @@ export function simulate(input: SimInput): SimResult {
     const srand = shocks ? mulberry32(ps ^ 0x27d4eb2f) : null;
     let shockCrashMonth = -1;
     let shockJoblessUntil = -1;
-    const debt = debts0.map((d) => d.principal);
+    const loanBal = loans0.map((d) => d.principal);
 
     let cash = p.cash;
     let port = p.portfolio;
@@ -292,9 +346,21 @@ export function simulate(input: SimInput): SimResult {
     let wf = 1; // this future's career factor on top of average wage growth
     let bvgMonthly = 0;
     let p2AtRet = 0;
+    let crunchMonth = Infinity;
 
     const row = path * (years + 1);
-    nw[row] = cash + port + p3a + p2 + (owner ? homeValue - mortgage : 0) - debt.reduce((a, b) => a + b, 0);
+    nw[row] = (debt ? cash + port + p3a + p2 - debt.opening : cash + port + p3a + p2) + (owner ? homeValue - mortgage : 0) - loanBal.reduce((a, b) => a + b, 0);
+    /** A goal metric now, in today's CHF (`nwNow` = net worth just computed for this year end). */
+    const valueOf = (k: GoalMetric, nwNow: number, priceNow: number) =>
+      k === "netWorth"
+        ? nwNow
+        : k === "cash"
+          ? (cash + parked) / priceNow
+          : k === "liquid"
+            ? (cash + parked + port) / priceNow
+            : (cash + parked + port + p3a) / priceNow;
+    let goalWorth = goalYear === 0 ? valueOf(metric, nw[row], 1) : 0;
+    for (let g = 0; g < listed.length; g++) if (listed[g].year === 0) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row], 1);
 
     for (let m = 0; m < months; m++) {
       const price = priceIdx[m];
@@ -313,14 +379,15 @@ export function simulate(input: SimInput): SimResult {
       }
       const shockJobless = shockJoblessUntil > m && shockJoblessUntil - (shocks?.jobLossMonths ?? 0) <= m;
 
-      // --- markets (same draws for every scenario on this path) ---
-      const rE = crash[m] || m === shockCrashMonth ? A.crashShock : eMu + eSd * randn();
-      const rB = bMu + bSd * randn();
-      const rH = hMu + hSd * randn();
-      if (m % 12 === 0) {
+      // --- markets (same draws for every scenario on this path; none in accounting mode) ---
+      const rE = acc ? 0 : crash[m] || m === shockCrashMonth ? A.crashShock : eMu + eSd * randn();
+      const rB = acc ? 0 : bMu + bSd * randn();
+      const rH = acc ? 0 : hMu + hSd * randn();
+      if (m % 12 === 0 && !acc) {
         const z = randn();
         if (m > 0) wf *= Math.exp(A.wageVol * z + wageDrift);
       }
+      const luck = fixedIncome[m] ? 1 : wf;
       idx *= 1 + rE;
       if (idx > peak) {
         peak = idx;
@@ -368,29 +435,42 @@ export function simulate(input: SimInput): SimResult {
       const retired = m >= retireMonth;
       const income = retired
         ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * (1 - retTax)
-        : netIncome[m] * wf * (shockJobless ? A.unemploymentReplacement : 1);
+        : netIncome[m] * luck * (shockJobless ? A.unemploymentReplacement : 1);
       let expenses = baseExp[m];
-      for (let d = 0; d < debt.length; d++) {
-        if (debt[d] <= 0) continue;
-        const spec = debts0[d];
-        debt[d] += (debt[d] * spec.rate) / 12;
+      if (debt) expenses += debt.payment[m];
+      let loanPay = 0;
+      for (let d = 0; d < loanBal.length; d++) {
+        if (loanBal[d] <= 0) continue;
+        const spec = loans0[d];
+        loanBal[d] += (loanBal[d] * spec.rate) / 12;
         if (m >= (spec.startMonth ?? 0)) {
-          const pay = Math.min(spec.monthlyPayment, debt[d]);
-          debt[d] -= pay;
-          expenses += pay;
+          const pay = Math.min(spec.monthlyPayment, loanBal[d]);
+          loanBal[d] -= pay;
+          loanPay += pay;
         }
       }
+      expenses += loanPay;
       cash += oneOff[m];
 
       // --- home purchase: the bank test runs at the purchase date with this future's equity & salary ---
       if (house && m === house.month) {
         const buffer = BUFFER_MONTHS * expenses;
         const hardAvail = Math.max(0, cash - buffer) + parked + port + p3a;
-        const gross = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * 12 : grossInc[m] * wf;
+        const gross = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * 12 : grossInc[m] * luck;
         hardAtPurchase.push(hardAvail);
         grossAtPurchase.push(gross);
         p2AtPurchase.push(p2);
-        const plan = tragbarkeit({ price: house.amount, grossIncomeYear: gross, hardEquityAvailable: hardAvail, pillar2Available: p2, closingRate });
+        // Banks count the payments on other loans against the same third of income.
+        const otherDebtYear = (debt ? debt.service[m] * 12 : 0) + loanPay * 12;
+        if (debt) otherDebtAtPurchase.push(otherDebtYear);
+        const plan = tragbarkeit({
+          price: house.amount,
+          grossIncomeYear: gross,
+          hardEquityAvailable: hardAvail,
+          pillar2Available: p2,
+          closingRate,
+          ...(debt || loanBal.length ? { otherDebtYear } : {}),
+        });
         if (!plan.pass) {
           houseFailed = true; // keep renting
         } else {
@@ -427,7 +507,7 @@ export function simulate(input: SimInput): SimResult {
       // --- savings flow ---
       let surplus = income - expenses;
       if (!retired) {
-        if (!shockJobless) p2 += p2Credit[m] * wf;
+        if (!shockJobless) p2 += p2Credit[m] * luck;
         if (surplus > 0 && monthlyInvest > 0) {
           const order = Math.min(monthlyInvest, surplus); // pay yourself first: leaves before payday spending
           port += order;
@@ -479,26 +559,42 @@ export function simulate(input: SimInput): SimResult {
         if (need > 1) {
           if (!retired) {
             if (m < goalMonth) crunch = true;
-          } else if (depletion[path] === Infinity) depletion[path] = p.age + m / 12;
+            if (crunchMonth === Infinity) crunchMonth = m;
+          } else {
+            if (depletion[path] === Infinity) depletion[path] = p.age + m / 12;
+            if (conv.crunchWhenRetired && m < goalMonth) crunch = true;
+          }
         }
+      }
+      if (trace && path === 0) {
+        trace.cash.push(cash);
+        trace.debt.push(debt ? debt.balance[m] : 0);
       }
 
       if (m % 12 === 11) {
         const y = (m + 1) / 12;
-        const p2Value = retired ? p2AtRet * Math.max(0, 1 - (m + 1 - retireMonth) / (fullMonths - retireMonth)) : p2;
+        // The dashboard counts the annuity's remaining capital; the game's positions do not (conventions.annuityNotCapital).
+        const p2Value = retired ? (conv.annuityNotCapital ? 0 : p2AtRet * Math.max(0, 1 - (m + 1 - retireMonth) / (fullMonths - retireMonth))) : p2;
+        const assets = cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0);
         let owed = 0;
-        for (let d = 0; d < debt.length; d++) owed += debt[d];
-        nw[row + y] = (cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0) - owed) / price;
+        for (let d = 0; d < loanBal.length; d++) owed += loanBal[d];
+        nw[row + y] = ((debt ? assets - debt.balance[m] : assets) - owed) / price;
+        if (y === Math.min(years, goalYear)) goalWorth = valueOf(metric, nw[row + y], price);
+        for (let g = 0; g < listed.length; g++) if (listed[g].year === y) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row + y], price);
       }
     }
 
-    const goalWorth = nw[row + Math.min(years, goalYear)];
     atGoal[path] = goalWorth;
     if (crunch) crunches++;
     if (!crunch && !houseFailed && goalWorth >= p.goal.target) successes++;
+    // Every listed goal, same rule as the headline: no crunch before its date, no failed home purchase, target met.
+    for (let g = 0; g < listed.length; g++) {
+      if (crunchMonth >= listed[g].year * 12 && !houseFailed && goalVals[g][path] >= listed[g].g.target) goalHits[g]++;
+    }
   }
 
-  const thisYear = new Date().getFullYear();
+  // Calendar year of month 0: the profile's as-of date (a dataset snapshot), else today.
+  const thisYear = p.asOf ? Number(p.asOf.slice(0, 4)) : new Date().getFullYear();
   const bands: YearBand[] = [];
   const col = new Float64Array(paths);
   for (let y = 0; y <= years; y++) {
@@ -529,6 +625,7 @@ export function simulate(input: SimInput): SimResult {
       closingRate,
       medianEquityAtPurchase: median(equityIn),
       medianLoan: median(loans),
+      ...(debt ? { medianOtherDebtYear: median(otherDebtAtPurchase) } : {}),
     };
   }
 
@@ -563,6 +660,17 @@ export function simulate(input: SimInput): SimResult {
     paths,
     house: houseStats,
     retirement,
+    ...(p.goals
+      ? {
+          goals: listed.map(
+            ({ g, year }, i): GoalStats => ({ id: g.id, prob: goalHits[i] / paths, median: median(Array.from(goalVals[i])), month: year * 12 }),
+          ),
+        }
+      : {}),
+    ...(debt
+      ? { debt: { start: debt.opening, monthlyService: debt.service[0] ?? 0, debtFreeMonth: debt.debtFreeMonth, interestPaid: debt.interestPaid } }
+      : {}),
+    ...(trace ? { trace } : {}),
   };
 }
 

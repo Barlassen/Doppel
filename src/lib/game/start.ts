@@ -32,8 +32,9 @@ export function withFiGoal(s: GameState): GameState {
   let st = s;
   for (let y = s.age; y < age; y++) st = stepYear(st, marketYear(regime, MEDIAN_BUCKET)).state;
   const pensionFund = st.pillar2 / st.priceIndex;
-  const target = Math.max(10_000, Math.round((goalCapital(s, regime, seed) + pensionFund) / 1000) * 1000);
-  return { ...s, goal: { ...s.goal, label: { key: "fi.goal", params: { age } }, target, age } };
+  const liquid = goalCapital(s, regime, seed);
+  const target = Math.max(10_000, Math.round((liquid + pensionFund) / 1000) * 1000);
+  return { ...s, goal: { ...s.goal, label: { key: "fi.goal", params: { age } }, target, age, retired: { liquid, endAge: FI_END_AGE, rate: GOAL_REAL_RATE } } };
 }
 
 export function ubsContextFor(profileId: string): UbsContext {

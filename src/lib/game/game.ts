@@ -43,6 +43,10 @@ export interface MoveRecord {
   params: CardParam[];
   /** Market bucket of the year that followed (0 = worst quintile … 4 = best). */
   market: number;
+  /** Market bucket of every year of the turn (one for a one-year turn, up to five later). */
+  buckets: number[];
+  /** A cash crunch during the turn: the account stayed below zero with nothing left to sell. */
+  crunch: boolean;
   cardLedger: Ledger;
   yearLedger: Ledger;
   soldToCover: number;
@@ -66,8 +70,18 @@ export function checkTest(s: GameState, settings: EngineSettings): GameState["ch
   return res.crunchProb > CHECK_CRUNCH ? { reason: "crunch", crunchProb: res.crunchProb, bufferMonths: months } : null;
 }
 
+/**
+ * The opening position. A working-age profile that is already financially independent has nothing left to win:
+ * the game says so at once (status "won" with no move played) instead of crediting the first move with the win.
+ */
 export function newGame(start: GameState, settings: GameSettings): Game {
-  const s = { ...start, check: checkTest(start, settings) };
+  const s: GameState = { ...start, check: null };
+  if (s.status === "playing" && !s.pension && isIndependent(s, REGIME[settings.regime], settings.seed)) {
+    s.status = "won";
+    s.goalReached = true;
+  } else if (s.status === "playing") {
+    s.check = checkTest(s, settings);
+  }
   return { settings, positions: [s], moves: [], lifeEvents: [{ turn: 0, card: null, params: [] }] };
 }
 
@@ -105,11 +119,15 @@ export function advance(g: Game, card: string): Game {
   let yearLedger: Ledger | null = null;
   let soldToCover = 0;
   let mate = false;
+  let crunch = false;
+  const buckets: number[] = [];
   const earlier: NonNullable<LifeRecord["earlier"]> = [];
   for (let y = 0; y < years; y++) {
     const bucket = marketBucket(g.settings.seed, st.turn);
     if (y === 0) firstBucket = bucket;
+    buckets.push(bucket);
     const yr = stepYear(st, marketYear(regime, bucket));
+    crunch ||= yr.crunch;
     yearLedger = yr.ledger;
     soldToCover += yr.soldToCover;
     st = yr.state;
@@ -153,6 +171,8 @@ export function advance(g: Game, card: string): Game {
     card,
     params: moved.params,
     market: firstBucket,
+    buckets,
+    crunch,
     cardLedger: moved.ledger,
     yearLedger: yearLedger!,
     soldToCover,

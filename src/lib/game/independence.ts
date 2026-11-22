@@ -46,7 +46,7 @@ export function fiProbability(s: GameState, regime: Regime, retireAge: number, s
   input.horizon = "full";
   input.assumptions = { ...input.assumptions, endAge: FI_END_AGE };
   // Phases (study, abroad, part-time) end at retirement: the person no longer works.
-  input.phases = (input.phases ?? []).map((p) => ({ ...p, endMonth: Math.min(p.endMonth, (age - s.age) * 12) })).filter((p) => p.endMonth > p.startMonth);
+  input.incomePhases = (input.incomePhases ?? []).map((p) => ({ ...p, endMonth: Math.min(p.endMonth, (age - s.age) * 12) })).filter((p) => p.endMonth > p.startMonth);
   const res = simulate(input);
   return res.retirement?.lastsTo90Prob ?? 0;
 }
