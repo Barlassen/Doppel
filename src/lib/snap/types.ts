@@ -44,8 +44,18 @@ export interface Usage {
   completionTokens: number;
   costUsd: number;
   model: string;
-  /** "llm" = real OpenRouter call; "local" = no LLM; "offline" = API key missing, local heuristics used. */
+  /** "llm" = real model call; "local" = no LLM; "offline" = no model endpoint configured, local heuristics used. */
   mode: "llm" | "local" | "offline";
+  /**
+   * Where the token counts come from. "estimated": the provider reported none, so they are ~4 characters per token.
+   * Estimated entries never count as measured (`usageKnown` is false for them). Absent = reported or local.
+   */
+  tokenBasis?: "reported" | "estimated";
+  /**
+   * Where `costUsd` comes from. "estimated": tokens × list price. "unknown": no price for this model, `costUsd` is 0
+   * and the entry is left out of every cost total. Absent = reported or local.
+   */
+  costBasis?: "reported" | "estimated" | "unknown";
 }
 
 export interface SnapResult {
