@@ -37,14 +37,18 @@ A partial `donut.ts` was started in an old local worktree but never committed. S
 ## Tests and measurement
 - Add a unit test of the pixel measurement on the generated donut samples against their known true shares: within ±1 pp.
 - Add an offline fixture for the new legend-mapping response so offline mode passes.
-- Run live with your own key: `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`. Keep the "Live misses" section and the rule that live mode never falls back to a fixture.
+- Live run (Barlas, later): `npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live`. Keep the "Live misses" section and the rule that live mode never falls back to a fixture.
 - Put new strings in the existing `vision` dictionary group, in all four languages (see `AGENTS.md` §4).
 
-## No API key? (current situation)
-Live runs need `OPENROUTER_API_KEY`. Without one:
-- Do the code part and pass all offline gates.
-- **Do not commit `docs/BENCHMARK.md` or `docs/VISION_BENCHMARK.md` regenerated offline.** The benchmark scripts overwrite these reports, and the committed versions hold real live measurements. Run `git checkout -- docs/BENCHMARK.md docs/VISION_BENCHMARK.md` before committing.
-- Write "live measurement pending: coordinator" in the PR. The coordinator merges the PR, runs the live benchmark with the key on `main`, and commits the report. A model that measures worse does not become the default.
+## Measurement is done later by Barlas (current situation)
+There is no API key on this machine, so **don't run `scripts/vision-benchmark.ts`**: it rewrites `docs/VISION_BENCHMARK.md`, which holds real live measurements.
+- Verify your work with a **new script that writes no reports**: `scripts/donut-check.ts` (npm script `donut:check`). It must check:
+  - the pixel measurement on the generated donut samples against their true shares, within ±1 pp;
+  - the quality-score fallback on a degraded sample;
+  - parsing of the legend-mapping fixture;
+  - the CAD-plan matcher fix from Part 2, on recorded model output.
+- Make sure `scripts/vision-benchmark.ts` would work with the new task shape (types compile, offline fixture added), but don't run it.
+- Write "live measurement pending: Barlas" in the PR.
 
 ## Stay inside
 `src/lib/snap/vision/*`, `src/components/VisionReview.tsx`, the vision tasks in `src/app/api/twin/route.ts`, `scripts/vision-benchmark.ts`, `scripts/make-vision-samples.ts`, `docs/VISION_BENCHMARK.md`, the Inspector's vision bits, and the `vision` dictionary group.

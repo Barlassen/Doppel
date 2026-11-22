@@ -67,3 +67,14 @@ From `/play`, after phase 1 is shown:
 - evaluation weights preset
 - game length
 - the phase 2 side-boards scope
+
+## 6. Live measurement (Barlas, with the key in `.env.local`)
+
+Run on an up-to-date `main` after Oktay's A/B PRs are merged:
+
+```bash
+npx tsx scripts/benchmark.ts                                         # reads .env.local itself → docs/BENCHMARK.md
+npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live     # → docs/VISION_BENCHMARK.md (see "Live misses")
+```
+
+Check that both reports say "live" in their measurement-basis line and that the misses are listed. Commit the two reports. If a new open model scores worse on a route, set that route's model back in `.env.example` / `route.ts` defaults before committing.

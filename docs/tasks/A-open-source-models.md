@@ -19,11 +19,11 @@ UBS told teams to "use open-source LLMs (Llama, Qwen, Mistral)". Doppel currentl
    - Compare with the current Gemini numbers: accuracy, tokens, cost, latency. If an open model is clearly worse on a route, keep the better model for that route and say why.
 4. **Update the docs.** In `docs/DECISIONS.md`, add a decision entry for the model choice, with the alternatives you rejected and the measured evidence. In `README.md`, update the model names and the evidence table.
 
-## No API key? (current situation)
-Live runs need `OPENROUTER_API_KEY`. Without one:
-- Do the code part and pass all offline gates.
-- **Do not commit `docs/BENCHMARK.md` or `docs/VISION_BENCHMARK.md` regenerated offline.** The benchmark scripts overwrite these reports, and the committed versions hold real live measurements. Run `git checkout -- docs/BENCHMARK.md docs/VISION_BENCHMARK.md` before committing.
-- Write "live measurement pending: coordinator" in the PR. The coordinator merges the PR, runs the live benchmark with the key on `main`, and commits the report. A model that measures worse does not become the default.
+## Measurement is done later by Barlas (current situation)
+There is no API key on this machine, so **don't run `scripts/benchmark.ts` or `scripts/vision-benchmark.ts` at all**. Both scripts rewrite `docs/BENCHMARK.md` and `docs/VISION_BENCHMARK.md`, which hold real live measurements.
+- Do the code part (model defaults, prices, any prompt or cap changes) and pass the gates that need no key: `tsc`, `lint`, `build`, `i18n-check`, `engine-check`, `smoke:browser`.
+- Make the model choice switchable via `DOPPEL_TEXT_MODEL` / `DOPPEL_VISION_MODEL`, so the old and new models can be compared without code changes.
+- Write "live measurement pending: Barlas" in the PR. Step 3 above is done by Barlas after merge. A model that measures worse does not become the default.
 
 ## Done when
 - All gates in `AGENTS.md` §5 pass.
