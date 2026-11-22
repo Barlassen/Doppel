@@ -28,6 +28,7 @@ export function Hero({
   netWorth,
   crunch,
   sim,
+  economy,
   impact,
   taxTip,
   notes,
@@ -46,6 +47,8 @@ export function Hero({
   netWorth: number;
   crunch: number;
   sim: { paths: number; ms: number };
+  /** The economy the futures were drawn from ("Economy: Baseline"): shown with the headline, never apart from it. */
+  economy?: string;
   impact: HeroImpact | null;
   taxTip?: ReactNode;
   /** Extra lines under "How is this calculated?" (e.g. the debt in net worth). */
@@ -66,6 +69,7 @@ export function Hero({
         <span className={`num ${probColor} ${fresh ? "" : "opacity-60"}`}>{fmt.pct(odds)}</span>
       </h1>
       <p className="mt-1.5 text-[15px] text-ink-2">
+        {economy && <span className="mr-2 inline-block rounded-full border border-line px-2 py-0.5 align-middle text-xs" data-testid="hero-economy">{economy}</span>}
         {rich("hero.disciplined", { odds: <b className="num font-semibold text-ink">{fmt.pct(ideal)}</b> })}{" "}
         {rich("hero.crunch", { risk: <b className="num font-semibold text-ink">{fmt.pct(crunch)}</b> })}
       </p>

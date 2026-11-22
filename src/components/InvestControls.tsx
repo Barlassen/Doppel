@@ -25,6 +25,7 @@ export function InvestControls({
   marginalTaxRate,
   no3a,
   economy,
+  note,
   children,
 }: {
   risk: RiskProfile;
@@ -38,10 +39,12 @@ export function InvestControls({
   /** Already retired: no pillar 3a contributions are possible, so the toggle and its tax line are hidden. */
   no3a?: boolean;
   /**
-   * Extension point: a control for the economic scenario the futures are drawn from (e.g. base / high inflation /
-   * recession). Rendered in the settings row after the 3a toggle; nothing is shown while it is not passed.
+   * The control for the economic scenario the futures are drawn from (`EconomySelect`), rendered in the settings row
+   * after the 3a toggle.
    */
   economy?: ReactNode;
+  /** Shown under the row: what the chosen economy changes, and its assumptions table. */
+  note?: ReactNode;
   children?: ReactNode;
 }) {
   const { t, fmt } = useI18n();
@@ -82,6 +85,7 @@ export function InvestControls({
         {economy && <div className="min-w-0" data-slot="economy">{economy}</div>}
         {children && <div className="min-w-0 sm:ml-auto">{children}</div>}
       </div>
+      {note}
       {risk === "growth" && panicHistory && (
         <p className="mt-3 max-w-3xl rounded-lg bg-warn/10 px-3 py-2 text-xs text-ink">
           {t("invest.growthWarning")}

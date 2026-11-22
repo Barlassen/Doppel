@@ -7,7 +7,9 @@ import {
   deleteAccount,
   getAccount,
   hydrateAccounts,
+  listImports,
   resetAccount,
+  setProfileFields,
   setActiveAccount,
   useAccounts,
   type Account,
@@ -17,6 +19,9 @@ import { ASSUMPTIONS, EQUITY_WEIGHT, simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe, type SolverResult } from "@/lib/finance/goalSolver";
 import { checkAffordability } from "@/lib/finance/swissRules";
+import { ECONOMIES } from "@/lib/finance/economy";
+import { compileLife } from "@/lib/finance/life";
+import { outlook, type Outlook } from "@/lib/finance/outlook";
 import { netWorthOf, totalDebt } from "@/lib/finance/debt";
 import {
   baseScenario,
@@ -40,8 +45,10 @@ import {
   type Op,
 } from "@/lib/twin/actions";
 import { orderedParsers } from "@/lib/twin/intents";
-import { callTwin } from "@/lib/llm";
-import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
+import { eventLabel } from "@/lib/twin/intents/shared";
+import { askErrorMsg, askTwin, callTwin, twinStatus, type AskFacts, type TwinStatus } from "@/lib/llm";
+import { entryFromAsk, entryFromCommand, entryFromNarrate, entryFromSnap, usageBasisMsg, type LedgerEntry } from "@/lib/frugal/ledger";
+import { summaryAskFacts, type InferredFact } from "@/lib/import";
 import type { SnapResult, Usage } from "@/lib/snap/types";
 import {
   applyChartToProfile,
@@ -53,16 +60,23 @@ import {
 import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { ConeChart } from "./ConeChart";
+import { AskCard, type AssistantReply } from "./AskCard";
+import { ConeChart, type ChartMarker } from "./ConeChart";
+import { DecisionsCard, eventIcon, markerIcon } from "./Decisions";
+import { EconomyNote, EconomySelect, economyIdOf } from "./EconomyControl";
+import { learnedFrom } from "./Learned";
+import { OutlookCard } from "./OutlookCard";
+import { useStatementMemory } from "./statementMemory";
 import type { IncomingStatement } from "./ImportPanel";
 import { CommandBar } from "./CommandBar";
 import { SnapPanel, type SnapItem } from "./SnapPanel";
 import { FrugalBadge, Inspector } from "./Inspector";
-import { AffordabilityCard, BankerCard, BehaviorCard, RecipesCard, Timeline } from "./Cards";
+import { AffordabilityCard, BehaviorCard, RecipesCard } from "./Cards";
 import { RetirementCard } from "./RetirementCard";
 import { PlanCompare, type PinnedPlan } from "./PlanCompare";
 import { InvestControls, TaxTip, WaitingStrip } from "./InvestControls";
 import { defaultHealthPremium } from "@/lib/finance/canton";
+import { CHILD } from "@/lib/finance/params";
 import { cantonLine } from "./CantonLine";
 import { Hero } from "./Hero";
 import { CardHeader, Section } from "./ui";
@@ -170,6 +184,11 @@ export default function DoppelApp() {
     cloud?: { locale: Locale; text: string; model: string };
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
+  // The assistant: whether one is connected (asked once after mount), and the last question with its answer.
+  const [assistant, setAssistant] = useState<TwinStatus | undefined | "checking">("checking");
+  const [ask, setAsk] = useState<{ question: string; loading: boolean; text?: string; error?: Msg; model?: string; usage?: AssistantReply["usage"] } | null>(null);
+  // A decision to open in the form: a what-if or a confirmed statement fact that still needs inputs.
+  const [decisionSeed, setDecisionSeed] = useState<{ token: number; op: Extract<Op, { op: "add" }> } | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [ubsPickerOpen, setUbsPickerOpen] = useState(false);
   const [incomingStatement, setIncomingStatement] = useState<IncomingStatement | null>(null);
@@ -199,6 +218,9 @@ export default function DoppelApp() {
   const [planA, setPlanA] = useState<{ key: string; result: SimResult } | null>(null);
   const [extras, setExtras] = useState<Extras | null>(null);
   const [solver, setSolver] = useState<{ key: string; profileId: string; result: SolverResult } | null>(null);
+  // "What happens next": the engine's outlook of the current plan against the account's own plan.
+  const [outlookState, setOutlookState] = useState<{ key: string; profileId: string; result: Outlook } | null>(null);
+  const outlookCache = useRef(new Map<string, Outlook>());
   const mainRef = useRef(main);
   const probCache = useRef(new Map<string, number>([[main.key, main.real.successProb]]));
   const pendingImpacts = useRef<PendingImpact[]>([]);
@@ -273,6 +295,7 @@ export default function DoppelApp() {
       setChartPatch(null);
     }
     setNarrative(null);
+    setAsk(null);
     setCmdMsg(undefined);
   }
 
@@ -311,6 +334,16 @@ export default function DoppelApp() {
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes with the locale
   }, [locale]);
+
+  useEffect(() => {
+    let alive = true;
+    void twinStatus().then((status) => {
+      if (alive) setAssistant(status);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Hydration: read the stored accounts after mount, then follow the store's active account.
   useEffect(() => {
@@ -353,6 +386,7 @@ export default function DoppelApp() {
     pendingImpacts.current.push({ label: opts.label, beforeKey, afterKey, snapId: opts.snapId });
     commitScenario(next);
     setNarrative(null);
+    setAsk(null);
   }
 
   function resolveImpact(pi: PendingImpact, before: number, after: number) {
@@ -376,6 +410,7 @@ export default function DoppelApp() {
   const planAKeyRef = useRef<string | null>(null);
   const extrasKeyRef = useRef<string | null>(null);
   const solverKeyRef = useRef<string | null>(null);
+  const outlookKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const job = ++jobRef.current;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -407,6 +442,24 @@ export default function DoppelApp() {
 
     const afterMain = () => {
       resolvePending();
+      if (outlookKeyRef.current !== key) {
+        const cached = outlookCache.current.get(key);
+        if (cached) {
+          setOutlookState({ key, profileId: prof.id, result: cached });
+          outlookKeyRef.current = key;
+        } else
+          step(() => {
+            const b = analyzeBehavior(effectiveProfile(prof, s), s.extraTx);
+            // Before = the account's own plan in the same economy, so the difference is the decisions.
+            const own = baseScenarioFor(acc);
+            const { economy, ...plan } = s;
+            const unchanged = JSON.stringify(plan) === JSON.stringify(own);
+            const result = outlook(prof, s, { baseline: unchanged ? null : own, behavior: b.params, ...(economy ? { economy } : {}) });
+            remember(outlookCache.current, key, result, 8);
+            setOutlookState({ key, profileId: prof.id, result });
+            outlookKeyRef.current = key;
+          }, 20);
+      }
       const aKey = pinned ? keyOf(acc.version, pinned.scenario) : null;
       if (aKey !== planAKeyRef.current) {
         step(() => {
@@ -516,6 +569,33 @@ export default function DoppelApp() {
   function pinAlexiaPath(next: Scenario, id: AlexiaPathId) {
     commitPin({ scenario: next, label: pathLabel(id), manual: true });
   }
+  // The outlook of this account: the fresh one, or the previous one (dimmed) while the next is computed.
+  const outlookShown = outlookState?.profileId === profileId ? outlookState.result : null;
+  const outlookFresh = outlookState?.key === inputsKey ? outlookState.result : null;
+  const economyId = economyIdOf(scenario.economy);
+  const planStart = useMemo(() => start ?? new Date(), [start]);
+  // Chart markers: the outlook's dated markers (birth, daycare, car bought, …); the plan's events until it is ready.
+  const chartMarkers = useMemo<ChartMarker[]>(() => {
+    if (!outlookFresh) {
+      return scenario.events.map((e) => ({ id: e.id, age: effProfile.age + Math.floor(e.month / 12), icon: eventIcon(e), label: e.labelMsg ?? e.label, rank: 0 }));
+    }
+    const seen = new Set<string>();
+    return outlookFresh.markers
+      .filter((m) => m.kind !== "goal" && m.kind !== "retirement" && m.kind !== "ahv")
+      .map((m, i) => {
+        const first = !!m.eventId && !seen.has(m.eventId);
+        if (m.eventId) seen.add(m.eventId);
+        return { id: `${m.kind}-${m.month}-${i}`, age: m.age, icon: markerIcon(m.kind), label: m.label, rank: first ? 0 : m.eventId ? 1 : 2 };
+      });
+  }, [outlookFresh, scenario.events, effProfile.age]);
+  // The "before" line: a manually pinned Plan A, else the account's own plan from the outlook.
+  const manualPlanA = pin?.manual && planAResult && planAResult !== real ? planAResult : null;
+  const chartBefore = manualPlanA ?? outlookFresh?.baselineSim ?? null;
+  const memory = useStatementMemory(account.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the account version changes with every import
+  const importIds = useMemo(() => listImports(account.id).map((r) => r.id), [account.id, account.version]);
+  const learned = useMemo(() => learnedFrom(account, memory.income, importIds), [account, memory.income, importIds]);
+
   const stateChars = useMemo(() => JSON.stringify({ profile: effProfile, events: scenario.events }).length, [effProfile, scenario.events]);
 
   // ---------------- multimodal snap ----------------
@@ -602,6 +682,68 @@ export default function DoppelApp() {
     return null;
   }
 
+  /** The first decision among `ops` for which the engine still lacks an input it cannot source (e.g. the new rent of a move). */
+  function decisionLackingInputs(ops: Op[]): Extract<Op, { op: "add" }> | null {
+    const months = (ASSUMPTIONS.endAge - effProfile.age) * 12;
+    const retireMonth = Math.max(0, (effProfile.retirementAge - effProfile.age) * 12);
+    for (const o of ops) {
+      if (o.op !== "add" || !o.decision) continue;
+      const probe: LifeEvent = { id: "probe-decision", type: o.type, label: o.label, month: o.month, amount: 0, decision: o.decision };
+      if (compileLife(effProfile, [...scenarioRef.current.events, probe], months, retireMonth).inputsNeeded.some((n) => n.eventId === probe.id)) return o;
+    }
+    return null;
+  }
+
+  /** Decisions from the picker (and edits): the same ops as a what-if, applied through the same path. */
+  function applyDecision(ops: Op[], label: Text) {
+    mutate((s) => applyScenarioOps(s, validateOps(ops, s.events), "command", { profile: base }), { label });
+  }
+
+  /** A life fact read from the statement was confirmed: what it means for the profile or the plan. */
+  function onFact(fact: InferredFact) {
+    const id = accountRef.current.id;
+    const amount = Math.round(fact.monthlyAmount);
+    const seed = (op: Extract<Op, { op: "add" }>) => setDecisionSeed((prev) => ({ token: (prev?.token ?? 0) + 1, op }));
+    switch (fact.id) {
+      case "salary":
+        if (amount > 0) {
+          onDataChange(msg("ux.learned.did.salary", { amount }));
+          setProfileFields(id, { netIncomeMonth: amount });
+        }
+        break;
+      case "tenant":
+        if (amount > 0) {
+          onDataChange(msg("ux.learned.did.tenant", { amount }));
+          setProfileFields(id, { rentMonth: amount });
+        }
+        break;
+      case "pillar3a":
+        onDataChange(msg("ux.learned.did.pillar3a", { amount }));
+        setProfileFields(id, { contributes3a: true });
+        break;
+      case "car": {
+        // The car is already in the spending: the decision starts today and names that spending as replaced.
+        const lease = learned.summary?.fixed.items.find((item) => item.kind === "leasing");
+        seed({
+          op: "add", type: "expense", ...eventLabel({ key: lease ? "life.event.carLease" : "life.event.car" }), month: 0, amount: 0,
+          decision: { kind: "car", mode: lease ? "leased" : "owned", ...(lease ? { leaseMonthly: Math.round(lease.monthlyAmount) } : {}), ...(amount > 0 ? { replacesMonthly: amount } : {}) },
+        });
+        break;
+      }
+      case "child": {
+        const daycare = learned.summary?.fixed.items.find((item) => item.kind === "childcare");
+        const days = CHILD.kitaDaysPerWeek.value;
+        seed({
+          op: "add", type: "child", ...eventLabel({ key: "event.baby" }), month: 0, amount: 0,
+          decision: { kind: "child", ...(daycare ? { ageYears: 2, kitaDaysPerWeek: days, kitaDailyChf: Math.round(daycare.monthlyAmount / (days * CHILD.kitaWeeksPerMonth.value)) } : {}) },
+        });
+        break;
+      }
+      default:
+        break; // owner, debt, investor: remembered as confirmed; the profile already carries what they imply
+    }
+  }
+
   async function onCommand(text: string) {
     const rev = profileRevRef.current;
     const accountId = accountRef.current.id;
@@ -658,9 +800,14 @@ export default function DoppelApp() {
       setCmdBusy(false);
       return; // account switched while parsing — don't apply to the wrong twin
     }
-    if (ops && ops.length) {
+    const lacking = ops && ops.length ? decisionLackingInputs(ops) : null;
+    if (lacking) {
+      // Understood, but the engine has no sourced value for part of it: the form opens with what was said.
+      setDecisionSeed((prev) => ({ token: (prev?.token ?? 0) + 1, op: lacking }));
+      status = msg("ux.cmdNeedsInputs", { label: lacking.labelMsg ?? lacking.label });
+    } else if (ops && ops.length) {
       const valid = ops;
-      mutate((s) => applyScenarioOps(s, valid, "command"), { label: text });
+      mutate((s) => applyScenarioOps(s, valid, "command", { profile: base }), { label: text });
       status = msg("cmd.result", { status, ops: describeOps(valid) });
     }
     setCmdMsg(status);
@@ -671,6 +818,7 @@ export default function DoppelApp() {
   async function narrate() {
     const rev = profileRevRef.current;
     const accountId = accountRef.current.id;
+    setAsk(null);
     setNarrative({ fallback: [], loading: true });
     const top = recipes[0];
     const ret = real.retirement;
@@ -712,6 +860,77 @@ export default function DoppelApp() {
     addLedger(accountId, entryFromNarrate({ usage, payload: r.request ?? { wouldSend: request }, ms: performance.now() - t0, stateChars }));
     if (rev !== profileRevRef.current) return;
     setNarrative({ fallback, cloud, loading: false });
+  }
+
+  /** The engine's current figures, as the flat facts an answer may quote (percent as numbers, money in CHF). */
+  function askFactsNow(): AskFacts {
+    const pctOf = (share: number) => Math.round(share * 1000) / 10;
+    const chfOf = (amount: number) => Math.round(amount);
+    const goalBand = real.bands.find((b) => b.age === effProfile.goal.age);
+    const ret = real.retirement;
+    const top = recipes[0];
+    const decisions = scenario.events.map((e) => translateText("en", e.labelMsg ?? e.label)).join(", ");
+    return {
+      client: effProfile.name,
+      age: effProfile.age,
+      city: effProfile.city,
+      canton: effProfile.canton,
+      risk_profile: effProfile.riskProfile,
+      goal: translateText("en", effProfile.goal.label),
+      goal_amount_chf: effProfile.goal.target,
+      horizon_years: Math.max(0, effProfile.goal.age - effProfile.age),
+      net_worth_chf: chfOf(netWorthToday),
+      liquid_savings_chf: chfOf(effProfile.cash),
+      investments_chf: chfOf(effProfile.portfolio),
+      pillar3a_chf: chfOf(effProfile.pillar3a),
+      pension_fund_chf: chfOf(effProfile.pillar2),
+      ...(debtToday > 0 ? { debt_chf: chfOf(debtToday) } : {}),
+      monthly_net_income_chf: chfOf(effProfile.netIncomeMonth),
+      monthly_expenses_chf: chfOf(effProfile.expensesMonth),
+      monthly_savings_chf: chfOf(effProfile.netIncomeMonth - effProfile.expensesMonth),
+      ...(effProfile.netIncomeMonth > 0 ? { savings_rate_pct: pctOf((effProfile.netIncomeMonth - effProfile.expensesMonth) / effProfile.netIncomeMonth) } : {}),
+      contributes_3a: effProfile.contributes3a,
+      odds_with_habits_pct: pctOf(real.successProb),
+      odds_disciplined_pct: pctOf(ideal.successProb),
+      cash_crunch_risk_pct: pctOf(real.crunchProb),
+      habit_cost_chf: chfOf(Math.max(0, behaviorCost)),
+      ...(behavior.insights[0] ? { top_habit: translateText("en", behavior.insights[0].title) } : {}),
+      ...(goalBand ? { net_worth_p10_chf: chfOf(goalBand.p10), net_worth_median_chf: chfOf(goalBand.p50), net_worth_p90_chf: chfOf(goalBand.p90) } : {}),
+      ...(top ? { best_move: translateText("en", top.title), best_move_odds_pct: pctOf(top.newProb) } : {}),
+      ...(affordability && house
+        ? { home_price_chf: chfOf(house.price), home_affordable: affordability.pass, home_cost_to_income_pct: pctOf(affordability.costToIncome), home_max_price_chf: chfOf(affordability.maxPrice), home_bought_pct: pctOf(house.boughtProb) }
+        : {}),
+      ...(ret
+        ? { retirement_age: ret.age, retirement_income_month_chf: chfOf(ret.monthlyIncomeAtRetirement), retirement_gap_month_chf: chfOf(Math.max(0, ret.monthlySpending - ret.monthlyIncomeAtRetirement)), savings_last_to_90_pct: pctOf(ret.lastsTo90Prob) }
+        : {}),
+      ...(learned.summary ? summaryAskFacts(learned.summary) : {}),
+      scenario: [translate("en", `economy.name.${economyId}`) + " economy", decisions ? "decisions: " + decisions : "no added decisions"].join("; "),
+      assumptions: translate("en", "ux.assumptions", {
+        equity: ASSUMPTIONS.equity.mu, equityVol: ASSUMPTIONS.equity.sigma, bonds: ASSUMPTIONS.bonds.mu, bondsVol: ASSUMPTIONS.bonds.sigma, cash: ASSUMPTIONS.cashRate,
+        inflation: ASSUMPTIONS.inflation, wages: ASSUMPTIONS.wageGrowth, overdraft: ASSUMPTIONS.overdraftRate, share: EQUITY_WEIGHT[effProfile.riskProfile],
+      }),
+      ...(outlookFresh ? { note: `lowest cash point CHF ${chfOf(outlookFresh.cashLow.median.amount)} in ${outlookFresh.cashLow.median.year}; monthly surplus CHF ${chfOf(outlookFresh.budget.after.surplus)}` } : {}),
+    };
+  }
+
+  // ---------------- ask your twin ----------------
+  async function onAsk(question: string) {
+    const rev = profileRevRef.current;
+    const accountId = accountRef.current.id;
+    setAsk({ question, loading: true });
+    const facts = askFactsNow();
+    const t0 = performance.now();
+    const r = await askTwin(question, facts, locale);
+    const ms = r.ms ?? performance.now() - t0;
+    const answered = r.ok && typeof r.data === "string" && r.data.trim() !== "";
+    const usage: Usage = r.usage
+      ? { ...r.usage, mode: "llm" }
+      : { promptTokens: 0, completionTokens: 0, costUsd: 0, model: r.offline ? "not connected" : "assistant", mode: r.offline ? "offline" : "llm" };
+    addLedger(accountId, entryFromAsk({ question, usage, payload: r.request ?? { question, facts }, ms, stateChars, usageKnown: r.usageKnown, outcome: answered ? "ok" : "failed" }));
+    if (rev !== profileRevRef.current) return;
+    setAsk(answered
+      ? { question, loading: false, text: r.data!.trim(), model: usage.model, usage: { tokens: usage.promptTokens + usage.completionTokens, costUsd: usage.costUsd, basis: usageBasisMsg(usage) } }
+      : { question, loading: false, error: askErrorMsg(r) });
   }
 
   function applyRecipe(r: Recipe) {
@@ -810,6 +1029,7 @@ export default function DoppelApp() {
           netWorth={netWorthToday}
           crunch={real.crunchProb}
           sim={{ paths: real.paths, ms: real.ms }}
+          economy={t("ux.econ.chip", { name: ECONOMIES[economyId].label })}
           impact={impact}
           taxTip={effProfile.contributes3a || scenario.optimize || effProfile.retirementAge <= effProfile.age ? undefined : <TaxTip marginalTaxRate={effProfile.marginalTaxRate} />}
           notes={
@@ -851,7 +1071,13 @@ export default function DoppelApp() {
             panicHistory={effProfile.history.soldInDrawdown}
             marginalTaxRate={effProfile.marginalTaxRate}
             no3a={effProfile.retirementAge <= effProfile.age}
-            // Extension point: pass the economic-scenario control here (`economy={<… />}`) once the engine offers one.
+            economy={
+              <EconomySelect
+                value={economyId}
+                onChange={(id) => set([{ op: "set", key: "economy", value: id }], msg("economy.opSet", { value: ECONOMIES[id].label }))}
+              />
+            }
+            note={<EconomyNote value={economyId} />}
           >
             <PlanCompare
               plan={pin}
@@ -878,30 +1104,16 @@ export default function DoppelApp() {
               real={real}
               ideal={ideal}
               goal={effProfile.goal}
-              // The plan before the last decision (auto-pinned) or the pinned Plan A: the "before" line.
-              before={planAResult && planAResult !== real ? planAResult : null}
-              beforeLabel={pin?.label}
+              before={chartBefore}
+              beforeLabel={manualPlanA && pin ? t("plan.label", { marker: "", label: pin.label }) : t("ux.chart.legendBefore")}
+              cashLow={outlookFresh?.cashLow}
               retirementAge={effProfile.retirementAge}
-              events={scenario.events.map((e) => ({ id: e.id, age: effProfile.age + Math.floor(e.month / 12), type: e.type, label: e.labelMsg ?? e.label }))}
+              markers={chartMarkers}
               targetLine={goalIsNetWorth}
               netWorthToday={netWorthToday}
+              footnote={economyId !== "baseline" ? tm(ECONOMIES[economyId].summary) : undefined}
             />
             {!goalIsNetWorth && <p className="mt-2 text-xs text-ink-2">{t("ubs.chartMetricNote")}</p>}
-            <div className="mt-5">
-              <Timeline
-                events={scenario.events}
-                age={effProfile.age}
-                start={start}
-                onShift={(id, m) => {
-                  const e = scenario.events.find((x) => x.id === id);
-                  set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
-                }}
-                onRemove={(id) => {
-                  const e = scenario.events.find((x) => x.id === id);
-                  set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
-                }}
-              />
-            </div>
             {hasOverrides && (
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {scenario.expenseDelta !== 0 && (
@@ -932,7 +1144,7 @@ export default function DoppelApp() {
           </section>
           <ImportPanel
             account={account}
-            behavior={behavior}
+            onFact={onFact}
             onLedger={(entry) => addLedger(account.id, entry)}
             onDataChange={onDataChange}
             incoming={incomingStatement}
@@ -946,6 +1158,24 @@ export default function DoppelApp() {
             {/* Extension point "decisions": every big decision is one card in this grid (home, retirement, debt, …).
                 New life decisions from the engine go here as further cards, in the same CardHeader style. */}
             <div className="grid items-start gap-5 lg:grid-cols-2" data-slot="decisions">
+              <DecisionsCard
+                profile={effProfile}
+                events={scenario.events}
+                start={planStart}
+                outlooks={outlookFresh?.decisions}
+                needs={outlookFresh?.inputsNeeded}
+                seed={decisionSeed}
+                onApply={applyDecision}
+                onShift={(id, m) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "shift", id, months: m }], msg("change.shiftEvent", { label: e?.labelMsg ?? e?.label ?? msg("change.eventFallback"), months: m }));
+                }}
+                onRemove={(id) => {
+                  const e = scenario.events.find((x) => x.id === id);
+                  set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
+                }}
+              />
+              <OutlookCard outlook={outlookShown} loading={!outlookFresh} start={start} />
               {account.id === ALEXIA_ID && (
                 <AlexiaPaths base={base} scenario={accountStart} activePath={scenario.path?.id} onApply={applyAlexiaPath} onPin={pinAlexiaPath} />
               )}
@@ -978,13 +1208,20 @@ export default function DoppelApp() {
           <Section title={t("layout.nextSteps")}>
             <div className="grid items-start gap-5 lg:grid-cols-2">
               <RecipesCard recipes={recipes} loading={solving} baseProb={real.successProb} onApply={applyRecipe} />
-              <BankerCard
-                started={!!narrative}
-                loading={!!narrative?.loading}
-                text={narrative && !narrative.loading
-                  ? narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" ")
-                  : undefined}
-                source={narrative?.cloud?.locale === locale ? { model: narrative.cloud.model } : "template"}
+              <AskCard
+                status={assistant}
+                busy={!!ask?.loading || !!narrative?.loading}
+                reply={
+                  ask && !ask.loading
+                    ? { question: ask.question, text: ask.text, error: ask.error, source: ask.model ? { model: ask.model } : undefined, usage: ask.usage }
+                    : !ask && narrative && !narrative.loading
+                      ? {
+                          text: narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" "),
+                          source: narrative.cloud?.locale === locale ? { model: narrative.cloud.model } : "template",
+                        }
+                      : null
+                }
+                onAsk={onAsk}
                 onExplain={narrate}
               />
             </div>
