@@ -14,7 +14,7 @@ TKT drives the real OS mouse and keyboard, so it controls Doppel in the browser 
 | Two-finger scroll | Scroll the page: board → engine review → move list |
 | Three-/four-finger swipes | Still the OS actions (switch desktop, Mission Control); not used by Doppel at this level |
 
-Large targets help a hand-driven pointer. The board's pieces and the decision buttons are at least 44 px. Under the board, a "Full review ↓" link jumps to the engine review on small screens.
+Large targets help a hand-driven pointer. The decision buttons are at least 44 px high. A board square is about 35 px on a 320-px phone and larger on a laptop, so use a laptop or a large screen for the demo. Under the board, a "Full review ↓" link jumps to the engine review on small screens.
 
 ### 30-second demo
 
@@ -54,7 +54,8 @@ TKT's constraints: `vision` and `control` never import each other, `src/tkt/core
 
 ## What is verified
 
-- **Verified:** the Doppel side (targets, shortcuts, the demo script's Doppel part) in Playwright at 320 and 1280 px.
+- **Verified:** the Doppel side, in Playwright at 320 and 1280 px: board targets, decisions and keyboard shortcuts.
+- **Not run:** the demo scripts end to end. They would start TKT on this machine.
 - **Not verified here:** TKT itself, because there is no camera on this machine. The TKT commands in the scripts follow TKT's README (`uv run python -m tkt.app.main --source live`). Run the demo once on the demo machine before the pitch.
 
 ## Changes from the earlier draft
