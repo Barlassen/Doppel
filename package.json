@@ -15,11 +15,15 @@
     "engine:check": "npx tsx scripts/engine-check.ts",
     "engine:regression": "npx tsx scripts/engine-regression.ts",
     "play:board": "npx tsx scripts/board-check.ts",
-    "lint": "eslint --ignore-pattern \"public/tesseract/runtime/**\"",
+    "lint": "eslint --ignore-pattern \"public/tesseract/runtime/**\" --ignore-pattern \"desktop/.stage/**\" --ignore-pattern \"desktop/dist/**\"",
     "postinstall": "node scripts/copy-tesseract-assets.mjs",
     "smoke:browser": "npx tsx scripts/browser-smoke.mjs",
     "e2e:live": "node scripts/e2e-live.mjs",
-    "donut:check": "npx tsx scripts/donut-check.ts"
+    "donut:check": "npx tsx scripts/donut-check.ts",
+    "desktop:install": "npm --prefix desktop ci",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build",
+    "desktop:smoke": "node scripts/desktop-smoke.mjs"
   },
   "dependencies": {
     "chess.js": "1.4.0",
