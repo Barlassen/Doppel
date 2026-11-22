@@ -602,7 +602,6 @@ export function AccountWizard({
                 {statementNote && <p className="rounded-xl bg-surface-2 p-3">{tm(statementNote)}</p>}
               </div>
               {statementError && <p role="alert" className="text-bad">{tm(statementError)}</p>}
-              {!statement && !reading && <p>{t("ux.wiz.stmtSkip")}</p>}
             </div>
           )}
 

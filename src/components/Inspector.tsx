@@ -277,17 +277,12 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
           {/* Summary: calls, tokens and cost, what left the device, saving against the naive baseline */}
           <dl className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3" data-testid="inspector-summary">
             <Stat label={t("ux.insp.calls")} value={fmt.int(entries.length)} sub={t("ux.insp.local", { count: localCount })} />
-            <Stat label={t("ux.insp.tokens")} value={fmt.int(stats.ours)} sub={fmt.usd(stats.oursCost)} />
+            <Stat label={t("ux.insp.tokens")} value={fmt.int(stats.ours)} />
+            <Stat label={t("inspector.rowCost")} value={fmt.usd(stats.oursCost)} />
             <Stat
               label={t("ux.insp.sent")}
               value={byteSize(t, fmt, bytesSent)}
               sub={cloudCount > 0 ? t("ux.insp.cloud", { count: cloudCount }) : t("ux.insp.nothingSent")}
-            />
-            <Stat
-              label={t(savingMeasured ? "ux.insp.savingMeasured" : "ux.insp.savingEstimated")}
-              value={stats.tokenSavedPct !== null ? savedPercent(fmt, stats.tokenSavedPct) : "—"}
-              sub={stats.costSavedPct !== null ? t("ux.insp.cost", { p: savedPercent(fmt, stats.costSavedPct) }) : t("inspector.savingsEmpty")}
-              accent
             />
           </dl>
 
@@ -338,6 +333,14 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
           {/* Method: the cascade, the baseline and the unit figures, one click away */}
           <Disclosure summary={t("ux.insp.method")} testId="inspector-method">
             <div className="space-y-4 text-xs">
+              <dl className="max-w-xs">
+                <Stat
+                  label={t(savingMeasured ? "ux.insp.savingMeasured" : "ux.insp.savingEstimated")}
+                  value={stats.tokenSavedPct !== null ? savedPercent(fmt, stats.tokenSavedPct) : "—"}
+                  sub={stats.costSavedPct !== null ? t("ux.insp.cost", { p: savedPercent(fmt, stats.costSavedPct) }) : t("inspector.savingsEmpty")}
+                  accent
+                />
+              </dl>
               {stats.measuredCount > 0 && (
                 <div className="space-y-2">
                   <Bar label={t("inspector.barNaive")} value={stats.naive} max={maxTokens} color="var(--ink-3)" />
@@ -382,12 +385,12 @@ export function Inspector({ entries, open, onClose, comparisons: externalCompari
   );
 }
 
-function Stat({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: boolean }) {
+function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
     <div className="rounded-xl bg-surface-2 p-3">
       <dt className="label">{label}</dt>
       <dd className={`num mt-1 text-xl font-semibold ${accent ? "text-frugal" : ""}`}>{value}</dd>
-      <dd className="num text-xs text-ink-2">{sub}</dd>
+      {sub && <dd className="num text-xs text-ink-2">{sub}</dd>}
     </div>
   );
 }
