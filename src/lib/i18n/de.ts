@@ -1697,7 +1697,8 @@ export const de = {
     failed: "Geschäft mit {age} gescheitert: {amount:chfShort} verloren (die Kredite bleiben)",
     profit: "Geschäft {kind}: {amount:chfSigned} dieses Jahr",
     promoted: "Umwandlung: Der Bauer wird zum {piece} ({asset})",
-    symbolic: "Symbolische Umwandlung: Figuren des Lebens versperrten dem Bauern den Weg zur letzten Reihe, darum wurde er auf seinem Feld zum Vermögenswert. Dieser eine Zug ist kein Schachzug (mit * markiert).",
+    pendingShop: "Der Laden ist gekauft. Sein Bauer wird zum Turm, sobald er die letzte Reihe wirklich erreicht; noch versperren Figuren des Lebens den Weg.",
+    pendingFactory: "Die Fabrik ist gebaut. Ihr Bauer wird zur Dame, sobald er die letzte Reihe wirklich erreicht; noch versperren Figuren des Lebens den Weg.",
     legend: "Umwandlung = dein Geschäft: Hat ein Unternehmen vier Jahre überstanden, kann sein Bauer zum Turm (ein Laden) oder zur Dame (eine Fabrik) werden, soweit deine Eigenmittel reichen. Wohneigentum bleibt ein normaler Zug (Rochade).",
   },
 } satisfies Messages;

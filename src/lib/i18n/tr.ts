@@ -1703,7 +1703,8 @@ export const tr = {
     failed: "İş {age} yaşında battı: {amount:chfShort} kayıp (kredileri kalıyor)",
     profit: "İş ({kind}): bu yıl {amount:chfSigned}",
     promoted: "Terfi: piyon {piece} oldu ({asset})",
-    symbolic: "Sembolik terfi: Hayat'ın taşları piyonun son sıraya giden yolunu kapatıyordu, bu yüzden piyon bulunduğu karede varlığa dönüştü. Bu tek hamle bir satranç hamlesi değildir (* ile işaretli).",
+    pendingShop: "Dükkân alındı. Piyonu son sıraya gerçekten ulaştığında kaleye terfi edecek; şimdilik Hayat'ın taşları yolu kapatıyor.",
+    pendingFactory: "Fabrika kuruldu. Piyonu son sıraya gerçekten ulaştığında vezire terfi edecek; şimdilik Hayat'ın taşları yolu kapatıyor.",
     legend: "Terfi = işin: bir girişim dört yıl ayakta kalınca piyonu, öz kaynağın yettiği ölçüde kaleye (dükkân) ya da vezire (fabrika) terfi edebilir. Ev almak normal bir hamle olarak kalır (rok).",
   },
 } satisfies Messages;

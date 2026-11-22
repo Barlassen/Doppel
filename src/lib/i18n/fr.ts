@@ -1706,7 +1706,8 @@ export const fr = {
     failed: "Faillite de l’entreprise à {age} ans : {amount:chfShort} perdus (les crédits restent)",
     profit: "Entreprise {kind} : {amount:chfSigned} cette année",
     promoted: "Promotion : le pion devient {piece} ({asset})",
-    symbolic: "Promotion symbolique : des pièces de la vie bloquaient la route du pion vers la dernière rangée, il s’est donc transformé sur sa case. Ce coup n’est pas un coup d’échecs (marqué *).",
+    pendingShop: "Le magasin est acheté. Son pion devient une tour quand il atteint vraiment la dernière rangée ; pour l’instant, des pièces de la vie bloquent la route.",
+    pendingFactory: "L’usine est construite. Son pion devient une dame quand il atteint vraiment la dernière rangée ; pour l’instant, des pièces de la vie bloquent la route.",
     legend: "Promotion = votre entreprise : après quatre ans de survie, son pion peut devenir une tour (un magasin) ou une dame (une usine), selon vos fonds propres. Le logement reste un coup normal (roque).",
   },
 } as const satisfies Messages;

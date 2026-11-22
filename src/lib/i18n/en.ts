@@ -1695,7 +1695,8 @@ export const en = {
     failed: "Business failed at {age}: {amount:chfShort} lost (its loans remain)",
     profit: "Business {kind}: {amount:chfSigned} this year",
     promoted: "Promotion: the pawn becomes a {piece} ({asset})",
-    symbolic: "Symbolic promotion: Life's pieces blocked the pawn's way to the last rank, so it turned into the asset on its square. This one move is not a chess move (marked *).",
+    pendingShop: "The shop is bought. Its pawn promotes to a rook when it really reaches the last rank; for now Life's pieces block the way.",
+    pendingFactory: "The factory is built. Its pawn promotes to a queen when it really reaches the last rank; for now Life's pieces block the way.",
     legend: "Promotion = your business: when a venture has survived four years, its pawn can promote to a rook (a shop) or a queen (a factory), as far as your own funds allow. A home stays a normal move (castling).",
   },
 } as const;

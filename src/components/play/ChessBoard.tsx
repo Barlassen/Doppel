@@ -143,7 +143,8 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
     if (ply.side === "w" && ply.wanted) notes.push({ text: t("board.substituted", { wanted: pieceName(ply.wanted), piece: pieceName(ply.piece) }), tone: "warn" });
     if (ply.side === "w" && ply.hangs > 0) notes.push({ text: t("board.hangs"), tone: "warn" });
     if (ply.promotion) notes.push({ text: t("biz.promoted", { piece: pieceName(ply.promotion), asset: t(ply.promotion === "q" ? "biz.factory" : ply.promotion === "r" ? "biz.shop" : "biz.venture") }), tone: "good" });
-    if (ply.symbolic) notes.push({ text: t("biz.symbolic"), tone: "warn" });
+    if (ply.side === "w" && !ply.promotion && (ply.card === "openShop" || ply.card === "buildFactory"))
+      notes.push({ text: t(ply.card === "openShop" ? "biz.pendingShop" : "biz.pendingFactory"), tone: "warn" });
     return notes;
   }
 

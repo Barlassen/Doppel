@@ -150,8 +150,6 @@ export interface BoardPly {
   captured: PieceSymbol | null;
   /** Piece a pawn promoted to (rook = shop, queen = factory). */
   promotion: PieceSymbol | null;
-  /** A promotion in place because the pawn's way was blocked: not a chess move (see `symbolicPromotion`). */
-  symbolic?: boolean;
   /** The move gives check. */
   check: boolean;
   mate: boolean;
@@ -427,56 +425,7 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
 /** Candidates that get the expensive scoring terms. */
 const REFINE = 6;
 
-/**
- * Symbolic promotion: the business pawn's way to the last rank is blocked, so it turns into the chosen asset on its
- * square. This one ply is not a chess move (marked "*" in the notation and in the panel); every other ply is legal.
- */
-function symbolicPromotion(ch: Chess, w: Want, card: string | null): BoardPly | null {
-  const sq = w.bizSquare && ch.get(w.bizSquare)?.type === "p" && ch.get(w.bizSquare)?.color === "w" ? w.bizSquare : chooseBusinessPawn(ch);
-  if (!sq || !w.promote) return null;
-  const probe = new Chess(ch.fen());
-  probe.remove(sq);
-  probe.put({ type: w.promote, color: "w" }, sq);
-  const parts = probe.fen().split(" ");
-  parts[1] = "b";
-  parts[3] = "-";
-  const fen = parts.join(" ");
-  // Only if the result is a sound position for Black to move (not already lost or illegal).
-  let next: Chess;
-  try {
-    next = new Chess(fen);
-  } catch {
-    return null;
-  }
-  if (mateOrDraw(next)) return null;
-  ch.load(fen);
-  return {
-    side: "w",
-    san: `${sq}=${w.promote.toUpperCase()}*`,
-    from: sq,
-    to: sq,
-    piece: "p",
-    wanted: null,
-    captured: null,
-    promotion: w.promote,
-    symbolic: true,
-    check: ch.inCheck(),
-    mate: false,
-    hangs: hanging(ch, "w").value,
-    card,
-    fenAfter: ch.fen(),
-  };
-}
-
 function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card: string | null): BoardPly | null {
-  if (w.promote && !(ch.moves({ verbose: true }) as Move[]).some((m) => m.promotion === w.promote && (!w.bizSquare || m.from === w.bizSquare))) {
-    const sym = symbolicPromotion(ch, w, card);
-    if (sym) {
-      const key = ch.fen().split(" ").slice(0, 2).join(" ");
-      seen.set(key, (seen.get(key) ?? 0) + 1);
-      return sym;
-    }
-  }
   const m = pickMove(ch, w, salt, seen);
   if (!m) return null;
   ch.move(m);
@@ -559,6 +508,12 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
     if (!move) break;
     const next = game.positions[k + 1];
     const ww = whiteWant(move.card, labels[k], playerTarget, next.status === "won");
+    // A shop or a factory bought earlier: the business pawn promotes to it once it really reaches the last rank.
+    if (ww.business && !ww.promote) {
+      const kind = next.business?.kind ?? game.positions[k].business?.kind;
+      if (kind === "shop") ww.promote = "r";
+      else if (kind === "factory") ww.promote = "q";
+    }
     if (ww.business) {
       const p = bizSquare ? ch.get(bizSquare) : null;
       if (!p || p.type !== "p" || p.color !== "w") bizSquare = chooseBusinessPawn(ch);

@@ -49,7 +49,6 @@ function randomGame(start: GameState, seed: number, turns: number): { game: Game
 async function main() {
   const starts: GameState[] = [await ubsOpening(ALEXIA_ID), ...PROFILES.map((p) => accountOpening(p))];
   let illegal = 0;
-  let symbolic = 0;
   let early = 0;
   let falseCheck = 0;
   let finChecks = 0;
@@ -73,16 +72,10 @@ async function main() {
     line.turns.forEach((turn, k) => {
       for (const ply of [turn.white, turn.black]) {
         if (!ply) continue;
-        if (ply.symbolic) {
-          // A symbolic promotion (business pawn blocked): replay it as the board did and count it apart.
-          symbolic++;
-          ch.load(ply.fenAfter);
-        } else {
-          try {
-            ch.move({ from: ply.from, to: ply.to, promotion: ply.promotion ?? "q" });
-          } catch {
-            illegal++;
-          }
+        try {
+          ch.move({ from: ply.from, to: ply.to, promotion: ply.promotion ?? "q" });
+        } catch {
+          illegal++;
         }
         if (ch.isGameOver() && !(game.positions[k + 1] && game.positions[k + 1].status !== "playing")) early++;
       }
@@ -113,7 +106,7 @@ async function main() {
     if (JSON.stringify(again) !== JSON.stringify(line)) check(`determinism game ${i}`, false);
     void currentPosition;
   }
-  check("every ply is a legal chess move (symbolic business promotions apart)", illegal === 0, `${illegal} illegal · ${symbolic} symbolic promotions`);
+  check("every ply is a legal chess move", illegal === 0, `${illegal} illegal`);
   check("the board never ends a game that is still playing", early === 0, `${early} early game-overs`);
   check("Life never checks outside financial check", falseCheck === 0, `${falseCheck} false checks`);
   const rate = finChecks ? boardChecks / finChecks : 1;
