@@ -9,6 +9,12 @@
   --ink-2: #52514e;
   --ink-3: #6b6861; /* 4.8:1 on --surface-2, 5.4:1 on --surface (WCAG AA for the 11px labels) */
   --accent: #b3122e; /* Swiss red, used sparingly */
+  /* "Where my money goes": five parts of income, dark to light, then the saved parts in green. */
+  --flow-housing: var(--ink);
+  --flow-fixed: color-mix(in srgb, var(--ink) 55%, var(--surface));
+  --flow-everyday: var(--series-1);
+  --flow-invest: var(--good);
+  --flow-left: color-mix(in srgb, var(--good) 30%, var(--surface));
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --good: #0a7a3d;

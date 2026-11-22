@@ -50,7 +50,7 @@ export const fr = {
   },
 
   layout: {
-    decisions: "Grandes décisions",
+    decisions: "Décisions",
     nextSteps: "Prochaines étapes",
     habits: "Habitudes et moment d’agir",
   },
@@ -116,7 +116,7 @@ export const fr = {
   },
 
   hero: {
-    who: "{name}, {age} ans · {city} · {tagline}",
+    who: "{name}, {age} ans · {city}",
     goal: "{goal} :",
     disciplined: "Avec plus de discipline, vos chances seraient de {odds}.",
     netWorth: "Fortune nette actuelle : {amount}",
@@ -238,7 +238,7 @@ export const fr = {
   },
 
   chart: {
-    title: "Votre fortune nette au fil du temps",
+    title: "Fortune nette",
     engine: "Monte Carlo déterministe · 0 token",
     legendRange: "Vos habitudes · bande centrale (80 %)",
     legendReal: "Avec vos habitudes · médiane",
@@ -287,7 +287,7 @@ export const fr = {
 
   behavior: {
     title: "Jumeau comportemental",
-    cost: "Vos habitudes vous coûtent {amount} d’ici l’échéance de votre objectif (médiane).",
+    cost: "Coût des habitudes : {amount}",
     habitLeakage: "Dépenses après la paie et achats impulsifs",
     habitPanic: "Ventes de panique",
     approxPerMonth: "≈ {amount:chf}/mois",
@@ -1985,6 +1985,33 @@ export const fr = {
       ahv: "Début de la rente AVS",
     },
   },
+  flow: {
+    title: "Où va mon argent",
+    month: "Mois",
+    year: "Année",
+    basisMonth: "Mois type",
+    basisYear: "Par an",
+    fromProfile: "Selon profil",
+    period: "Période",
+    fixed: "Fixe",
+    variable: "Variables",
+    saved: "Épargné",
+    investing: "Placements",
+    pillar3a: "Pilier 3a",
+    left: "Reste",
+    shortfall: "Découvert",
+    living: "Coût de la vie",
+    income: "Revenu",
+    spent: "Dépenses",
+    rate: "Taux d’épargne",
+    segHousing: "Logement",
+    segFixed: "Assurances & factures",
+    segEveryday: "Quotidien",
+    segInvest: "Placements & 3a",
+    segLeft: "Solde",
+    decisions: "Décisions",
+  },
+
   ux: {
     skip: "Aller au contenu",
     docTitle: "Doppel : votre jumeau financier",
@@ -2011,7 +2038,7 @@ export const fr = {
       viewAria: "Période du graphique",
       viewGoal: "Jusqu’à l’objectif",
       viewLife: "Jusqu’à {age} ans",
-      legendMedian: "Scénario médian : une moitié finit plus haut, l’autre plus bas",
+      legendMedian: "Scénario médian",
       tipMedian: "Scénario médian",
       legendBand: "8 scénarios sur 10",
       legendIdeal: "Sans vos habitudes",

@@ -46,8 +46,8 @@ export const en = {
   },
 
   layout: {
-    decisions: "Big decisions",
-    nextSteps: "What to do next",
+    decisions: "Decisions",
+    nextSteps: "Next steps",
     habits: "Habits and timing",
   },
 
@@ -112,7 +112,7 @@ export const en = {
   },
 
   hero: {
-    who: "{name}, {age} · {city} · {tagline}",
+    who: "{name}, {age} · {city}",
     goal: "{goal}:",
     disciplined: "Disciplined you would be at {odds}.",
     netWorth: "Net worth today {amount}",
@@ -234,7 +234,7 @@ export const en = {
   },
 
   chart: {
-    title: "Your net worth over time",
+    title: "Net worth",
     engine: "Monte Carlo · deterministic engine · 0 tokens",
     legendRange: "Real you · 10–90% range",
     legendReal: "Real you · median",
@@ -283,7 +283,7 @@ export const en = {
 
   behavior: {
     title: "Behavioural twin",
-    cost: "Your habits cost you {amount} by the goal date (median).",
+    cost: "Cost of habits: {amount}",
     habitLeakage: "Payday & impulse spending",
     habitPanic: "Panic selling",
     approxPerMonth: "≈ {amount:chf}/mo",
@@ -1974,6 +1974,33 @@ export const en = {
       ahv: "AHV pension starts",
     },
   },
+  flow: {
+    title: "Where my money goes",
+    month: "Month",
+    year: "Year",
+    basisMonth: "Typical month",
+    basisYear: "Per year",
+    fromProfile: "From profile",
+    period: "Period",
+    fixed: "Fixed",
+    variable: "Variable",
+    saved: "Saved",
+    investing: "Investing",
+    pillar3a: "Pillar 3a",
+    left: "Left over",
+    shortfall: "Shortfall",
+    living: "Living costs",
+    income: "Income",
+    spent: "Spent",
+    rate: "Saving rate",
+    segHousing: "Housing",
+    segFixed: "Insurance & bills",
+    segEveryday: "Everyday",
+    segInvest: "Investing & 3a",
+    segLeft: "Left",
+    decisions: "Decisions",
+  },
+
   ux: {
     skip: "Skip to content",
     docTitle: "Doppel: your financial twin",
@@ -2000,7 +2027,7 @@ export const en = {
       viewAria: "Time span of the chart",
       viewGoal: "Until the goal",
       viewLife: "Until age {age}",
-      legendMedian: "Middle future: half end higher, half lower",
+      legendMedian: "Middle future",
       tipMedian: "Middle future",
       legendBand: "8 of 10 futures",
       legendIdeal: "Without your habits",

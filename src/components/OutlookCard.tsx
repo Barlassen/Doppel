@@ -52,15 +52,15 @@ export function OutlookCard({ outlook, loading, start, labels }: {
       />
 
       <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
-        <Figure label={tm(o.goal.label)} tone={oddsTone(o.goal.prob)} testId="outlook-goal"
-          value={arrow(o.goal.baselineProb !== undefined ? fmt.pct(o.goal.baselineProb) : undefined, fmt.pct(o.goal.prob))} sub={t("ux.out.goalSub")} />
+        <Figure label={t("ux.out.goalSub")} tone={oddsTone(o.goal.prob)} testId="outlook-goal"
+          value={arrow(o.goal.baselineProb !== undefined ? fmt.pct(o.goal.baselineProb) : undefined, fmt.pct(o.goal.prob))} />
         <Figure label={t("ux.out.surplus")} tone={budget.surplus < 0 ? "text-bad" : ""} testId="outlook-surplus"
           value={arrow(fmt.chf(o.budget.now.surplus), fmt.chf(budget.surplus))}
-          sub={compared && fresh.length ? t("ux.out.from", { when: when(budget.month) }) : t("ux.out.perMonth")} />
+          sub={compared && fresh.length ? t("ux.out.from", { when: when(budget.month) }) : undefined} />
         <Figure label={t("ux.out.cashLow")} tone={low.amount < 0 ? "text-bad" : ""} testId="outlook-cashlow"
           value={fmt.chf(low.amount)} sub={t("ux.out.cashLowAt", { when: when(low.month), age: low.age })} />
         <Figure label={t("ux.out.crunch")} tone={o.crunch.beforeGoal > 0.05 ? "text-bad" : ""} testId="outlook-crunch"
-          value={arrow(o.crunch.baselineBeforeGoal !== undefined ? fmt.pct(o.crunch.baselineBeforeGoal) : undefined, fmt.pct(o.crunch.beforeGoal))} sub={t("ux.out.crunchSub")} />
+          value={arrow(o.crunch.baselineBeforeGoal !== undefined ? fmt.pct(o.crunch.baselineBeforeGoal) : undefined, fmt.pct(o.crunch.beforeGoal))} />
       </dl>
 
       {o.inputsNeeded.length > 0 && (
@@ -172,12 +172,12 @@ export function decisionCost(d: DecisionOutlook): { amount: number; key: Message
   return { amount, key: `ux.dec.${amount >= 0 ? "costs" : "saves"}${lumpy ? "5" : ""}` as MessageKey };
 }
 
-function Figure({ label, value, sub, tone = "", testId }: { label: string; value: string; sub: string; tone?: string; testId: string }) {
+function Figure({ label, value, sub, tone = "", testId }: { label: string; value: string; sub?: string; tone?: string; testId: string }) {
   return (
     <div className="rounded-xl bg-surface-2 p-3" data-testid={testId}>
-      <dt className="text-[11px] font-medium break-words text-ink-2">{label}</dt>
+      <dt className="text-[11px] font-medium break-words text-ink-2 first-letter:uppercase">{label}</dt>
       <dd className={`num mt-0.5 text-base font-semibold sm:text-lg ${tone}`}>{value}</dd>
-      <dd className="num text-[11px] text-ink-2">{sub}</dd>
+      {sub && <dd className="num text-[11px] text-ink-2">{sub}</dd>}
     </div>
   );
 }

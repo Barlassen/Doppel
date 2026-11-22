@@ -48,7 +48,7 @@ export const tr = {
   },
 
   layout: {
-    decisions: "Büyük kararlar",
+    decisions: "Kararlar",
     nextSteps: "Sıradaki adımlar",
     habits: "Alışkanlıklar ve zamanlama",
   },
@@ -114,7 +114,7 @@ export const tr = {
   },
 
   hero: {
-    who: "{name} ({age}) · {city} · {tagline}",
+    who: "{name} ({age}) · {city}",
     goal: "{goal}:",
     disciplined: "Disiplinli hâlinle şansın {odds} olurdu.",
     netWorth: "Bugünkü net varlığın: {amount}",
@@ -236,7 +236,7 @@ export const tr = {
   },
 
   chart: {
-    title: "Net varlığının zaman içindeki seyri",
+    title: "Net varlık",
     engine: "Monte Carlo · deterministik motor · 0 token",
     legendRange: "Gerçek sen · %10–90 aralığı",
     legendReal: "Gerçek sen · medyan",
@@ -285,7 +285,7 @@ export const tr = {
 
   behavior: {
     title: "Davranış ikizi",
-    cost: "Alışkanlıkların hedef tarihine kadar sana {amount} kaybettiriyor (medyan).",
+    cost: "Alışkanlıkların maliyeti: {amount}",
     habitLeakage: "Maaş günü ve anlık harcama",
     habitPanic: "Panik satışı",
     approxPerMonth: "≈ {amount:chf}/ay",
@@ -1982,6 +1982,33 @@ export const tr = {
       ahv: "AHV (devlet emekliliği) aylığı başlıyor",
     },
   },
+  flow: {
+    title: "Param nereye gidiyor",
+    month: "Ay",
+    year: "Yıl",
+    basisMonth: "Tipik ay",
+    basisYear: "Yıllık",
+    fromProfile: "Profilden",
+    period: "Dönem",
+    fixed: "Sabit",
+    variable: "Değişken",
+    saved: "Biriken",
+    investing: "Yatırım",
+    pillar3a: "3a emeklilik",
+    left: "Kalan",
+    shortfall: "Açık",
+    living: "Yaşam giderleri",
+    income: "Gelir",
+    spent: "Harcama",
+    rate: "Birikim oranı",
+    segHousing: "Konut",
+    segFixed: "Sigorta ve faturalar",
+    segEveryday: "Günlük",
+    segInvest: "Yatırım ve 3a",
+    segLeft: "Artan",
+    decisions: "Kararlar",
+  },
+
   ux: {
     skip: "İçeriğe geç",
     docTitle: "Doppel: finansal ikizin",
@@ -2008,7 +2035,7 @@ export const tr = {
       viewAria: "Grafiğin zaman aralığı",
       viewGoal: "Hedefe kadar",
       viewLife: "{age} yaşına kadar",
-      legendMedian: "Ortadaki senaryo: yarısı daha yüksek, yarısı daha düşük biter",
+      legendMedian: "Ortadaki senaryo",
       tipMedian: "Ortadaki senaryo",
       legendBand: "10 senaryodan 8'i",
       legendIdeal: "Alışkanlıkların olmadan",

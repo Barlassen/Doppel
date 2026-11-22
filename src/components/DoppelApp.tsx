@@ -80,6 +80,9 @@ import { defaultHealthPremium } from "@/lib/finance/canton";
 import { CHILD } from "@/lib/finance/params";
 import { cantonLine } from "./CantonLine";
 import { Hero } from "./Hero";
+import { MoneyFlow } from "./MoneyFlow";
+import { TwinCard } from "./TwinCard";
+import { Insights } from "./Insights";
 import { CardHeader, Section } from "./ui";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { SiteNav } from "./SiteNav";
@@ -1080,13 +1083,12 @@ export default function DoppelApp() {
         </Hero>
         <UbsSourceNote profile={effProfile} />
 
-        <div className="mt-6 mb-6">
-          <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} hasHome={scenario.events.some((e) => e.type === "house")} />
-        </div>
+        <div className="mt-6 space-y-5">
+          <TwinCard profile={effProfile} summary={learned.summary} />
+          <MoneyFlow profile={effProfile} summary={learned.summary} outlook={outlookFresh} />
+          <Insights profile={effProfile} summary={learned.summary} />
 
-        {/* Your future: the chart, next to the data that feeds it (bank statement first, other documents second) */}
-        <h2 className="sr-only">{t("ux.futureTitle")}</h2>
-        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <h2 className="sr-only">{t("ux.futureTitle")}</h2>
           <section className="card p-4 sm:p-6">
             <CardHeader title={t("chart.title")} />
             <ConeChart
@@ -1131,19 +1133,13 @@ export default function DoppelApp() {
               </div>
             )}
           </section>
-          <ImportPanel
-            account={account}
-            onFact={onFact}
-            onLedger={(entry) => addLedger(account.id, entry)}
-            onDataChange={onDataChange}
-            incoming={incomingStatement}
-          >
-            <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
-          </ImportPanel>
         </div>
 
         <div className="mt-14 space-y-14">
           <Section title={t("layout.decisions")}>
+            <div className="mb-5">
+              <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} hasHome={scenario.events.some((e) => e.type === "house")} />
+            </div>
             {/* Extension point "decisions": every big decision is one card in this grid (home, retirement, debt, …).
                 New life decisions from the engine go here as further cards, in the same CardHeader style. */}
             <div className="grid items-start gap-5 lg:grid-cols-2" data-slot="decisions">
@@ -1213,11 +1209,6 @@ export default function DoppelApp() {
                 onAsk={onAsk}
                 onExplain={narrate}
               />
-            </div>
-          </Section>
-
-          <Section title={t("layout.habits")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
               <BehaviorCard
                 behavior={behavior}
                 costChf={behaviorCost}
@@ -1230,7 +1221,18 @@ export default function DoppelApp() {
           </Section>
 
           <Section title={t("data.sectionTitle")}>
-            <TransactionsPanel account={account} onDataChange={onDataChange} />
+            <div className="grid items-start gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+              <ImportPanel
+                account={account}
+                onFact={onFact}
+                onLedger={(entry) => addLedger(account.id, entry)}
+                onDataChange={onDataChange}
+                incoming={incomingStatement}
+              >
+                <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
+              </ImportPanel>
+              <TransactionsPanel account={account} onDataChange={onDataChange} />
+            </div>
           </Section>
         </div>
       </main>
