@@ -46,7 +46,8 @@ import {
 } from "@/lib/twin/actions";
 import { orderedParsers } from "@/lib/twin/intents";
 import { eventLabel } from "@/lib/twin/intents/shared";
-import { askErrorMsg, askTwin, callTwin, twinStatus, type AskFacts, type TwinStatus } from "@/lib/llm";
+import { askErrorMsg, askFacts, askTwin, callTwin, twinStatus, type AskFacts, type TwinStatus } from "@/lib/llm";
+import { outlookFacts } from "@/lib/twin/facts";
 import { entryFromAsk, entryFromCommand, entryFromNarrate, entryFromSnap, usageBasisMsg, type LedgerEntry } from "@/lib/frugal/ledger";
 import { summaryAskFacts, type InferredFact } from "@/lib/import";
 import type { SnapResult, Usage } from "@/lib/snap/types";
@@ -863,55 +864,41 @@ export default function DoppelApp() {
     setNarrative({ fallback, cloud, loading: false });
   }
 
-  /** The engine's current figures, as the flat facts an answer may quote (percent as numbers, money in CHF). */
+  /**
+   * The engine's current figures as the facts an answer may quote. `outlookFacts()` writes every figure under a key
+   * that names its unit and time basis; before the first outlook is computed only the plain profile facts are sent.
+   */
   function askFactsNow(): AskFacts {
-    const pctOf = (share: number) => Math.round(share * 1000) / 10;
-    const chfOf = (amount: number) => Math.round(amount);
-    const goalBand = real.bands.find((b) => b.age === effProfile.goal.age);
-    const ret = real.retirement;
     const top = recipes[0];
-    const decisions = scenario.events.map((e) => translateText("en", e.labelMsg ?? e.label)).join(", ");
-    return {
+    const extra = learned.summary ? summaryAskFacts(learned.summary) : undefined;
+    if (outlookFresh) {
+      const decisions = scenario.events.map((e) => translateText(locale, e.labelMsg ?? e.label)).join(", ");
+      return outlookFacts(outlookFresh, {
+        profile: effProfile,
+        locale,
+        ...(decisions ? { scenario: decisions } : {}),
+        disciplined: ideal,
+        ...(behavior.insights[0] ? { topHabit: behavior.insights[0].title } : {}),
+        ...(top ? { bestMove: { title: top.title, odds: top.newProb } } : {}),
+        ...(extra ? { extra } : {}),
+      });
+    }
+    const pctOf = (share: number) => Math.round(share * 1000) / 10;
+    return askFacts({
+      ...extra,
       client: effProfile.name,
-      age: effProfile.age,
+      age_years: effProfile.age,
       city: effProfile.city,
       canton: effProfile.canton,
-      risk_profile: effProfile.riskProfile,
-      goal: translateText("en", effProfile.goal.label),
-      goal_amount_chf: effProfile.goal.target,
-      horizon_years: Math.max(0, effProfile.goal.age - effProfile.age),
-      net_worth_chf: chfOf(netWorthToday),
-      liquid_savings_chf: chfOf(effProfile.cash),
-      investments_chf: chfOf(effProfile.portfolio),
-      pillar3a_chf: chfOf(effProfile.pillar3a),
-      pension_fund_chf: chfOf(effProfile.pillar2),
-      ...(debtToday > 0 ? { debt_chf: chfOf(debtToday) } : {}),
-      monthly_net_income_chf: chfOf(effProfile.netIncomeMonth),
-      monthly_expenses_chf: chfOf(effProfile.expensesMonth),
-      monthly_savings_chf: chfOf(effProfile.netIncomeMonth - effProfile.expensesMonth),
-      ...(effProfile.netIncomeMonth > 0 ? { savings_rate_pct: pctOf((effProfile.netIncomeMonth - effProfile.expensesMonth) / effProfile.netIncomeMonth) } : {}),
-      contributes_3a: effProfile.contributes3a,
-      odds_with_habits_pct: pctOf(real.successProb),
-      odds_disciplined_pct: pctOf(ideal.successProb),
-      cash_crunch_risk_pct: pctOf(real.crunchProb),
-      habit_cost_chf: chfOf(Math.max(0, behaviorCost)),
-      ...(behavior.insights[0] ? { top_habit: translateText("en", behavior.insights[0].title) } : {}),
-      ...(goalBand ? { net_worth_p10_chf: chfOf(goalBand.p10), net_worth_median_chf: chfOf(goalBand.p50), net_worth_p90_chf: chfOf(goalBand.p90) } : {}),
-      ...(top ? { best_move: translateText("en", top.title), best_move_odds_pct: pctOf(top.newProb) } : {}),
-      ...(affordability && house
-        ? { home_price_chf: chfOf(house.price), home_affordable: affordability.pass, home_cost_to_income_pct: pctOf(affordability.costToIncome), home_max_price_chf: chfOf(affordability.maxPrice), home_bought_pct: pctOf(house.boughtProb) }
-        : {}),
-      ...(ret
-        ? { retirement_age: ret.age, retirement_income_month_chf: chfOf(ret.monthlyIncomeAtRetirement), retirement_gap_month_chf: chfOf(Math.max(0, ret.monthlySpending - ret.monthlyIncomeAtRetirement)), savings_last_to_90_pct: pctOf(ret.lastsTo90Prob) }
-        : {}),
-      ...(learned.summary ? summaryAskFacts(learned.summary) : {}),
-      scenario: [translate("en", `economy.name.${economyId}`) + " economy", decisions ? "decisions: " + decisions : "no added decisions"].join("; "),
-      assumptions: translate("en", "ux.assumptions", {
-        equity: ASSUMPTIONS.equity.mu, equityVol: ASSUMPTIONS.equity.sigma, bonds: ASSUMPTIONS.bonds.mu, bondsVol: ASSUMPTIONS.bonds.sigma, cash: ASSUMPTIONS.cashRate,
-        inflation: ASSUMPTIONS.inflation, wages: ASSUMPTIONS.wageGrowth, overdraft: ASSUMPTIONS.overdraftRate, share: EQUITY_WEIGHT[effProfile.riskProfile],
-      }),
-      ...(outlookFresh ? { note: `lowest cash point CHF ${chfOf(outlookFresh.cashLow.median.amount)} in ${outlookFresh.cashLow.median.year}; monthly surplus CHF ${chfOf(outlookFresh.budget.after.surplus)}` } : {}),
-    };
+      goal: translateText(locale, effProfile.goal.label),
+      goal_target_chf: Math.round(effProfile.goal.target),
+      years_to_goal: Math.max(0, effProfile.goal.age - effProfile.age),
+      economy_scenario: translate(locale, `economy.name.${economyId}`),
+      goal_odds_pct: pctOf(real.successProb),
+      goal_odds_disciplined_pct: pctOf(ideal.successProb),
+      net_worth_today_chf: Math.round(netWorthToday),
+      ...(debtToday > 0 ? { debt_today_chf: Math.round(debtToday) } : {}),
+    });
   }
 
   // ---------------- ask your twin ----------------
