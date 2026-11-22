@@ -16,7 +16,9 @@ import { PROFILES } from "../src/lib/data/profiles";
 import { simulate, type SimInput } from "../src/lib/game/sim";
 import { simulate as dashboardSimulate } from "../src/lib/finance/monteCarlo";
 import type { LifeEvent, Profile } from "../src/lib/finance/types";
-import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand } from "../src/lib/game/cards";
+import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard, dealHand, type CardParam } from "../src/lib/game/cards";
+import { outlook } from "../src/lib/finance/outlook";
+import { baseScenario } from "../src/lib/finance/scenario";
 import { analyse, bruteForce, reviewMove, treeTurns, turnLuck, type Analysis } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, labelFor, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, legalMoves, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
@@ -448,6 +450,68 @@ async function auditChecks(alexia: GameState, S: GameSettings) {
     deferred.forEach((run) => run());
     const idle = performance.now() - t0;
     check("engine client: a new game terminates the worker, cancels what was waiting and ignores late answers", workerOk && (await dropped) === "cancelled" && idle < 50, `old requests: ${got[0]}, ${got[1]} · new request: ${got[2]} · workers started ${made.length}, first terminated ${made[0]?.terminated} · no-worker fallback dropped unrun (${idle.toFixed(1)} ms)`);
+  }
+
+  // ---------- A12. life decisions cost in the game what they cost on the dashboard ----------
+  {
+    // One person, enough cash to pay for the car (the game's car loan is its own addition): the card played at the
+    // opening against `outlook()` for the same decision at month 0. Both in CHF of today, per month.
+    const person: Profile = { ...PROFILES[0], cash: PROFILES[0].cash + 80_000, events: [] };
+    const opening = { ...accountOpening(person), check: null };
+    const TOLERANCE = 0.005;
+    const paid = (l: { flows: { account: string; kind: string; amount: number }[] }) => -l.flows.filter((f) => f.account === "cash" && (f.kind === "living" || f.kind === "oneOff" || f.kind === "card")).reduce((x, f) => x + f.amount, 0);
+    const mInfl = Math.pow(1 + REGIME.normal.inflation, 1 / 12);
+    const yearPrice = Array.from({ length: 12 }, (_, m) => Math.pow(mInfl, m + 1)).reduce((a, b) => a + b, 0) / 12;
+    const rows: string[] = [];
+    let ok = true;
+    const cases: [string, LifeEvent["type"], LifeEvent["decision"], CardParam[] | undefined][] = [
+      ["haveChild", "child", { kind: "child" }, undefined],
+      ["buyCar", "expense", { kind: "car", mode: "owned" }, [{ key: "financed", value: 0, unit: "pct", source: "user" }, { key: "loanRate", value: 0, unit: "pct", source: "user" }]],
+    ];
+    for (const [card, type, decision, params] of cases) {
+      const base = baseScenario(person);
+      const o = outlook(person, { ...base, events: [...base.events, { id: "decision", type, label: card, month: 0, amount: 0, decision }] }, { paths: 40 });
+      const d = o.decisions.find((x) => x.eventId === "decision")!;
+      const played = applyCard(opening, card, REGIME.normal, params);
+      let withCard = played.state;
+      let without: GameState = opening;
+      let total = paid(played.ledger);
+      let firstYear = 0;
+      let worstLedger = ledgerError(played.ledger);
+      for (let y = 0; y < 10; y++) {
+        const a = stepYear(withCard, marketYear(REGIME.normal, MEDIAN_BUCKET));
+        const b = stepYear(without, marketYear(REGIME.normal, MEDIAN_BUCKET));
+        worstLedger = Math.max(worstLedger, ledgerError(a.ledger));
+        // What the card made the household pay this year, in CHF of today.
+        total += (paid(a.ledger) - paid(b.ledger)) / (withCard.priceIndex * yearPrice);
+        if (y === 0) firstYear = total;
+        withCard = a.state;
+        without = b.state;
+      }
+      const g1 = firstYear / 12;
+      const g10 = total / 120;
+      const rel = Math.max(Math.abs(g1 / d.netMonthly.year1 - 1), Math.abs(g10 / d.netMonthly.years10 - 1));
+      // The rollouts must see the same cost as the stepper.
+      const stepped = stepperYear(played.state);
+      const rolled = simulatorYear(played.state);
+      ok &&= rel < TOLERANCE && worstLedger < 1e-6 && Math.abs(stepped / rolled - 1) < 0.01 && d.netMonthly.year1 > 100;
+      rows.push(`${card}: first year CHF ${g1.toFixed(0)}/month (dashboard ${d.netMonthly.year1.toFixed(0)}), ten years CHF ${g10.toFixed(0)}/month (dashboard ${d.netMonthly.years10.toFixed(0)}), difference ${(rel * 100).toFixed(2)}% · stepper vs rollout ${((stepped / rolled - 1) * 100).toFixed(2)}%`);
+    }
+    // A second child costs less (the engine's factor), and selling the car ends its costs.
+    const one = applyCard(opening, "haveChild", REGIME.normal).state;
+    const two = applyCard({ ...stepYear(one, marketYear(REGIME.normal, MEDIAN_BUCKET)).state, played: {} }, "haveChild", REGIME.normal).state;
+    const first = one.lifeCosts![0].monthly[1];
+    const second = two.lifeCosts![1].monthly[1];
+    const driver = applyCard(opening, "buyCar", REGIME.normal, cases[1][3]).state;
+    const sold = applyCard(driver, "sellCar", REGIME.normal).state;
+    ok &&= second < first && two.children === 2 && !!driver.lifeCosts?.some((c) => c.kind === "car") && !sold.lifeCosts && sold.car === null;
+    check(`life decisions: the child and car cards cost what the dashboard's outlook() says (within ${TOLERANCE * 100}%)`, ok, `${person.name}, ${person.canton} · ` + rows.join(" · ") + ` · second child CHF ${second.toFixed(0)}/month in its second year against ${first.toFixed(0)} for the first`);
+
+    // Workload: the engine's proportional rule, and going back to 100% restores the salary exactly.
+    const full = { ...accountOpening(PROFILES[1]), check: null };
+    const part = applyCard(full, "partTime", REGIME.normal).state;
+    const back = applyCard(part, "fullTime", REGIME.normal).state;
+    check("workload: part time scales salary and take-home pay proportionally (the engine's rule), full time restores them", Math.abs(part.net / full.net - 0.8) < 1e-12 && Math.abs(part.gross / full.gross - 0.8) < 1e-12 && Math.abs(back.net - full.net) < 1e-6 && Math.abs(back.gross - full.gross) < 1e-6, `80%: CHF ${Math.round(full.net)} → ${Math.round(part.net)} → ${Math.round(back.net)} a month`);
   }
   void alexia;
 }

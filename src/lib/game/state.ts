@@ -103,6 +103,22 @@ export interface Home {
   amortMonthly: number;
 }
 
+/**
+ * The cash flows of a life decision (a child, a car) as the engine's life-cost model gives them (`compileLife`,
+ * src/lib/finance/life.ts), fixed when the card is played. Amounts are in CHF of the game's start, like the goal;
+ * the stepper and the rollouts pay them at the price level of each year.
+ */
+export interface LifeCost {
+  id: string;
+  kind: "child" | "car";
+  /** Turn (year of the game) the decision was taken. */
+  sinceTurn: number;
+  /** Net cost per month in each coming year (index 0 = the coming year): costs − allowances − tax saved. */
+  monthly: number[];
+  /** One-off payments still to come: months from now; negative = cost (a car's replacement), positive = income (its sale). */
+  oneOffs: { month: number; amount: number }[];
+}
+
 /** What the UBS layer contributed to this game, resolved once at the start (the worker never calls the UBS API). */
 export interface UbsContext {
   alexiaPaths: AlexiaPath[] | null;
@@ -163,8 +179,10 @@ export interface GameState {
   pillar3a: number;
   home: Home | null;
   debts: Debt[];
-  /** Car: value is not counted in net worth (consumption); running costs are in `expenseDelta`. */
+  /** Car: value is not counted in net worth (consumption); its costs are a `lifeCosts` entry. */
   car: { value: number; monthly: number } | null;
+  /** Running life decisions with the engine's sourced cost model (children, a car). Absent = none. */
+  lifeCosts?: LifeCost[];
 
   /** Regular job (CHF/year gross, CHF/month take-home). */
   gross: number;
@@ -270,8 +288,11 @@ export function incomeAt(s: GameState, month: number): { net: number; gross: num
 /** Monthly living costs (incl. rent, excl. ownership and loan costs) at a month from now. */
 export function livingAt(s: GameState, month: number): number {
   const ph = phaseAt(s, month);
-  return Math.max(s.rent, (ph?.expenses ?? s.expenses) + s.expenseDelta);
+  return Math.max(s.rent, (ph?.expenses ?? s.expenses) + s.expenseDelta) + lifeCostMonthly(s, month);
 }
+
+/** Net monthly cost of the running life decisions at a month from now, in this year's CHF. */
+export const lifeCostMonthly = (s: GameState, month = 0) => (s.lifeCosts ?? []).reduce((sum, c) => sum + (c.monthly[Math.floor(month / 12)] ?? 0), 0) * s.priceIndex;
 
 export function ownershipMonthly(h: Home | null): number {
   if (!h) return 0;
@@ -391,6 +412,7 @@ export const cloneState = (s: GameState): GameState => ({
   home: s.home ? { ...s.home } : null,
   debts: s.debts.map((d) => ({ ...d })),
   car: s.car ? { ...s.car } : null,
+  ...(s.lifeCosts ? { lifeCosts: s.lifeCosts.map((c) => ({ ...c, monthly: [...c.monthly], oneOffs: c.oneOffs.map((o) => ({ ...o })) })) } : {}),
   phases: s.phases.map((p) => ({ ...p })),
   oneOffs: s.oneOffs.map((o) => ({ ...o })),
   played: { ...s.played },
@@ -519,6 +541,17 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     for (const ph of s.phases.filter((p) => p.kind === "retiredWork")) {
       for (let m = Math.max(0, ph.start); m < ph.end; m++) events.push({ id: `work-${m}`, type: "income", label: "Work in retirement", month: m, amount: ph.net, nominal: true });
     }
+  }
+  // Life decisions: the engine's flat "cost per month for a period" events carry the yearly schedule, its one-off
+  // events the replacements and the sale (both in today's CHF, indexed with prices by the simulator).
+  for (const c of s.lifeCosts ?? []) {
+    for (let y = 0; y < c.monthly.length; ) {
+      let n = 1;
+      while (y + n < c.monthly.length && c.monthly[y + n] === c.monthly[y]) n++;
+      if (c.monthly[y] !== 0) events.push({ id: `life-${c.id}-${y}`, type: "child", label: "Life decision", month: y * 12, amount: c.monthly[y] * s.priceIndex, durationMonths: n * 12 });
+      y += n;
+    }
+    c.oneOffs.forEach((o, i) => events.push({ id: `life-${c.id}-one-${i}`, type: o.amount < 0 ? "expense" : "income", label: "Life decision", month: o.month, amount: Math.abs(o.amount) * s.priceIndex }));
   }
   const phases: IncomePhase[] = s.phases.map((p) => ({
     startMonth: p.start,
@@ -686,6 +719,17 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
         L.add("cash", "oneOff", -o.amount);
       }
     }
+    // One-offs of life decisions (a car's replacement or sale), in start CHF, paid at the price level of the month.
+    for (const c of s.lifeCosts ?? []) {
+      for (const o of c.oneOffs) {
+        if (o.month !== m) continue;
+        const amount = o.amount * s.priceIndex * (price / mInfl);
+        s.cash += amount;
+        L.add("cash", "oneOff", amount);
+        // A replacement puts a new car in the garage: what was paid on top of the trade-in restores its value.
+        if (c.kind === "car" && s.car && amount < 0) s.car = { ...s.car, value: s.car.value - amount };
+      }
+    }
     let outflow = living;
     if (s.home) {
       const h = s.home;
@@ -804,6 +848,12 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   s.rent *= infl;
   s.expenseDelta *= infl;
   if (s.car) s.car = { value: s.car.value * 0.85, monthly: s.car.monthly * infl };
+  if (s.lifeCosts) {
+    s.lifeCosts = s.lifeCosts
+      .map((c) => ({ ...c, monthly: c.monthly.slice(1), oneOffs: c.oneOffs.map((o) => ({ ...o, month: o.month - 12 })).filter((o) => o.month >= 0) }))
+      .filter((c) => c.monthly.length > 0 || c.oneOffs.length > 0);
+    if (!s.lifeCosts.length) delete s.lifeCosts;
+  }
   s.phases = s.phases
     .map((p) => ({ ...p, start: p.start - 12, end: p.end - 12, net: p.net * g, gross: p.gross * g, expenses: p.expenses === undefined ? undefined : p.expenses * infl + premiumStep }))
     .filter((p) => p.end > 0)

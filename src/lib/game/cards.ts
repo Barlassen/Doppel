@@ -26,6 +26,8 @@ import {
   monthlySurplus,
   phaseAt,
 } from "./state";
+import { CAR, CHILD, EDUCATION } from "@/lib/finance/params";
+import { lifeCostPlan, withLifeCost, withoutLifeCost } from "./lifeCosts";
 
 export type ParamSource = "ubs_synthetic_assumption" | "doppel_engine_default" | "user";
 
@@ -46,7 +48,7 @@ export const PREF_CARD: Record<LifePref, string> = {
 };
 /** The card is a life choice the player declared (not graded). */
 export const declaredChoice = (s: { prefs?: string[] }, card: string) => (s.prefs ?? []).some((p) => PREF_CARD[p as LifePref] === card);
-export type ParamUnit = "chf" | "chfMonth" | "chfYear" | "pct" | "months" | "years" | "age";
+export type ParamUnit = "chf" | "chfMonth" | "chfYear" | "pct" | "months" | "years" | "age" | "daysWeek";
 
 export interface CardParam {
   key: string;
@@ -107,6 +109,12 @@ function changeGross(s: GameState, factor: number) {
   s.net += (delta * netShare(s)) / 12;
 }
 
+/** A change of workload: gross and take-home pay scale proportionally (the engine's rule for a workload decision). */
+function scaleWorkload(s: GameState, factor: number) {
+  s.gross *= factor;
+  s.net *= factor;
+}
+
 /** Monthly payment of an amortising loan. */
 const annuity = (principal: number, rate: number, months: number) => {
   const r = rate / 12;
@@ -133,6 +141,10 @@ function alexia(s: GameState, i: number, fallback: { net: number; exp: number }[
 
 const student = (s: GameState) => s.path === "student";
 
+/** The engine's cost model for the next child / for a car bought now (see lifeCosts.ts). */
+const childPlan = (s: GameState) => lifeCostPlan(s, "child-" + (s.children + 1), "child", { kind: "child" });
+const carPlan = (s: GameState) => lifeCostPlan(s, "car", "car", { kind: "car", mode: "owned" });
+
 function startStudy(s: GameState, p: Record<string, number>, L: LedgerBuilder) {
   const months = p.studyYears * 12;
   const taxAfter = marginalTaxFor(p.incomeAfter, s.canton);
@@ -151,8 +163,9 @@ function studyParams(s: GameState): CardParam[] {
   const s001 = s.ubs.s001;
   const sRef = s001 ? "S001 · " + s001.ids.join(", ") : undefined;
   return [
-    param("studyYears", s001?.years ?? 2, "years", s001 ? U : D, sRef),
-    param("tuition", s001?.tuition ?? 8000, "chfYear", s001 ? U : D, sRef),
+    // Without UBS figures for this profile: the engine's sourced values for a master's (params.ts EDUCATION).
+    param("studyYears", s001?.years ?? EDUCATION.masterMonths.value / 12, "years", s001 ? U : D, s001 ? sRef : EDUCATION.masterMonths.source),
+    param("tuition", s001?.tuition ?? EDUCATION.tuitionYear.value, "chfYear", s001 ? U : D, s001 ? sRef : EDUCATION.tuitionYear.source),
     param("incomeDuring", a.phases[0].net, "chfMonth", a.src, a.ref),
     param("expensesDuring", a.phases[0].exp, "chfMonth", a.src, a.ref),
     param("incomeAfter", a.phases[1]?.net ?? 4800, "chfMonth", a.src, a.ref),
@@ -277,8 +290,9 @@ export const DECISION_CARDS: CardDef[] = [
     group: "career",
     eligible: (s) => employed(s) && s.workPct === 1,
     params: () => [param("workPct", 0.8, "pct", U, "S017 catalog: reduce hours to 80%")],
+    // The engine's workload rule (life.ts): salary and take-home pay scale with the percentage.
     apply: (s, p) => {
-      changeGross(s, p.workPct);
+      scaleWorkload(s, p.workPct);
       s.workPct = p.workPct;
     },
   },
@@ -291,7 +305,7 @@ export const DECISION_CARDS: CardDef[] = [
     eligible: (s) => s.workPct < 1 && s.gross > 0 && !phaseAt(s, 0),
     params: (s) => [param("workPct", 1 / s.workPct - 1, "pct")],
     apply: (s, p) => {
-      changeGross(s, 1 + p.workPct);
+      scaleWorkload(s, 1 + p.workPct);
       s.workPct = 1;
     },
   },
@@ -436,19 +450,28 @@ export const DECISION_CARDS: CardDef[] = [
     group: "spending",
     recurring: true,
     eligible: (s) => !s.car && s.path !== "student",
-    params: (s) => [
-      param("price", 28_000, "chf"),
-      param("running", 520, "chfMonth"),
-      param("financed", excessCash(s) >= 28_000 ? 0 : 1, "pct"),
-      param("loanRate", 0.069, "pct"),
-    ],
+    // The dashboard's car decision (life.ts, TCS 2026 in params.ts): the reference car, its fixed and per-km costs,
+    // a replacement every ten years net of the trade-in, until 80. The game adds the car loan when cash is short
+    // (the dashboard has no car loan: there the purchase is a cash crunch).
+    params: (s) => {
+      const car = carPlan(s);
+      return [
+        param("price", Math.round(-car.upfront * s.priceIndex), "chf", D, CAR.price.source),
+        param("running", Math.round(car.firstYearMonthly * s.priceIndex), "chfMonth", D, CAR.fixedOwnedMonth.source),
+        param("replaceYears", CAR.replaceYears.value, "years", D, CAR.replaceYears.source),
+        param("financed", excessCash(s) >= -car.upfront * s.priceIndex ? 0 : 1, "pct"),
+        param("loanRate", 0.069, "pct"),
+      ];
+    },
     apply: (s, p, L) => {
+      const car = carPlan(s);
+      const price = -car.upfront * s.priceIndex;
       if (p.financed > 0) {
-        s.debts.push({ id: "debt-car", kind: "car", principal: p.price, rate: p.loanRate, monthlyPayment: annuity(p.price, p.loanRate, 48), startMonth: 0 });
-        L.add("debt", "card", p.price);
-      } else pay(s, L, p.price);
-      s.car = { value: p.price, monthly: p.running };
-      s.expenseDelta += p.running;
+        s.debts.push({ id: "debt-car", kind: "car", principal: price, rate: p.loanRate, monthlyPayment: annuity(price, p.loanRate, 48), startMonth: 0 });
+        L.add("debt", "card", price);
+      } else pay(s, L, price);
+      s.car = { value: price, monthly: car.firstYearMonthly * s.priceIndex };
+      withLifeCost(s, car.cost);
     },
   },
   {
@@ -470,7 +493,8 @@ export const DECISION_CARDS: CardDef[] = [
         pay(s, L, x);
         s.debts = s.debts.filter((d) => d.principal > 0.5);
       }
-      s.expenseDelta -= s.car?.monthly ?? p.running;
+      // The running costs and the planned replacements stop with the car.
+      withoutLifeCost(s, "car");
       s.car = null;
     },
   },
@@ -626,11 +650,21 @@ export const DECISION_CARDS: CardDef[] = [
     recurring: true,
     cooldown: 2,
     eligible: (s) => s.children < 3 && s.age >= 22 && s.age <= 45 && s.path !== "student",
-    params: () => [param("monthly", 1500, "chfMonth"), param("leaveMonths", 3, "months"), param("leavePay", 0.8, "pct")],
-    apply: (s, p) => {
+    // The dashboard's child decision (life.ts; BFS HABE, BSV and ESTV figures in params.ts): direct costs by age,
+    // daycare from six months to four and a half, family allowances and tax relief, then an apprenticeship or
+    // university (expected value). No pay cut during leave: the engine has none either.
+    params: (s) => {
+      const child = childPlan(s);
+      return [
+        param("monthly", Math.round(child.firstYearMonthly * s.priceIndex), "chfMonth", D, CHILD.direct0to4.source),
+        param("tenYear", Math.round(child.tenYearMonthly * s.priceIndex), "chfMonth", D, CHILD.direct5to12.source),
+        param("kitaDays", CHILD.kitaDaysPerWeek.value, "daysWeek", D, CHILD.kitaDaily.source),
+      ];
+    },
+    apply: (s) => {
+      const child = childPlan(s);
       s.children += 1;
-      s.expenseDelta += p.monthly;
-      if (s.gross > 0 && !phaseAt(s, 0)) s.phases.push({ start: 0, end: p.leaveMonths, net: s.net * p.leavePay, gross: s.gross * p.leavePay, bvg: true, kind: "leave" });
+      withLifeCost(s, child.cost);
     },
   },
   {
