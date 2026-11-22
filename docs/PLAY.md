@@ -1,6 +1,6 @@
 # Doppel Play: the life game
 
-Status: phase 1 implemented (`/play`, `src/lib/game`, `npm run play:check`); phases 2 and 3 open. Owner decisions: 2026-11-22. Implementation notes: §13. Where §13–§18 and §20 disagree, §20 (the audit of 2026-11-22) is current.
+Status: phase 1 implemented (`/play`, `src/lib/game`, `npm run play:check`); phases 2 and 3 open. Owner decisions: 2026-11-22. Implementation notes: §13. Where §13–§19 and §20–§21 disagree, §20 (the audit of 2026-11-22) and §21 (the engine merge) are current.
 
 Doppel gets a second face. The existing dashboard stays as it is. A separate page, `/play`, turns the same twin into a game. The game is chess-themed in the way a chess engine is: positions are financial states, moves are decisions, and the engine **searches the space of possible futures** to judge each move. Situations are not mapped onto pieces. What gets labelled is the **move** (`!!`, `!`, `?!`, `?`, `??`, sacrifice, drain), as in chess game review.
 
@@ -249,3 +249,55 @@ An audit of `/play` found ten defects and five suspicions; all were fixed, each 
 - **Keyboard.** Tab is no longer taken (it trapped keyboard users on the page): compare lines is **C**. A held key plays once. 1–4, H and C do nothing while a button, link or field has the focus. The rules are in `src/components/play/keys.ts`. `docs/TKT.md` still maps a swipe to Tab; it has to send C.
 - **Engine worker.** A new game terminates the worker and starts a fresh one, so a review of the old game no longer delays the new one (six quick restarts: first review after 1.5 s, before 6 s). A cancelled request is not recorded as a failure.
 - **Not changed:** the phase rules above stay different from the dashboard's by design. The rollouts still treat a business as part of the portfolio (§19).
+
+## 21. After the engine merge: one simulator, one cost model, two vocabularies for the economy
+
+The dashboard engine gained a sourced parameter table (`params.ts`), economic scenarios (`economy.ts`), life decisions (`life.ts`) and the outlook (`outlook.ts`); see `docs/ENGINE_API.md`. The game follows it as below. `npm run play:check` has a check for every statement (49 checks).
+
+### 21.1 The simulator
+
+`src/lib/game/sim.ts` is again the engine's `simulate()` plus the blocks marked "Doppel Play". Without a game extension the two return identical results; the parity check now runs 29 cases, including life decisions, the four economic scenarios, a custom economy and the budget detail.
+
+- **Imported, not copied:** the assumptions object, the parameter tables, `economyYears` / `resolveEconomy`, `compileLife`, the pension, debt, canton and mortgage rules.
+- **Mirrored (the monthly loop itself):** it cannot be imported, because the game's extensions sit inside it. The check is what keeps the copy honest.
+- **The same rules in the stepper (`stepYear`):** the pillar 3a ceiling in the CHF of its date, the large ceiling without a pension fund (20% of earned income), income never below zero. The game's scheduled one-offs are marked `nominal`, as the engine now expects.
+- **Game extensions, all named options:** `assumptions` (the regime), `incomePhases`, `home`, `debts`, `shocks`, and `conventions` (`premiumYearly`, `annuityNotCapital`, `crunchWhenRetired`, and new: `priceLevel`). A game position is in the CHF of its own year, while the pillar 3a ceilings and the AHV scale are in the CHF of the game's start; `priceLevel` scales them, as the stepper always did for AHV.
+- **Job losses of a regime** now run through the engine's own job-loss mechanism (benefit = 70% of the insured salary with the insured maximum, no pension-fund credits), with the regime's yearly risk and spell length. Crashes of a regime keep their own random stream. A crash month no longer shifts the other random draws (the engine's fix).
+
+### 21.2 Regimes and economic scenarios
+
+They are two vocabularies and stay two.
+
+| | Game: regime | Dashboard: economic scenario |
+|---|---|---|
+| What it is | How strong Life is, for the whole game: calm, normal, stress | A dated phase of the economy, then back to the baseline: high inflation, recession, low rates, climate transition |
+| What it sets | Market means and volatilities, inflation, wage growth, how often and how hard Life's cards hit, random job losses and crashes | Inflation, wages, interest and mortgage rates, a job-loss risk, an equity shock, per phase |
+| Source | Normal = the engine's `BASELINE` table. Calm and stress are Doppel defaults (game design, no source) | `REGIMES` in `params.ts` (estimates anchored on Swiss episodes) |
+
+- **Normal is the baseline.** `REGIME.normal` reads its market constants from `BASELINE` (`regime.ts`); the check compares the numbers and a whole simulation run with the dashboard's baseline economy.
+- **In the simulator** a regime is the *base* regime of every year of the engine's economy. A scenario could be laid on top of it (`economy` is passed through unchanged), but the game does not do that yet: Life's cards (inflation, recession, rate shock) play that role in the game.
+- **Do not compare** a stress game with a recession scenario: stress lasts the whole game and has no source; a recession is two years and sourced.
+
+### 21.3 Life decisions: the same cost model
+
+A card that corresponds to an engine decision uses the engine's model (`src/lib/game/lifeCosts.ts` calls `compileLife`), so it costs in the game what it costs on the dashboard for the same person.
+
+| Card | Engine decision | In the game |
+|---|---|---|
+| Have a child | `child` | **Same model.** Direct costs by age, daycare (3 days) from six months to four and a half, family allowances of the canton, tax relief, then apprenticeship or university. Checked against `outlook()`: Barlas CHF 710/month in the first year and CHF 726/month over ten years, in both. A second child costs less, as in the engine. |
+| Buy a car / sell the car | `car` (owned) | **Same model.** The TCS reference car (CHF 45'000), CHF 586/month to run, a replacement every ten years net of the trade-in, until 80. Checked: CHF 4'336/month in the first year (the purchase included) and CHF 961/month over ten years, in both. |
+| Part time / full time | `workload` | **Same rule:** salary and take-home pay scale with the percentage. |
+| Sabbatical | `workload` 0% | Same rule for the pay; the CHF 7'000 of travel is the UBS catalog's (S044). |
+| Master's (student paths) | `education` | UBS figures (S001, Alexia's paths) where the data has them; otherwise the engine's sourced tuition (CHF 1'460/year) and length (24 months). |
+| Buy a home | `house` event | Same bank test (`tragbarkeit`, pillar 2 above the 20% minimum) and closing costs; the game buys at once at 95% of the highest affordable price. |
+| Move in with a partner | `partner` | **Different on purpose.** The engine has no sourced default for a partner's income, costs or rent and asks the user. A card cannot ask, so it keeps its Doppel defaults (rent −45%, other costs −15%) and no partner income. |
+| Flatmates, smaller flat, nicer flat | `move` | **Different on purpose.** Same reason: the new rent is a user input in the engine. No change of canton in the game. |
+| Start a business | `selfEmployed` | **Different model.** The card is the UBS catalog's venture with capital, a failure hazard and promotion (§19), not a change of the person's salary. |
+
+Deliberate differences inside the two shared models:
+
+- **A schedule per year, fixed when the card is played.** The engine's monthly lines become one net amount per year (their mean), in CHF of the game's start, indexed with prices each year. The yearly sums are the engine's; within a year the timing is flattened (daycare starts in month six on the dashboard, the game spreads that year's cost over twelve months). Salary or canton changes after the card do not re-price the daycare tariff or the allowances.
+- **Expected value instead of a draw.** From 16 the engine draws per future whether the child goes to university (43%); the game charges the expected cost, so a position stays one state.
+- **No pay cut during parental leave.** The old card had one (three months at 80%); the engine has none, so the card has none.
+- **The car loan is the game's.** If cash is short the card takes a 48-month loan at 6.9%; the dashboard has no car loan and shows a cash crunch instead. The comparison in the check pays cash.
+- **Selling the car** ends its costs and the planned replacements; the engine has no such decision.
