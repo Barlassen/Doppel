@@ -57,6 +57,26 @@ export function monthlySpend(transactions: Transaction[]): { months: number; ave
   return { months, average: spend / months, rent: rent / months };
 }
 
+/** Names a mandatory health insurer is booked under (statement text in the four languages, and the large Swiss insurers). */
+const HEALTH_INSURER = /health insurance|krankenkasse|krankenversicherung|assurance[- ]maladie|caisse[- ]maladie|sa[gğ]l[iı]k sigortas[iı]|\bkvg\b|\blamal\b|\b(?:css|helsana|swica|sanitas|visana|concordia|assura|sympany|atupri|kpt|ökk|oekk|egk)\b|groupe mutuel/i;
+
+/**
+ * The person's own monthly health-insurance premium as their transactions show it: the average of the months in
+ * which a health insurer was paid. Undefined when the history has no such payment (the engine then uses the
+ * canton's mean premium, see canton.ts).
+ */
+export function observedHealthPremium(transactions: readonly Transaction[]): number | undefined {
+  const byMonth = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.category !== "insurance" || !HEALTH_INSURER.test(t.merchant)) continue;
+    byMonth.set(monthOf(t.date), (byMonth.get(monthOf(t.date)) ?? 0) + t.amount);
+  }
+  if (!byMonth.size) return undefined;
+  let total = 0;
+  for (const v of byMonth.values()) total += v;
+  return Math.round(total / byMonth.size);
+}
+
 export interface InvestBehavior {
   /** Months in the observation window (distinct transaction months, else distinct trade months). */
   months: number;
