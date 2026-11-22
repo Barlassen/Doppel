@@ -41,6 +41,10 @@ export type Motion = "build" | "protect" | "spend" | "neutral";
 interface PieceIntent {
   piece: PieceSymbol | null;
   motion?: Motion;
+  /** A business move: push the business pawn (the most advanced pawn with the freest path). */
+  business?: boolean;
+  /** Promotion piece when the pawn reaches the last rank: rook = shop, queen = factory. */
+  promote?: "r" | "q";
   /** Prefer the bishop on this square colour (equities = light, bonds/3a = dark). */
   bishop?: "light" | "dark";
   /** Prefer castling (buying a home). */
@@ -84,6 +88,14 @@ const CARD_INTENT: Record<string, PieceIntent> = {
   workInRetirement: { piece: "n", motion: "build" },
   downsize: { piece: "r", motion: "protect" },
   sellHome: { piece: "r", motion: "protect" },
+  startBusiness: { piece: "p", motion: "build", business: true },
+  growBusiness: { piece: "p", motion: "build", business: true },
+  takeProfits: { piece: "p", motion: "build", business: true },
+  reinvestProfits: { piece: "p", motion: "build", business: true },
+  hireEmployee: { piece: "p", motion: "build", business: true },
+  sellBusiness: { piece: "p", motion: "protect" },
+  openShop: { piece: "p", motion: "build", business: true, promote: "r" },
+  buildFactory: { piece: "p", motion: "build", business: true, promote: "q" },
 };
 
 /** How a decision moves on the board (for the legend and the panel). */
@@ -136,6 +148,10 @@ export interface BoardPly {
   /** The piece the intent asked for, when another piece had to move instead (captured or no legal move). */
   wanted: PieceSymbol | null;
   captured: PieceSymbol | null;
+  /** Piece a pawn promoted to (rook = shop, queen = factory). */
+  promotion: PieceSymbol | null;
+  /** A promotion in place because the pawn's way was blocked: not a chess move (see `symbolicPromotion`). */
+  symbolic?: boolean;
   /** The move gives check. */
   check: boolean;
   mate: boolean;
@@ -230,6 +246,48 @@ function mobility(ch: Chess, c: Color, piece: PieceSymbol): number {
 /** Mate, stalemate or dead position. Repetition is tracked by `seen` (scanning chess.js' history is slow). */
 const mateOrDraw = (ch: Chess) => ch.isCheckmate() || ch.isStalemate() || ch.isInsufficientMaterial();
 
+/** The white pawn with the best way to promotion: advanced, no pawn ahead on its file, a long free run. */
+function chooseBusinessPawn(ch: Chess): Square | null {
+  let best: { sq: Square; score: number } | null = null;
+  for (const sq of ALL_SQUARES) {
+    const p = ch.get(sq);
+    if (!p || p.type !== "p" || p.color !== "w") continue;
+    let free = 0;
+    let pawnAhead = false;
+    for (let r = Number(sq[1]) + 1; r <= 8; r++) {
+      const q = ch.get((sq[0] + r) as Square);
+      if (q) {
+        if (q.type === "p") pawnAhead = true;
+        break;
+      }
+      free++;
+    }
+    const score = Number(sq[1]) * 2 + free - (pawnAhead ? 6 : 0);
+    if (!best || score > best.score) best = { sq, score };
+  }
+  return best?.sq ?? null;
+}
+
+/** Squares in front of the business pawn on its file (Life keeps them clear). */
+const pathAhead = (sq: Square): Square[] => {
+  const out: Square[] = [];
+  for (let r = Number(sq[1]) + 1; r <= 8; r++) out.push((sq[0] + r) as Square);
+  return out;
+};
+
+/** Free squares in front of a pawn after its move (to the last rank): a long free run marks the business pawn. */
+function pawnRun(ch: Chess, m: Move): number {
+  const f = m.to[0];
+  const dir = m.color === "w" ? 1 : -1;
+  let r = Number(m.to[1]) + dir;
+  let free = 0;
+  while (r >= 1 && r <= 8 && !ch.get((f + r) as Square)) {
+    free++;
+    r += dir;
+  }
+  return free;
+}
+
 const centre = (sq: Square) => {
   const f = sq.charCodeAt(0) - 97;
   const r = Number(sq[1]) - 1;
@@ -240,6 +298,12 @@ interface Want {
   side: Color;
   piece: PieceSymbol | null;
   motion?: Motion;
+  business?: boolean;
+  promote?: "r" | "q";
+  /** The business pawn to push (white). */
+  bizSquare?: Square | null;
+  /** Squares on the business pawn's path that Life keeps clear (black). */
+  shield?: Square[];
   bishop?: "light" | "dark";
   castle?: boolean;
   quality?: Quality;
@@ -258,6 +322,11 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
   const typed = w.piece ? all.filter((m) => m.piece === w.piece) : all;
   // Fall back to a related piece when the domain's piece is gone or stuck: pawns, then minor pieces.
   let pool = typed.length ? typed : all.filter((m) => m.piece !== "k").length ? all.filter((m) => m.piece !== "k") : all;
+  // A business move pushes the business pawn when it can move (forward, or a capture that opens its way).
+  if (w.business && w.bizSquare) {
+    const own = all.filter((m) => m.from === w.bizSquare);
+    if (own.length) pool = own;
+  }
   // Check and mate follow the financial state, so any piece may deliver them when the domain's piece cannot.
   if ((w.check || w.mate) && !pool.some((m) => /[+#]/.test(m.san)) && all.some((m) => /[+#]/.test(m.san))) pool = all;
   // Phase 1 scores every candidate cheaply; phase 2 adds the expensive terms (pressure, freeing a blocked
@@ -290,6 +359,14 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
     // Direction follows the decision: building moves forward, protecting moves back towards the own king,
     // spending pushes a pawn or piece forward loosely (it does not develop, it only advances).
     const forward = (Number(m.to[1]) - Number(m.from[1])) * (w.side === "w" ? 1 : -1);
+    // Promotion: only the business promotes, and to the asset chosen (rook = shop, queen = factory).
+    if (m.promotion) s += w.promote ? (m.promotion === w.promote ? 300 : -300) : m.promotion === "q" ? -20 : -60;
+    if (w.business && m.piece === "p") s += 3 * pawnRun(ch, m) + (w.side === "w" ? Number(m.to[1]) : 9 - Number(m.to[1])) + (m.captured ? 10 : 0);
+    // Life keeps the business pawn's way clear: it does not block it, and gets out of it when it can.
+    if (w.shield?.length) {
+      if (w.shield.includes(m.to)) s -= 40;
+      if (w.shield.includes(m.from)) s += 30;
+    }
     if (w.motion === "build") s += 4 * Math.sign(forward) + forward;
     else if (w.motion === "protect") s += forward < 0 ? 8 : forward === 0 ? 2 : -6;
     else if (w.motion === "spend") s += forward > 0 ? 3 : 0;
@@ -350,7 +427,56 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
 /** Candidates that get the expensive scoring terms. */
 const REFINE = 6;
 
+/**
+ * Symbolic promotion: the business pawn's way to the last rank is blocked, so it turns into the chosen asset on its
+ * square. This one ply is not a chess move (marked "*" in the notation and in the panel); every other ply is legal.
+ */
+function symbolicPromotion(ch: Chess, w: Want, card: string | null): BoardPly | null {
+  const sq = w.bizSquare && ch.get(w.bizSquare)?.type === "p" && ch.get(w.bizSquare)?.color === "w" ? w.bizSquare : chooseBusinessPawn(ch);
+  if (!sq || !w.promote) return null;
+  const probe = new Chess(ch.fen());
+  probe.remove(sq);
+  probe.put({ type: w.promote, color: "w" }, sq);
+  const parts = probe.fen().split(" ");
+  parts[1] = "b";
+  parts[3] = "-";
+  const fen = parts.join(" ");
+  // Only if the result is a sound position for Black to move (not already lost or illegal).
+  let next: Chess;
+  try {
+    next = new Chess(fen);
+  } catch {
+    return null;
+  }
+  if (mateOrDraw(next)) return null;
+  ch.load(fen);
+  return {
+    side: "w",
+    san: `${sq}=${w.promote.toUpperCase()}*`,
+    from: sq,
+    to: sq,
+    piece: "p",
+    wanted: null,
+    captured: null,
+    promotion: w.promote,
+    symbolic: true,
+    check: ch.inCheck(),
+    mate: false,
+    hangs: hanging(ch, "w").value,
+    card,
+    fenAfter: ch.fen(),
+  };
+}
+
 function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card: string | null): BoardPly | null {
+  if (w.promote && !(ch.moves({ verbose: true }) as Move[]).some((m) => m.promotion === w.promote && (!w.bizSquare || m.from === w.bizSquare))) {
+    const sym = symbolicPromotion(ch, w, card);
+    if (sym) {
+      const key = ch.fen().split(" ").slice(0, 2).join(" ");
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+      return sym;
+    }
+  }
   const m = pickMove(ch, w, salt, seen);
   if (!m) return null;
   ch.move(m);
@@ -364,6 +490,7 @@ function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card
     piece: m.piece,
     wanted: w.piece && w.piece !== m.piece ? w.piece : null,
     captured: m.captured ?? null,
+    promotion: m.promotion ?? null,
     check: ch.inCheck(),
     mate: ch.isCheckmate(),
     hangs: hanging(ch, m.color).value,
@@ -374,7 +501,7 @@ function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card
 
 function whiteWant(card: string, label: MoveLabel | null | undefined, target: Square | null, mate = false): Want {
   const intent = CARD_INTENT[card] ?? { piece: null };
-  return { side: "w", piece: intent.piece, motion: intent.motion, bishop: intent.bishop, castle: intent.castle, quality: qualityFor(label), target, mate };
+  return { side: "w", piece: intent.piece, motion: intent.motion, business: intent.business, promote: intent.promote, bishop: intent.bishop, castle: intent.castle, quality: qualityFor(label), target, mate };
 }
 
 // ---------------------------------------------------------------- public API
@@ -387,6 +514,7 @@ interface Snapshot {
   captured: { w: PieceSymbol[]; b: PieceSymbol[] };
   lifeTarget: Square | null;
   playerTarget: Square | null;
+  bizSquare: Square | null;
 }
 const LINE_CACHE = new Map<string, Snapshot>();
 
@@ -421,6 +549,7 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
   const captured = { w: snap ? [...snap.captured.w] : ([] as PieceSymbol[]), b: snap ? [...snap.captured.b] : ([] as PieceSymbol[]) };
   let lifeTarget: Square | null = snap?.lifeTarget ?? null;
   let playerTarget: Square | null = snap?.playerTarget ?? null;
+  let bizSquare: Square | null = snap?.bizSquare ?? null;
   let result: BoardLine["result"] = null;
 
   for (let k = start; k < game.positions.length; k++) {
@@ -429,8 +558,15 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
     const move = game.moves[k];
     if (!move) break;
     const next = game.positions[k + 1];
-    const white = doPly(ch, whiteWant(move.card, labels[k], playerTarget, next.status === "won"), salt + ":w" + k, seen, move.card);
+    const ww = whiteWant(move.card, labels[k], playerTarget, next.status === "won");
+    if (ww.business) {
+      const p = bizSquare ? ch.get(bizSquare) : null;
+      if (!p || p.type !== "p" || p.color !== "w") bizSquare = chooseBusinessPawn(ch);
+      ww.bizSquare = bizSquare;
+    }
+    const white = doPly(ch, ww, salt + ":w" + k, seen, move.card);
     if (!white) break;
+    if (bizSquare && white.from === bizSquare) bizSquare = white.promotion ? null : white.to;
     turn.white = white;
     if (white.captured) captured.w.push(white.captured);
     const h = hanging(ch, "w");
@@ -460,11 +596,13 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
       check: next.status === "playing" && !!next.check,
       mate: next.status === "mate",
       target: li?.tone === "gift" ? null : lifeTarget,
+      shield: next.business && bizSquare ? pathAhead(bizSquare) : undefined,
     };
     const black = doPly(ch, want, salt + ":b" + k, seen, lifeCard);
     if (!black) break;
     turn.black = black;
     if (black.captured) captured.b.push(black.captured);
+    if (bizSquare && black.to === bizSquare) bizSquare = null;
     playerTarget = black.hangs > 0 ? hanging(ch, "b").square : null;
     if (next.status === "mate") {
       result = black.mate ? "lifeMates" : "playerResigns";
@@ -472,7 +610,7 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
       break;
     }
     if (LINE_CACHE.size > 600) LINE_CACHE.clear();
-    LINE_CACHE.set(keys[k], { fen: ch.fen(), seen: [...seen], turns: turns.slice(), captured: { w: [...captured.w], b: [...captured.b] }, lifeTarget, playerTarget });
+    LINE_CACHE.set(keys[k], { fen: ch.fen(), seen: [...seen], turns: turns.slice(), captured: { w: [...captured.w], b: [...captured.b] }, lifeTarget, playerTarget, bizSquare });
   }
   return { startFen: turns[0]?.fen ?? new Chess().fen(), turns, captured, result };
 }

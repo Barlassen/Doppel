@@ -29,7 +29,7 @@ import type { LifeEvent, Profile, RiskProfile } from "@/lib/finance/types";
 import type { IncomePhase, SimInput } from "./sim";
 import type { Text } from "@/lib/i18n/types";
 import type { AlexiaPath } from "@/lib/ubs";
-import { type MarketYear, type Regime, simAssumptions } from "./regime";
+import { type MarketYear, type Regime, simAssumptions, uniform } from "./regime";
 
 /** Overdraft the game tolerates before a payment is impossible (mate). Engine default. */
 export const CREDIT_LINE = 2000;
@@ -58,9 +58,34 @@ export interface Phase {
   kind: "study" | "jobless" | "leave" | "gap" | "training" | "retiredWork";
 }
 
+/**
+ * A business (UBS catalog S111–S120). `capital` is its book value (nominal CHF, counted in net worth). Each year it
+ * survives with probability 1 − hazard and earns `profitRate` × capital × the market factor; on failure the capital
+ * is lost and its loans remain. Hazard calibration: BFS business demography, about half of new Swiss firms are still
+ * active after five years (cohorts 47.8–50.1%), 84% after one year. An established shop or factory is far safer.
+ */
+export interface Business {
+  kind: "venture" | "shop" | "factory";
+  capital: number;
+  /** Years it has survived. */
+  years: number;
+  profitRate: number;
+  /** Yearly failure probability in a median year. */
+  hazard: number;
+  /** Profits stay in the business (it grows, safer) or are paid out (cash, riskier). */
+  policy: "reinvest" | "withdraw";
+  staff: number;
+}
+
+export interface BusinessNews {
+  age: number;
+  kind: "profit" | "failed";
+  amount: number;
+}
+
 export interface Debt {
   id: string;
-  kind: "student" | "car" | "personal";
+  kind: "student" | "car" | "personal" | "business";
   principal: number;
   rate: number;
   monthlyPayment: number;
@@ -112,6 +137,9 @@ export interface GameState {
   lumpSum: boolean;
   /** Life preferences the player declared at the start (see `LIFE_PREFS` in cards.ts). */
   prefs: string[];
+  business: Business | null;
+  /** The business's latest years (newest last). */
+  businessNews: BusinessNews[];
   startAge: number;
   age: number;
   /** Years played. */
@@ -170,7 +198,7 @@ export const realNetWorth = (s: GameState) => netWorth(s) / s.priceIndex;
 
 export function netWorth(s: GameState): number {
   const home = s.home ? s.home.value - s.home.mortgage : 0;
-  return s.cash + s.portfolio + s.pillar2 + s.pillar3a + home - debtTotal(s);
+  return s.cash + s.portfolio + s.pillar2 + s.pillar3a + home + (s.business?.capital ?? 0) - debtTotal(s);
 }
 
 export const debtTotal = (s: GameState) => s.debts.reduce((sum, d) => sum + d.principal, 0);
@@ -266,13 +294,13 @@ export function glideTarget(g: GameGoal, age: number): number {
 
 // ---------------- the ledger ----------------
 
-export const ACCOUNTS = ["cash", "portfolio", "pillar2", "pillar3a", "homeValue", "mortgage", "debt"] as const;
+export const ACCOUNTS = ["cash", "portfolio", "pillar2", "pillar3a", "homeValue", "mortgage", "debt", "business"] as const;
 export type Account = (typeof ACCOUNTS)[number];
 export type Balances = Record<Account, number>;
 
 export type FlowKind =
   | "income" | "living" | "housing" | "loan" | "interest" | "return" | "credit" | "contribution" | "refund"
-  | "invest" | "sale" | "purchase" | "oneOff" | "card" | "event" | "amortisation" | "pension";
+  | "invest" | "sale" | "purchase" | "oneOff" | "card" | "event" | "amortisation" | "pension" | "business";
 
 export interface Flow {
   account: Account;
@@ -295,6 +323,7 @@ export function balances(s: GameState): Balances {
     homeValue: s.home?.value ?? 0,
     mortgage: s.home?.mortgage ?? 0,
     debt: debtTotal(s),
+    business: s.business?.capital ?? 0,
   };
 }
 
@@ -341,6 +370,8 @@ export const cloneState = (s: GameState): GameState => ({
   oneOffs: s.oneOffs.map((o) => ({ ...o })),
   played: { ...s.played },
   prefs: [...s.prefs],
+  business: s.business ? { ...s.business } : null,
+  businessNews: [...s.businessNews],
   pension: s.pension ? { ...s.pension } : null,
   check: s.check ? { ...s.check } : null,
 });
@@ -387,6 +418,8 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     pension: null,
     lumpSum: false,
     prefs: [],
+    business: null,
+    businessNews: [],
     priceIndex: 1,
     cash: p.cash,
     portfolio: p.portfolio,
@@ -464,7 +497,9 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     healthPremiumMonth: s.healthPremium,
     rentMonth: s.rent,
     cash: s.cash,
-    portfolio: s.portfolio,
+    // The simulator has no business: its capital rides with the portfolio (equity-like risk and return), an
+    // approximation for rollouts; the tree's realised years use the business model itself (businessYear).
+    portfolio: s.portfolio + (s.business?.capital ?? 0),
     // Retired: the annuity as the pension-fund capital it came from, AHV from the last salary (simulator rules).
     pillar2: s.pension ? (s.pension.bvgMonth * 12) / bvgConversionRate(Math.min(s.retirementAge, s.age)) : s.pillar2,
     pillar3a: s.pillar3a,
@@ -493,6 +528,38 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     home: s.home ? { value: s.home.value, mortgage: s.home.mortgage, floor: s.home.floor, rate: s.home.rate } : undefined,
     debts: s.debts.map((d) => ({ principal: d.principal, rate: d.rate, monthlyPayment: d.monthlyPayment, startMonth: d.startMonth })),
   };
+}
+
+// ---------------- the business year ----------------
+
+/** Market factor on profits by bucket (worst … best quintile) and on the failure hazard. */
+const BUSINESS_PROFIT_FACTOR = [0.2, 0.7, 1, 1.25, 1.55];
+const BUSINESS_HAZARD_FACTOR = [1.6, 1.2, 1, 0.85, 0.7];
+/** The first year is the riskiest (BFS: 84% survive the first year, about half five years). */
+const FIRST_YEAR_HAZARD = 1.3;
+
+export function businessYear(s: GameState, L: LedgerBuilder, mkt: MarketYear) {
+  const b = s.business!;
+  const hazard = b.hazard * BUSINESS_HAZARD_FACTOR[mkt.bucket] * (b.years === 0 ? FIRST_YEAR_HAZARD : 1);
+  // Its own seeded draw (per player, year and market), so a branch on the same dice meets the same fate.
+  const u = uniform(s.profileId, s.turn, "business", mkt.bucket, Math.round(b.capital));
+  if (u < hazard) {
+    L.add("business", "business", -b.capital);
+    s.businessNews = [...s.businessNews, { age: s.age, kind: "failed" as const, amount: b.capital }].slice(-4);
+    s.business = null;
+    return;
+  }
+  const profit = b.capital * b.profitRate * BUSINESS_PROFIT_FACTOR[mkt.bucket];
+  if (b.policy === "reinvest") {
+    b.capital += profit;
+    L.add("business", "business", profit);
+  } else {
+    const net = profit * (1 - effectiveTaxRate(s.marginalTaxRate) - SOCIAL_DEDUCTIONS / 2);
+    s.cash += net;
+    L.add("cash", "business", net);
+  }
+  b.years += 1;
+  s.businessNews = [...s.businessNews, { age: s.age, kind: "profit" as const, amount: profit }].slice(-4);
 }
 
 // ---------------- one realised year ----------------
@@ -658,6 +725,9 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
     }
     minCash = Math.min(minCash, s.cash);
   }
+
+  // --- the business year: survive (profit) or fail (capital lost, loans remain) ---
+  if (s.business) businessYear(s, L, mkt);
 
   // --- the year turns: growth of salaries and prices, phases and schedules move 12 months closer ---
   const infl = 1 + mkt.inflation;

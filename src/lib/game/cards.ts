@@ -58,7 +58,7 @@ export interface CardParam {
 }
 
 export type CardKind = "decision" | "life";
-export type CardGroup = "path" | "career" | "housing" | "spending" | "saving" | "family" | "macro" | "life" | "retirement";
+export type CardGroup = "path" | "career" | "housing" | "spending" | "saving" | "family" | "macro" | "life" | "retirement" | "business";
 
 export interface CardDef {
   id: string;
@@ -741,7 +741,180 @@ export const DECISION_CARDS: CardDef[] = [
       s.expenses += p.newRent;
     },
   },
+
+  // ---------------- business (UBS catalog S111–S120); promotion = shop (rook) or factory (queen) ----------------
+  {
+    id: "startBusiness",
+    kind: "decision",
+    scenarioId: "S111",
+    group: "business",
+    cooldown: 3,
+    eligible: (s) => !s.business && !s.pension && s.path !== "student" && s.age >= 21 && s.age <= 60 && excessCash(s) + s.portfolio >= BUSINESS_START.capital * BUSINESS_START.equityShare,
+    params: () => [
+      param("capital", BUSINESS_START.capital, "chf"),
+      param("equityShare", BUSINESS_START.equityShare, "pct"),
+      param("loanRate", BUSINESS_LOAN_RATE, "pct", D, "S119 · Business loan"),
+      param("survival5", 0.5, "pct", D, "BFS UDEMO: about half of new firms active after 5 years"),
+    ],
+    apply: (s, p, L) => {
+      const own = p.capital * p.equityShare;
+      fundFromSavings(s, L, own);
+      startLoan(s, L, "debt-business", p.capital - own, p.loanRate, 60);
+      s.business = { kind: "venture", capital: p.capital, years: 0, profitRate: 0.15, hazard: 0.12, policy: "reinvest", staff: 0 };
+      L.add("business", "purchase", p.capital);
+    },
+  },
+  {
+    id: "growBusiness",
+    kind: "decision",
+    scenarioId: "S113",
+    group: "business",
+    eligible: (s) => !!s.business && excessCash(s) >= 10_000,
+    params: () => [param("amount", 10_000, "chf"), param("hazardCut", 0.01, "pct")],
+    apply: (s, p, L) => {
+      const b = s.business!;
+      s.cash -= p.amount;
+      L.add("cash", "business", -p.amount);
+      b.capital += p.amount;
+      L.add("business", "business", p.amount);
+      b.hazard = Math.max(0.03, b.hazard - p.hazardCut);
+    },
+  },
+  {
+    id: "takeProfits",
+    kind: "decision",
+    scenarioId: "S118",
+    group: "business",
+    eligible: (s) => !!s.business && s.business.policy === "reinvest",
+    params: () => [param("hazardUp", 0.03, "pct")],
+    apply: (s, p) => {
+      s.business!.policy = "withdraw";
+      s.business!.hazard += p.hazardUp;
+    },
+  },
+  {
+    id: "reinvestProfits",
+    kind: "decision",
+    scenarioId: "S118",
+    group: "business",
+    eligible: (s) => !!s.business && s.business.policy === "withdraw",
+    params: () => [param("hazardCut", 0.03, "pct")],
+    apply: (s, p) => {
+      s.business!.policy = "reinvest";
+      s.business!.hazard = Math.max(0.03, s.business!.hazard - p.hazardCut);
+    },
+  },
+  {
+    id: "hireEmployee",
+    kind: "decision",
+    scenarioId: "S116",
+    group: "business",
+    cooldown: 3,
+    eligible: (s) => !!s.business && s.business.staff < 5 && excessCash(s) + s.portfolio >= 15_000,
+    params: () => [param("amount", 30_000, "chf"), param("profitUp", 0.04, "pct"), param("hazardUp", 0.02, "pct")],
+    apply: (s, p, L) => {
+      const b = s.business!;
+      fundFromSavings(s, L, p.amount / 2);
+      startLoan(s, L, "debt-business-2", p.amount / 2, BUSINESS_LOAN_RATE, 60);
+      b.capital += p.amount;
+      L.add("business", "purchase", p.amount);
+      b.profitRate += p.profitUp;
+      b.hazard += p.hazardUp;
+      b.staff += 1;
+    },
+  },
+  {
+    id: "sellBusiness",
+    kind: "decision",
+    scenarioId: "S120",
+    group: "business",
+    response: true,
+    eligible: (s) => !!s.business && s.business.years >= 1,
+    params: (s) => [param("saleProceeds", round(s.business!.capital * saleMultiple(s.business!), 1000), "chf")],
+    apply: (s, p, L) => {
+      L.add("business", "sale", -s.business!.capital);
+      s.cash += p.saleProceeds;
+      L.add("cash", "sale", p.saleProceeds);
+      s.business = null;
+    },
+  },
+  {
+    id: "openShop",
+    kind: "decision",
+    scenarioId: "S111",
+    group: "business",
+    eligible: (s) => s.business?.kind === "venture" && s.business.years >= PROMOTION_YEARS && ownFunds(s) >= SHOP.cost * SHOP.equityShare,
+    params: () => [param("cost", SHOP.cost, "chf"), param("equityShare", SHOP.equityShare, "pct"), param("loanRate", 0.05, "pct", D, "S119 · Business loan")],
+    apply: (s, p, L) => promote(s, L, "shop", p),
+  },
+  {
+    id: "buildFactory",
+    kind: "decision",
+    scenarioId: "S111",
+    group: "business",
+    eligible: (s) => s.business?.kind === "venture" && s.business.years >= PROMOTION_YEARS && ownFunds(s) >= FACTORY.cost * FACTORY.equityShare,
+    params: () => [param("cost", FACTORY.cost, "chf"), param("equityShare", FACTORY.equityShare, "pct"), param("loanRate", 0.05, "pct", D, "S119 · Business loan")],
+    apply: (s, p, L) => promote(s, L, "factory", p),
+  },
 ];
+
+// ---------------- business helpers (Doppel defaults; S111–S120 give the scenarios, not these numbers) ----------------
+
+/** A small venture: CHF 40'000, half from savings, half a business loan. */
+const BUSINESS_START = { capital: 40_000, equityShare: 0.5 };
+const BUSINESS_LOAN_RATE = 0.06;
+/** Years a venture must survive before it can be promoted (the pawn reaches the last rank). */
+export const PROMOTION_YEARS = 4;
+/** Promotion: a shop (rook) or a factory (queen), at least 30% own funds, the rest a 10-year loan at 5%. */
+const SHOP = { cost: 150_000, equityShare: 0.3, profitRate: 0.12, hazard: 0.05 };
+const FACTORY = { cost: 400_000, equityShare: 0.3, profitRate: 0.14, hazard: 0.06 };
+
+/** Savings that can go into a business: cash above the buffer, the portfolio, and half the business's own value. */
+const ownFunds = (s: GameState) => excessCash(s) + s.portfolio + (s.business?.capital ?? 0) * 0.5;
+const saleMultiple = (b: { kind: string; years: number }) => (b.kind === "venture" ? 0.8 : 1) + Math.min(0.3, b.years * 0.05);
+
+function fundFromSavings(s: GameState, L: LedgerBuilder, amount: number) {
+  const fromCash = Math.min(amount, Math.max(0, excessCash(s)));
+  s.cash -= fromCash;
+  L.add("cash", "business", -fromCash);
+  const fromPort = Math.min(amount - fromCash, s.portfolio);
+  s.portfolio -= fromPort;
+  L.add("portfolio", "business", -fromPort);
+  const rest = amount - fromCash - fromPort;
+  if (rest > 0) {
+    s.cash -= rest;
+    L.add("cash", "business", -rest);
+  }
+}
+
+function startLoan(s: GameState, L: LedgerBuilder, id: string, principal: number, rate: number, months: number) {
+  if (principal <= 0) return;
+  const existing = s.debts.find((d) => d.id === id);
+  const total = principal + (existing?.principal ?? 0);
+  const monthlyPayment = annuity(total, rate, months);
+  if (existing) Object.assign(existing, { principal: total, rate, monthlyPayment, startMonth: 0 });
+  else s.debts.push({ id, kind: "business", principal, rate, monthlyPayment, startMonth: 0 });
+  L.add("debt", "loan", principal);
+}
+
+function promote(s: GameState, L: LedgerBuilder, kind: "shop" | "factory", p: Record<string, number>) {
+  const b = s.business!;
+  const spec = kind === "shop" ? SHOP : FACTORY;
+  const own = p.cost * p.equityShare;
+  // Own funds: savings first, then part of the venture's value.
+  const fromSavings = Math.min(own, Math.max(0, excessCash(s)) + s.portfolio);
+  fundFromSavings(s, L, fromSavings);
+  const fromBusiness = own - fromSavings;
+  b.capital -= fromBusiness;
+  L.add("business", "business", -fromBusiness);
+  startLoan(s, L, "debt-" + kind, p.cost - own, p.loanRate, 120);
+  b.capital += p.cost;
+  L.add("business", "purchase", p.cost);
+  b.kind = kind;
+  b.profitRate = spec.profitRate;
+  b.hazard = spec.hazard;
+  b.policy = "reinvest";
+}
 
 // ---------------- Life's cards (White) ----------------
 

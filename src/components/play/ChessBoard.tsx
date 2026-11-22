@@ -142,6 +142,8 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
     if (ply.captured) notes.push(ply.side === "w" ? { text: t("board.took", { piece: pieceName(ply.captured), domain: domain(ply.captured) }), tone: "good" } : { text: t("board.lost", { piece: pieceName(ply.captured), domain: domain(ply.captured) }), tone: "bad" });
     if (ply.side === "w" && ply.wanted) notes.push({ text: t("board.substituted", { wanted: pieceName(ply.wanted), piece: pieceName(ply.piece) }), tone: "warn" });
     if (ply.side === "w" && ply.hangs > 0) notes.push({ text: t("board.hangs"), tone: "warn" });
+    if (ply.promotion) notes.push({ text: t("biz.promoted", { piece: pieceName(ply.promotion), asset: t(ply.promotion === "q" ? "biz.factory" : ply.promotion === "r" ? "biz.shop" : "biz.venture") }), tone: "good" });
+    if (ply.symbolic) notes.push({ text: t("biz.symbolic"), tone: "warn" });
     return notes;
   }
 
@@ -333,6 +335,7 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
             </li>
           </ul>
           <p className="mt-2 text-[11px] text-ink-3">{t("board.legend.motion")}</p>
+          <p className="mt-1 text-[11px] text-ink-3">{t("biz.legend")}</p>
           <p className="mt-1 text-[11px] text-ink-3">{t("board.legend.rule")}</p>
         </Disclosure>
       </div>

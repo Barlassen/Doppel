@@ -312,6 +312,10 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
   if (p.car) chips.push(t("play.position.car"));
   if (p.children) chips.push(t("play.position.children", { count: p.children }));
   for (const pref of p.prefs) chips.push("♡ " + t(`prefs.item.${pref}` as MessageKey));
+  if (p.business) chips.push(t("biz.chip", { kind: t(`biz.${p.business.kind}` as MessageKey), capital: p.business.capital / k, years: p.business.years + 1 }));
+  const news = p.businessNews[p.businessNews.length - 1];
+  if (news && news.age === p.age - 1)
+    chips.push(news.kind === "failed" ? t("biz.failed", { age: news.age, amount: news.amount / k }) : t("biz.profit", { kind: t(`biz.${p.business?.kind ?? "venture"}` as MessageKey), amount: news.amount / k }));
   return (
     <section className="card p-4 sm:p-5" aria-labelledby="play-position" data-turn={turn}>
       <CardHeader

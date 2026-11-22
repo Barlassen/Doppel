@@ -21,7 +21,7 @@ import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib
 import { advance, currentPosition, isOver, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
 import { replay, toRecord } from "../src/lib/game/notation";
-import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime } from "../src/lib/game/regime";
+import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime, uniform } from "../src/lib/game/regime";
 import { accountOpening, ubsOpening } from "../src/lib/game/start";
 import { type GameState, initialState, ledgerError, netWorth, stepYear, toSimInput } from "../src/lib/game/state";
 import { ALEXIA_ID } from "../src/lib/ubs";
@@ -205,6 +205,10 @@ async function main() {
     const pensioner = stepYear({ ...nearRetirement, age: 65, retirementAge: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET)).state;
     samples.push(pensioner, { ...pensioner, age: 81 });
     samples.push(stepYear({ ...owner.state, age: 65, retirementAge: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET)).state);
+    // Business: a new venture, and one that survived four years (promotion to a shop or a factory).
+    const founder = { ...rich, portfolio: 300_000 };
+    const venture = applyCard(founder, "startBusiness", REGIME.normal).state;
+    samples.push(venture, { ...venture, business: { ...venture.business!, years: 4, policy: "withdraw" as const } });
     let worst = 0;
     let cards = 0;
     let years = 0;
@@ -293,6 +297,22 @@ async function main() {
     const ld = reviewMove(declared, "haveChild").label;
     const dealt = dealHand({ ...base, prefs: ["children"] }, S.seed).cards.includes("haveChild");
     check("preferences: a declared choice is not graded (♡) and is dealt; undeclared it is graded", ld === "lifeChoice" && lu !== "lifeChoice" && dealt, `undeclared ${lu} · declared ${ld} · dealt ${dealt}`);
+  }
+
+  // ---------- 11. business: survival calibrated to the BFS (about half of new firms after five years) ----------
+  {
+    let alive = 0;
+    const n = 600;
+    for (let i = 0; i < n; i++) {
+      let st: GameState = { ...accountOpening(PROFILES[1]), profileId: "founder-" + i, cash: 200_000 };
+      st = applyCard(st, "startBusiness", REGIME.normal).state;
+      for (let y = 0; y < 5 && st.business; y++) st = stepYear(st, marketYear(REGIME.normal, Math.floor(uniform(i, y, "bucket") * 5))).state;
+      if (st.business) alive++;
+    }
+    const share = alive / n;
+    check("business: about half of new ventures survive five years (BFS: 47.8–50.1%)", share > 0.4 && share < 0.6, `${(share * 100).toFixed(1)}% of ${n} ventures alive after 5 years`);
+    const shopState = applyCard({ ...accountOpening(PROFILES[1]), cash: 300_000, business: { kind: "venture" as const, capital: 60_000, years: 4, profitRate: 0.15, hazard: 0.12, policy: "reinvest" as const, staff: 0 } }, "openShop", REGIME.normal);
+    check("business: promotion to a shop adds the asset and its loan, ledger balances", shopState.state.business?.kind === "shop" && shopState.state.debts.some((d) => d.id === "debt-shop") && ledgerError(shopState.ledger) < 1e-6, `capital CHF ${Math.round(shopState.state.business?.capital ?? 0).toLocaleString("en")}`);
   }
 
   // ---------- budget: a review takes about a second ----------
