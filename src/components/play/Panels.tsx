@@ -144,10 +144,11 @@ export function Banner({ position: p }: { position: GameState }) {
     text = p.check.reason === "buffer" ? t("play.banner.checkBuffer", { months: p.check.bufferMonths }) : t("play.banner.checkCrunch", { p: p.check.crunchProb });
   }
   if (!kind) return null;
-  const tone = { check: "border-warn text-warn", mate: "border-bad text-bad", won: "border-good text-good", ended: "border-line text-ink" }[kind];
+  const tone = { check: "text-warn", mate: "text-bad", won: "text-good", ended: "text-ink" }[kind];
+  const accent = { check: "var(--warn)", mate: "var(--bad)", won: "var(--good)", ended: "var(--ink-3)" }[kind];
   const glyph = { check: "+", mate: "#", won: "★", ended: "½" }[kind];
   return (
-    <div role="status" aria-live="polite" data-banner={kind} className={`card mt-4 flex items-start gap-3 border-l-4 px-4 py-3 text-sm font-medium ${tone}`}>
+    <div role="status" aria-live="polite" data-banner={kind} className={`card mt-4 flex items-start gap-3 px-4 py-3 text-sm font-medium ${tone}`} style={{ borderLeft: `4px solid ${accent}` }}>
       <span aria-hidden="true" className="num text-lg leading-5">{glyph}</span>
       <span className="text-ink">{text}</span>
     </div>
@@ -250,7 +251,7 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
   const stat = (label: string, value: string, sub?: string) => (
     <div className="min-w-0 rounded-lg bg-surface-2 px-3 py-2">
       <div className="truncate text-[11px] text-ink-3">{label}</div>
-      <div className="num truncate text-base font-semibold text-ink">{value}</div>
+      <div className="num truncate text-sm font-semibold text-ink sm:text-base">{value}</div>
       {sub && <div className="truncate text-[11px] text-ink-2">{sub}</div>}
     </div>
   );

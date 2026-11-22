@@ -101,7 +101,7 @@ export function DonutTable({ you, best, showBest }: { you: DonutSlice[]; best: D
 export function EvalBars({ engine, you }: { engine: number | null; you: number | null }) {
   const { t } = useI18n();
   const row = (label: string, e: number | null, color: string, marker: string) => (
-    <div className="grid grid-cols-[minmax(0,6.5rem)_1fr_3.5rem] items-center gap-2">
+    <div className="grid grid-cols-[minmax(0,6.5rem)_minmax(2rem,1fr)_auto] items-center gap-2">
       <span className="flex items-center gap-1.5 truncate text-xs text-ink-2">
         <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
         {label}
@@ -109,7 +109,7 @@ export function EvalBars({ engine, you }: { engine: number | null; you: number |
       <div className="relative h-3 overflow-hidden rounded-full bg-surface-2" role="meter" aria-label={label} aria-valuemin={-10} aria-valuemax={100} aria-valuenow={e === null ? undefined : Math.round(e * 100)}>
         {e !== null && <div className="absolute inset-y-0 left-0 rounded-full" data-marker={marker} style={{ width: `${Math.max(2, Math.min(100, e * 100))}%`, background: color }} />}
       </div>
-      <span className="num text-right text-sm font-semibold text-ink">{e === null ? "—" : t("play.evalBar.points", { e: e * 100 })}</span>
+      <span className="num text-right text-sm font-semibold whitespace-nowrap text-ink">{e === null ? "—" : t("play.evalBar.points", { e: e * 100 })}</span>
     </div>
   );
   return (

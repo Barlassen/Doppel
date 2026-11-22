@@ -60,6 +60,7 @@ The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from pay
 | Command | What it does | Needs |
 |---|---|---|
 | `npx tsx scripts/engine-check.ts` | Runs the finance engine on the three accounts and the demo snaps | nothing |
+| `npm run play:check` | Doppel Play checks: seeded replay, labels, sacrifice, mate, MCTS vs brute force, ledger identity | nothing |
 | `npm run i18n:check` | Checks the four dictionaries and the local what-if parsers | nothing |
 | `npm run smoke:browser` | Headless Chromium run of the real browser pipeline, no API key | `npm run build` |
 | `npx tsx scripts/pipeline-check.ts` | Same as `smoke:browser` | `npm run build` |
@@ -68,5 +69,7 @@ The finance numbers used in the pitch (Meriç 64.6% vs 73.6%, −9.4 pp from pay
 | `npx tsx scripts/make-samples.ts` | Regenerates the 7 sample documents in `public/samples/` | nothing |
 
 All people, companies and documents in the demo are fictional.
+
+Doppel Play (`/play`) turns the same twin into a chess-review life game: Life plays White, you play Black, and a Monte Carlo tree search over possible futures reviews every move. See [docs/PLAY.md](docs/PLAY.md).
 
 More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
