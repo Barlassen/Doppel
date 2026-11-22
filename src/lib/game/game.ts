@@ -15,7 +15,8 @@ import { applyCard, dealHand, lifeEventFor, type CardParam } from "./cards";
 import type { DepthId, EngineSettings } from "./engine";
 import type { PresetId } from "./evaluate";
 import { REGIME, bucketOf, hashSeed, marketYear, uniform } from "./regime";
-import { type GameState, type Ledger, MIN_BUFFER_MONTHS, bufferMonths, realNetWorth, stepYear, toSimInput } from "./state";
+import { isIndependent } from "./independence";
+import { type GameState, type Ledger, MIN_BUFFER_MONTHS, bufferMonths, stepYear, toSimInput, turnYears } from "./state";
 
 export const CHECK_CRUNCH = 0.2;
 export const CHECK_PATHS = 200;
@@ -29,11 +30,15 @@ export interface LifeRecord {
   turn: number;
   card: string | null;
   params: CardParam[];
+  /** Life's cards in the earlier years of a multi-year turn (the turn boundary's card is `card`). */
+  earlier?: { turn: number; age: number; card: string; params: CardParam[] }[];
 }
 
 export interface MoveRecord {
   turn: number;
   age: number;
+  /** Years this turn covered (1 for the first ten years, then 5). */
+  years: number;
   card: string;
   params: CardParam[];
   /** Market bucket of the year that followed (0 = worst quintile … 4 = best). */
@@ -76,21 +81,58 @@ export function legalMoves(g: Game): string[] {
 
 export const marketBucket = (seed: number, turn: number) => bucketOf(uniform(seed, turn, "market"));
 
-/** Plays Black's move and the year that follows. */
+/** Plays the player's move and the year(s) that follow (see `turnYears`). */
 export function play(g: Game, card: string): Game {
   const pos = currentPosition(g);
   if (pos.status !== "playing") throw new Error("The game is over");
   if (!legalMoves(g).includes(card)) throw new Error("Illegal move " + card);
+  return advance(g, card);
+}
+
+/**
+ * The turn without the legality test (the "hold every year" reference line of the game rating uses it).
+ * Each year: one seeded market bucket → `stepYear`; inside a multi-year turn Life also draws its card every year.
+ * After the turn: mate, financial independence (the win: Life is mated), the end age, or Life's card + check test.
+ */
+export function advance(g: Game, card: string): Game {
+  const pos = currentPosition(g);
+  if (pos.status !== "playing") throw new Error("The game is over");
   const regime = REGIME[g.settings.regime];
   const moved = applyCard(pos, card, regime);
-  const bucket = marketBucket(g.settings.seed, pos.turn);
-  const yr = stepYear(moved.state, marketYear(regime, bucket));
-  let next = yr.state;
-  let life: LifeRecord = { turn: next.turn, card: null, params: [] };
+  const years = turnYears(pos);
+  let st = moved.state;
+  let firstBucket = 0;
+  let yearLedger: Ledger | null = null;
+  let soldToCover = 0;
+  let mate = false;
+  const earlier: NonNullable<LifeRecord["earlier"]> = [];
+  for (let y = 0; y < years; y++) {
+    const bucket = marketBucket(g.settings.seed, st.turn);
+    if (y === 0) firstBucket = bucket;
+    const yr = stepYear(st, marketYear(regime, bucket));
+    yearLedger = yr.ledger;
+    soldToCover += yr.soldToCover;
+    st = yr.state;
+    if (yr.mate) {
+      mate = true;
+      break;
+    }
+    if (y < years - 1) {
+      const id = lifeEventFor(st, regime, uniform(g.settings.seed, st.turn, "life"));
+      if (id) {
+        const res = applyCard(st, id, regime);
+        st = res.state;
+        earlier.push({ turn: st.turn, age: st.age, card: id, params: res.params });
+      }
+    }
+  }
+  let next = st;
+  let life: LifeRecord = { turn: next.turn, card: null, params: [], ...(earlier.length ? { earlier } : {}) };
   next.check = null;
-  if (yr.mate) {
+  if (mate) {
     next.status = "mate";
-  } else if (next.age >= next.goal.age && !next.goalReached && realNetWorth(next) >= next.goal.target && bufferMonths(next) >= MIN_BUFFER_MONTHS) {
+  } else if (!g.positions[0].pension && isIndependent(next, regime, g.settings.seed)) {
+    // Independence is the win for players who start working; a retiree's game is to last its 15 years.
     next.status = "won";
     next.goalReached = true;
   } else if (next.turn >= next.endTurn) {
@@ -100,19 +142,20 @@ export function play(g: Game, card: string): Game {
     if (id) {
       const res = applyCard(next, id, regime);
       next = res.state;
-      life = { turn: next.turn, card: id, params: res.params };
+      life = { ...life, turn: next.turn, card: id, params: res.params };
     }
     next.check = checkTest(next, g.settings);
   }
   const record: MoveRecord = {
     turn: pos.turn,
     age: pos.age,
+    years,
     card,
     params: moved.params,
-    market: bucket,
+    market: firstBucket,
     cardLedger: moved.ledger,
-    yearLedger: yr.ledger,
-    soldToCover: yr.soldToCover,
+    yearLedger: yearLedger!,
+    soldToCover,
   };
   return { settings: g.settings, positions: [...g.positions, next], moves: [...g.moves, record], lifeEvents: [...g.lifeEvents, life] };
 }

@@ -4,9 +4,34 @@
  */
 import type { Profile } from "@/lib/finance/types";
 import { ALEXIA_ID, alexiaPaths, listUbsProfiles, loadUbsProfile, ubsAssumptions } from "@/lib/ubs";
-import { type GameState, type UbsContext, initialState } from "./state";
+import { FI_END_AGE, GOAL_AGE, GOAL_REAL_RATE, goalCapital } from "./independence";
+import { MEDIAN_BUCKET, REGIME, hashSeed, marketYear } from "./regime";
+import { type GameState, type UbsContext, initialState, monthlyOutflow, pensionNet, stepYear } from "./state";
 
-export const DEMO_LENGTH = 10;
+const annuityFactor = (years: number) => (years <= 0 ? 0 : (1 - Math.pow(1 + GOAL_REAL_RATE, -years)) / GOAL_REAL_RATE);
+
+/**
+ * The game's goal: financial independence, not the profile's short-term goal (which is easy to beat).
+ * Working age: net worth at 65 = the liquid capital that covers spending minus pensions until 95, plus the pension
+ * fund the player will hold anyway (projected on the median market). Retired: the money for the gap between
+ * spending and pensions until 95, measured ten years ahead. Start-year CHF, computed once (`derived`).
+ */
+export function withFiGoal(s: GameState): GameState {
+  const regime = REGIME.normal;
+  const seed = hashSeed(s.profileId, "goal");
+  if (s.pension) {
+    const age = Math.min(FI_END_AGE, s.age + 10);
+    const gapYear = (Math.max(0, monthlyOutflow(s) - pensionNet(s)) * 12) / s.priceIndex;
+    const target = Math.max(10_000, Math.round((gapYear * annuityFactor(FI_END_AGE - age)) / 1000) * 1000);
+    return { ...s, goal: { ...s.goal, label: { key: "fi.goalRetired", params: { age: FI_END_AGE } }, target, age } };
+  }
+  const age = Math.max(GOAL_AGE, s.age + 5);
+  let st = s;
+  for (let y = s.age; y < age; y++) st = stepYear(st, marketYear(regime, MEDIAN_BUCKET)).state;
+  const pensionFund = st.pillar2 / st.priceIndex;
+  const target = Math.max(10_000, Math.round((goalCapital(s, regime, seed) + pensionFund) / 1000) * 1000);
+  return { ...s, goal: { ...s.goal, label: { key: "fi.goal", params: { age } }, target, age } };
+}
 
 export function ubsContextFor(profileId: string): UbsContext {
   const rows = ubsAssumptions("S001", profileId);
@@ -18,20 +43,22 @@ export function ubsContextFor(profileId: string): UbsContext {
   };
 }
 
-export async function ubsOpening(profileId: string, lengthTurns = DEMO_LENGTH): Promise<GameState> {
+export async function ubsOpening(profileId: string, lengthTurns?: number): Promise<GameState> {
   const profile = await loadUbsProfile(profileId);
   const summary = listUbsProfiles().find((p) => p.id === profileId);
-  return initialState(profile, {
-    lengthTurns,
-    ubs: ubsContextFor(profileId),
-    openingDebt: summary?.debtChf,
-    student: summary?.employment === "student",
-  });
+  return withFiGoal(
+    initialState(profile, {
+      lengthTurns,
+      ubs: ubsContextFor(profileId),
+      openingDebt: summary?.debtChf,
+      student: summary?.employment === "student",
+    }),
+  );
 }
 
-export function accountOpening(profile: Profile, lengthTurns = DEMO_LENGTH): GameState {
-  return initialState(profile, { lengthTurns, ubs: { alexiaPaths: null, s001: null } });
+export function accountOpening(profile: Profile, lengthTurns?: number): GameState {
+  return withFiGoal(initialState(profile, { lengthTurns, ubs: { alexiaPaths: null, s001: null } }));
 }
 
-/** UBS profiles the game can start from: working age (the game does not model retirement yet). */
-export const playableUbsProfiles = () => listUbsProfiles().filter((p) => p.employment !== "retired" && p.age <= 60);
+/** UBS profiles the game can start from: all of them (retirees play with their pensions, see `retireNow`). */
+export const playableUbsProfiles = () => listUbsProfiles();

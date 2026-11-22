@@ -11,7 +11,17 @@
  *    its tax refund, mortgage interest + upkeep + amortisation, loans, returns, selling investments on a shortfall).
  * Both write a ledger, and `checkLedger` proves opening + flows = closing for every account.
  */
-import { SOCIAL_DEDUCTIONS, bvgAgeCredit, coordinatedSalary, effectiveTaxRate } from "@/lib/finance/pension";
+import {
+  AHV_AGE,
+  P3A_PAYOUT_TAX,
+  RETIREMENT_TAX_FACTOR,
+  SOCIAL_DEDUCTIONS,
+  ahvMonthly,
+  bvgAgeCredit,
+  bvgConversionRate,
+  coordinatedSalary,
+  effectiveTaxRate,
+} from "@/lib/finance/pension";
 import { HEALTH_EXCESS_GROWTH, cantonMarginalRate, defaultHealthPremium } from "@/lib/finance/canton";
 import { ASSUMPTIONS, EQUITY_WEIGHT } from "./sim";
 import { BUFFER_MONTHS, MAINTENANCE_RATE, PILLAR_3A_MAX } from "@/lib/finance/swissRules";
@@ -85,6 +95,11 @@ export interface GameState {
   canton: string;
   marginalTaxRate: number;
   retirementAge: number;
+  /**
+   * Pensions once retired (nominal CHF/month): the pension-fund annuity (fixed) and the AHV pension (from 65,
+   * indexed with prices). `formerGross` is the last salary, kept for the simulator's AHV rule. null = still working.
+   */
+  pension: { bvgMonth: number; ahvMonth: number; formerGross: number } | null;
   startAge: number;
   age: number;
   /** Years played. */
@@ -151,7 +166,43 @@ export const debtTotal = (s: GameState) => s.debts.reduce((sum, d) => sum + d.pr
 export const phaseAt = (s: GameState, month: number) => s.phases.find((p) => month >= p.start && month < p.end);
 
 /** Take-home and gross at a month from now (phase-aware). */
+/** Net pension per month after tax (pension-fund annuity, plus AHV from 65). */
+export function pensionNet(s: GameState): number {
+  if (!s.pension) return 0;
+  const gross = s.pension.bvgMonth + (s.age >= AHV_AGE ? s.pension.ahvMonth : 0);
+  return gross * (1 - effectiveTaxRate(s.marginalTaxRate) * RETIREMENT_TAX_FACTOR);
+}
+
+/**
+ * Retirement: the pension fund becomes an annuity at the conversion rate of the retirement age, AHV is fixed from
+ * the last salary, pillar 3a is paid out into the portfolio after the capital-withdrawal tax, and non-housing
+ * spending falls to the retirement share (same rules as the simulator). `reduceSpending` = false for a profile
+ * that is already retired at the start (its spending already is retirement spending).
+ */
+export function retireNow(s: GameState, L: LedgerBuilder, reduceSpending = true) {
+  const bvgMonth = (s.pillar2 * bvgConversionRate(Math.min(s.retirementAge, s.age))) / 12;
+  L.add("pillar2", "pension", -s.pillar2);
+  s.pillar2 = 0;
+  const formerGross = s.gross;
+  const ahvMonth = ahvMonthly(formerGross / s.priceIndex) * s.priceIndex;
+  if (s.pillar3a > 0) {
+    const paid = s.pillar3a * (1 - P3A_PAYOUT_TAX);
+    L.add("pillar3a", "pension", -s.pillar3a);
+    L.add("portfolio", "pension", paid);
+    s.portfolio += paid;
+    s.pillar3a = 0;
+  }
+  s.pension = { bvgMonth, ahvMonth, formerGross };
+  if (reduceSpending) s.expenses = (s.expenses - s.rent) * ASSUMPTIONS.retirementSpending + s.rent;
+  s.gross = 0;
+  s.net = 0;
+  s.phases = [];
+  s.contributes3a = false;
+  s.monthlyInvest = 0;
+}
+
 export function incomeAt(s: GameState, month: number): { net: number; gross: number; bvg: boolean } {
+  if (s.pension) return { net: pensionNet(s), gross: 0, bvg: false };
   const ph = phaseAt(s, month);
   return ph ? { net: ph.net, gross: ph.gross, bvg: ph.bvg } : { net: s.net, gross: s.gross, bvg: !s.abroad };
 }
@@ -199,7 +250,7 @@ export type Balances = Record<Account, number>;
 
 export type FlowKind =
   | "income" | "living" | "housing" | "loan" | "interest" | "return" | "credit" | "contribution" | "refund"
-  | "invest" | "sale" | "purchase" | "oneOff" | "card" | "event" | "amortisation";
+  | "invest" | "sale" | "purchase" | "oneOff" | "card" | "event" | "amortisation" | "pension";
 
 export interface Flow {
   account: Account;
@@ -267,13 +318,27 @@ export const cloneState = (s: GameState): GameState => ({
   phases: s.phases.map((p) => ({ ...p })),
   oneOffs: s.oneOffs.map((o) => ({ ...o })),
   played: { ...s.played },
+  pension: s.pension ? { ...s.pension } : null,
   check: s.check ? { ...s.check } : null,
 });
 
 // ---------------- opening position ----------------
 
+/** The game runs to this age (working-age players); retirees play 15 years, at most to 95. */
+export const END_AGE = 80;
+export const RETIREE_END_AGE = 95;
+/** Years per turn: yearly for the first ten years, then five-year turns. */
+export const YEARLY_YEARS = 10;
+export const LONG_TURN_YEARS = 5;
+
+export const gameEndAge = (age: number, retired: boolean) => (retired ? Math.min(RETIREE_END_AGE, Math.max(age + 5, age + 15)) : Math.max(END_AGE, age + 5));
+
+/** Years the next turn covers (s.turn counts years played). */
+export const turnYears = (s: GameState) => Math.max(1, Math.min(s.turn < YEARLY_YEARS ? 1 : LONG_TURN_YEARS, s.endTurn - s.turn));
+
 export interface StartOptions {
-  lengthTurns: number;
+  /** Years to play; default: to the end age (80 for working-age players). */
+  lengthTurns?: number;
   ubs: UbsContext;
   /** Opening debt from the UBS summary (rate unknown there → engine default 5%, 5-year repayment). */
   openingDebt?: number;
@@ -295,7 +360,8 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     startAge: p.age,
     age: p.age,
     turn: 0,
-    endTurn: Math.max(1, Math.min(o.lengthTurns, p.retirementAge - p.age)),
+    endTurn: Math.max(1, o.lengthTurns ?? gameEndAge(p.age, p.retirementAge <= p.age) - p.age),
+    pension: null,
     priceIndex: 1,
     cash: p.cash,
     portfolio: p.portfolio,
@@ -329,6 +395,7 @@ export function initialState(p: Profile, o: StartOptions): GameState {
     check: null,
     goalReached: false,
   };
+  if (p.retirementAge <= p.age) retireNow(s, new LedgerBuilder(balances(s)), false);
   s.goal.startNetWorth = netWorth(s);
   return s;
 }
@@ -360,20 +427,21 @@ export function toSimInput(s: GameState, horizonAge: number, regime: Regime, pat
     city: s.city,
     canton: s.canton,
     tagline: { key: "profile.user.tagline" },
-    grossIncomeYear: s.gross,
-    netIncomeMonth: s.net,
+    grossIncomeYear: s.pension ? s.pension.formerGross : s.gross,
+    netIncomeMonth: s.pension ? pensionNet(s) : s.net,
     expensesMonth: s.expenses,
     healthPremiumMonth: s.healthPremium,
     rentMonth: s.rent,
     cash: s.cash,
     portfolio: s.portfolio,
-    pillar2: s.pillar2,
+    // Retired: the annuity as the pension-fund capital it came from, AHV from the last salary (simulator rules).
+    pillar2: s.pension ? (s.pension.bvgMonth * 12) / bvgConversionRate(Math.min(s.retirementAge, s.age)) : s.pillar2,
     pillar3a: s.pillar3a,
     contributes3a: s.contributes3a && !s.abroad,
     investShare: s.investShare,
     marginalTaxRate: s.marginalTaxRate,
     riskProfile: s.riskProfile,
-    retirementAge: s.retirementAge,
+    retirementAge: s.pension ? Math.min(s.retirementAge, s.age) : s.retirementAge,
     goal: { label: { key: "profile.user.tagline" }, target, age: Math.max(horizonAge, s.age + 1) },
     events,
     transactions: [],
@@ -428,7 +496,8 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   let minCash = s.cash;
   let mate = false;
   let p3aYear = 0;
-  const retired = s.age >= s.retirementAge;
+  if (!s.pension && s.age >= s.retirementAge) retireNow(s, L);
+  const retired = !!s.pension;
 
   for (let m = 0; m < 12; m++) {
     const price = Math.pow(mInfl, m + 1);
@@ -456,7 +525,7 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
 
     // --- income and spending ---
     const inc = incomeAt(s, m);
-    const income = retired ? 0 : inc.net * wage;
+    const income = retired ? inc.net : inc.net * wage;
     s.cash += income;
     L.add("cash", "income", income);
     const living = livingAt(s, m) * price;
@@ -548,6 +617,10 @@ export function stepYear(start: GameState, mkt: MarketYear): YearResult {
   const g = 1 + mkt.wage;
   s.net *= g;
   s.gross *= g;
+  if (s.pension) {
+    s.pension.ahvMonth *= infl;
+    s.pension.formerGross *= infl;
+  }
   s.expenses *= infl;
   // Health premiums: the part of their growth above inflation (once a year; the simulator does the same).
   const premiumStep = s.healthPremium * infl * HEALTH_EXCESS_GROWTH;

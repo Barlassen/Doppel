@@ -38,8 +38,11 @@ export interface Budget {
   c: number;
 }
 
+/** Longest analysis horizon in years (depth "goal"). */
+export const MAX_HORIZON_YEARS = 12;
+
 /** Next moves re-scored on all futures per root candidate (see `analyse`). */
-const PV_ALTERNATIVES = 3;
+const PV_ALTERNATIVES = 2;
 
 export const DEFAULT_BUDGET: Budget = { scenarios: 40, plies: 2, paths: 96, c: 0.04 };
 
@@ -47,8 +50,10 @@ export const DEFAULT_BUDGET: Budget = { scenarios: 40, plies: 2, paths: 96, c: 0
 export function horizonAge(s: GameState, depth: DepthId): number {
   if (depth === "1y") return s.age + 1;
   if (depth === "5y") return s.age + 5;
+  // Long goals (financial independence at 65) are judged on the glide path at most 15 years ahead, so a review
+  // stays within its time budget; the target there is the straight line from today to the goal (glideTarget).
   const end = s.startAge + s.endTurn;
-  return Math.max(s.age + 1, s.goal.age > s.age ? s.goal.age : end);
+  return Math.max(s.age + 1, Math.min(s.goal.age > s.age ? s.goal.age : end, s.age + MAX_HORIZON_YEARS));
 }
 
 /** The deterministic part of the check test (used inside the search): less than three months of buffer. */

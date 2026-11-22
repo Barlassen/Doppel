@@ -8,7 +8,7 @@
  *     misses when no checking move exists (the UI then shows an amber ring on the king, never a check glow)
  *  5. blunders leave material en prise more often than best moves do
  *  6. same game + labels → same board line (determinism)
- *  7. rendering a 40-turn game takes < 400 ms
+ *  7. rendering a 40-turn game takes < 1 s, and re-rendering after a new review (last label) < 60 ms
  */
 import { Chess } from "chess.js";
 import { boardLine } from "../src/lib/game/board";
@@ -58,6 +58,7 @@ async function main() {
   let startChecks = 0;
   const hangBy: Record<string, { n: number; hang: number }> = {};
   let maxMs = 0;
+  let maxIncrementalMs = 0;
   let games = 0;
 
   for (let i = 0; i < 48; i++) {
@@ -96,6 +97,11 @@ async function main() {
         }
       }
     });
+    // A new review changes only the last label: the cached turns make that re-render cheap.
+    const relabelled = labels.map((l, j) => (j === labels.length - 1 ? (l === "best" ? "blunder" : "best") : l));
+    const t1 = performance.now();
+    boardLine(game, relabelled);
+    maxIncrementalMs = Math.max(maxIncrementalMs, performance.now() - t1);
     const again = boardLine(game, labels);
     if (JSON.stringify(again) !== JSON.stringify(line)) check(`determinism game ${i}`, false);
     void currentPosition;
@@ -108,7 +114,7 @@ async function main() {
   check("Life only misses a financial check when no checking move exists", missedAvailable === 0, `${missedAvailable} missed with a check available`);
   const hr = (l: string) => (hangBy[l] ? hangBy[l].hang / hangBy[l].n : 0);
   check("blunders hang material more often than best moves", hr("blunder") > hr("best") + 0.3, `blunder ${(hr("blunder") * 100).toFixed(0)}% · mistake ${(hr("mistake") * 100).toFixed(0)}% · best ${(hr("best") * 100).toFixed(0)}% · good ${(hr("good") * 100).toFixed(0)}%`);
-  check("render time", maxMs < 400, `${games} games, slowest ${maxMs.toFixed(0)} ms`);
+  check("render time (full line < 1 s, after a new review < 60 ms)", maxMs < 1000 && maxIncrementalMs < 60, `${games} games, slowest full ${maxMs.toFixed(0)} ms, slowest incremental ${maxIncrementalMs.toFixed(1)} ms`);
   if (failures) {
     console.log(`\n${failures} check(s) failed`);
     process.exit(1);

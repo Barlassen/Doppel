@@ -18,7 +18,8 @@ import type { Profile } from "../src/lib/finance/types";
 import { ALL_CARDS, DECISION_CARDS, LIFE_CARDS, applyCard } from "../src/lib/game/cards";
 import { analyse, bruteForce, reviewMove } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib/game/evaluate";
-import { currentPosition, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
+import { advance, currentPosition, isOver, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
+import { holdLine, rateGame } from "../src/lib/game/rating";
 import { replay, toRecord } from "../src/lib/game/notation";
 import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime } from "../src/lib/game/regime";
 import { accountOpening, ubsOpening } from "../src/lib/game/start";
@@ -231,6 +232,38 @@ async function main() {
       rows.push(`${start.name} ${Math.round(nwTree).toLocaleString("en")} vs ${Math.round(nwSim).toLocaleString("en")}`);
     }
     check("one-year stepper ≈ simulator median (within 3%)", worst < 0.03, rows.join(" · ") + ` · worst ${(worst * 100).toFixed(1)}%`);
+  }
+
+  // ---------- 9. long game: turn schedule, retirement, independence, rating ----------
+  {
+    // Turns: yearly for ten years, then five-year turns, up to age 80.
+    let g = newGame(accountOpening(PROFILES[0]), S);
+    const lengths: number[] = [];
+    while (!isOver(g) && g.moves.length < 13) {
+      g = advance(g, "hold");
+      lengths.push(g.moves[g.moves.length - 1].years);
+    }
+    const scheduleOk = lengths.slice(0, 10).every((y) => y === 1) && lengths.slice(10).every((y) => y === 5);
+    check("turns: ten one-year turns, then five-year turns", scheduleOk || isOver(g), `${lengths.join(",")} · end age ${accountOpening(PROFILES[0]).age + accountOpening(PROFILES[0]).endTurn}`);
+
+    // Retirement: pension fund → annuity, 3a paid out, AHV from 65; the ledger still balances.
+    const worker = { ...accountOpening(PROFILES[1]), age: 65, retirementAge: 65, pillar2: 400_000, pillar3a: 80_000 };
+    const yr = stepYear(worker, marketYear(REGIME.normal, MEDIAN_BUCKET));
+    const p = yr.state.pension;
+    const ok = !!p && yr.state.pillar2 === 0 && yr.state.pillar3a === 0 && Math.abs(p.bvgMonth - (400_000 * 0.055) / 12) < 1 && p.ahvMonth > 0 && ledgerError(yr.ledger) < 1e-6;
+    check("retirement: annuity at the conversion rate, 3a paid out, AHV, ledger balances", ok, p ? `BVG CHF ${Math.round(p.bvgMonth)}/mo · AHV CHF ${Math.round(p.ahvMonth)}/mo · ledger error ${ledgerError(yr.ledger).toExponential(1)}` : "no pension");
+
+    // Independence ends the game as a win.
+    const rich = { ...accountOpening(PROFILES[1]), age: 55, cash: 400_000, portfolio: 3_000_000, check: null };
+    const won = advance(newGame(rich, S), "hold");
+    check("independence (savings last to 95 in ≥ 90% of futures) wins the game", currentPosition(won).status === "won", `status ${currentPosition(won).status} at ${currentPosition(won).age}`);
+
+    // Rating: deterministic, and holding scores exactly the reference formula.
+    const holdGame = holdLine(newGame(accountOpening(PROFILES[0]), S));
+    const r1 = rateGame(holdGame);
+    const r2 = rateGame(holdGame);
+    const expected = Math.round(1200 + 0.4 * (r1.holdScore - 1200));
+    check("rating: deterministic; holding every year rates 1200 + 0.4 × (outcome − 1200)", r1.elo === r2.elo && r1.elo === expected && r1.playerScore === r1.holdScore, `Elo ${r1.elo} (${r1.tier}) · outcome ${r1.player.kind} at ${r1.player.age}`);
   }
 
   // ---------- budget: a review takes about a second ----------

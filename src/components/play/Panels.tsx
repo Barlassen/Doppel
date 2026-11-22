@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Profile } from "@/lib/finance/types";
 import { type CardParam, cardById } from "@/lib/game/cards";
 import type { Analysis, DepthId, MoveReview } from "@/lib/game/engine";
@@ -17,6 +17,8 @@ import { DonutTable, EvalBars, ImpactDonut, LinesChart } from "./Charts";
 import type { Opening } from "./PlayApp";
 import { cardGlyph } from "./ChessBoard";
 import { cantonLine } from "../CantonLine";
+import type { Rating } from "@/lib/game/independence";
+import { rateGame } from "@/lib/game/rating";
 import { LABEL_TONE, cardDesc, cardTitle, explain, paramLabel, paramValue } from "./text";
 
 export interface MoveInfo {
@@ -137,10 +139,10 @@ export function Banner({ position: p }: { position: GameState }) {
     text = t("play.banner.mate", { line: CREDIT_LINE });
   } else if (p.status === "won") {
     kind = "won";
-    text = t("play.banner.won", { age: p.age });
+    text = t("fi.won", { age: p.age });
   } else if (p.status === "ended") {
     kind = "ended";
-    text = t("play.banner.ended", { count: p.turn }) + (p.age >= p.goal.age && !p.goalReached ? " " + t("play.banner.goalMissed", { age: p.goal.age }) : "");
+    text = t("fi.ended", { age: p.age });
   } else if (p.check) {
     kind = "check";
     text = p.check.reason === "buffer" ? t("play.banner.checkBuffer", { months: p.check.bufferMonths }) : t("play.banner.checkCrunch", { p: p.check.crunchProb });
@@ -290,8 +292,8 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
       </div>
       <div className="mt-3">
         <div className="mb-1 flex justify-between gap-2 text-xs text-ink-2">
-          <span>{t("play.position.goal")}</span>
-          <span className="num">{t("play.position.goalLine", { target: p.goal.target, age: p.goal.age })}</span>
+          <span>{tm(p.goal.label)}</span>
+          <span className="num">{t("fi.goalLine", { target: p.goal.target, age: p.goal.age })}</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={t("play.position.goal")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
           <div className="h-full rounded-full bg-s1" style={{ width: `${progress * 100}%` }} />
@@ -369,6 +371,18 @@ export function LifeCard({ life, regime }: { life: LifeRecord | undefined; regim
         </div>
       ) : (
         <p className="text-sm text-ink-2">{life?.turn === 0 ? t("play.life.opening") : t("play.life.quiet")}</p>
+      )}
+      {life?.earlier && life.earlier.length > 0 && (
+        <div className="mt-3 border-t border-line pt-2" data-testid="play-life-earlier">
+          <div className="text-xs text-ink-3">{t("fi.earlier")}</div>
+          <ul className="mt-1 space-y-0.5 text-sm text-ink-2">
+            {life.earlier.map((e) => (
+              <li key={e.turn + e.card}>
+                {t("play.position.age", { age: e.age })}: {cardTitle(i, e.card)}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
@@ -656,7 +670,8 @@ export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport 
                       {label && <span className={`num ${LABEL_TONE[label]}`}>{LABEL_GLYPH[label]}</span>}
                     </span>
                     <span className="block truncate text-[11px] text-ink-3">
-                      {t("play.position.age", { age: m.move.age })} · {san?.[k]?.b && <span className="num">… {san[k].b} </span>}
+                      {t("play.position.age", { age: m.move.age })}
+                      {m.move.years > 1 && <> · {t("fi.turnYears", { years: m.move.years })}</>} · {san?.[k]?.b && <span className="num">… {san[k].b} </span>}
                       {t("play.moves.life", { card: m.life.card ? cardTitle(i, m.life.card) : t("play.moves.quiet") })}
                     </span>
                   </span>
@@ -678,6 +693,59 @@ export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport 
 }
 
 // ---------------- end of game ----------------
+
+/** The game rating: computed after the review renders (it replays the game with "hold", about a second). */
+function GameRating({ game }: { game: Game }) {
+  const { t, fmt } = useI18n();
+  const [rating, setRating] = useState<Rating | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setRating(null);
+    const id = window.setTimeout(() => {
+      const r = rateGame(game);
+      if (alive) setRating(r);
+    }, 50);
+    return () => {
+      alive = false;
+      window.clearTimeout(id);
+    };
+  }, [game]);
+  if (!rating) return <p className="mt-3 text-sm text-ink-3 pulse-soft">{t("fi.rating.computing")}</p>;
+  const outcome = (o: Rating["player"]) =>
+    o.kind === "independent"
+      ? t("fi.rating.outcome.independent", { age: o.age })
+      : o.kind === "mated"
+        ? t("fi.rating.outcome.mated", { age: o.age })
+        : t("fi.rating.outcome.timeUp", { age: o.age, p: o.fiProb });
+  const kids = game.positions[game.positions.length - 1].children;
+  const legacy = rating.player.kind === "mated" ? null : rating.player.legacy;
+  return (
+    <div className="mt-3 rounded-xl border border-line p-3" data-testid="play-rating" data-elo={rating.elo}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="label">{t("fi.rating.title")}</div>
+        <Chip tone={rating.tier === "mated" ? "text-bad" : rating.tier === "survived" ? "text-ink-2" : "text-good"}>{t(`fi.rating.tier.${rating.tier}` as MessageKey)}</Chip>
+      </div>
+      <div className="num mt-1 font-serif text-4xl leading-tight text-ink">{rating.elo}</div>
+      <dl className="mt-2 grid gap-1 text-sm">
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt className="text-ink-2">{t("fi.rating.you")}</dt>
+          <dd className="text-ink">{outcome(rating.player)}</dd>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt className="text-ink-2">{t("fi.rating.hold")}</dt>
+          <dd className="text-ink">{outcome(rating.hold)}</dd>
+        </div>
+      </dl>
+      {legacy !== null && (
+        <p className="mt-2 text-xs text-ink-2">
+          {kids > 0 ? t("fi.rating.legacyKids", { target: legacy }) : t("fi.rating.legacyNone", { target: legacy })}{" "}
+          {t("fi.rating.yourNetWorth", { nw: rating.player.kind === "mated" ? 0 : rating.player.netWorth })}
+        </p>
+      )}
+      <p className="mt-2 text-[11px] text-ink-3">{t("fi.rating.formula")}</p>
+    </div>
+  );
+}
 
 export function EndReview({ game, moves }: { game: Game; moves: MoveInfo[] }) {
   const i = useI18n();
@@ -709,6 +777,7 @@ export function EndReview({ game, moves }: { game: Game; moves: MoveInfo[] }) {
         </div>
       </div>
       <p className="mt-2 text-[11px] text-ink-3">{t("play.end.accuracyNote")}</p>
+      <GameRating game={game} />
       <div className="mt-3 flex flex-wrap gap-1.5">
         {[...counts.entries()].map(([label, n]) => (
           <Chip key={label} tone={LABEL_TONE[label]}>

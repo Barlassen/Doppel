@@ -213,6 +213,9 @@ function mobility(ch: Chess, c: Color, piece: PieceSymbol): number {
   }
 }
 
+/** Mate, stalemate or dead position. Repetition is tracked by `seen` (scanning chess.js' history is slow). */
+const mateOrDraw = (ch: Chess) => ch.isCheckmate() || ch.isStalemate() || ch.isInsufficientMaterial();
+
 const centre = (sq: Square) => {
   const f = sq.charCodeAt(0) - 97;
   const r = Number(sq[1]) - 1;
@@ -242,30 +245,27 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
   let pool = typed.length ? typed : all.filter((m) => m.piece !== "k").length ? all.filter((m) => m.piece !== "k") : all;
   // Check and mate follow the financial state, so any piece may deliver them when the domain's piece cannot.
   if ((w.check || w.mate) && !pool.some((m) => /[+#]/.test(m.san)) && all.some((m) => /[+#]/.test(m.san))) pool = all;
-  let best: { m: Move; score: number } | null = null;
+  // Phase 1 scores every candidate cheaply; phase 2 adds the expensive terms (pressure, freeing a blocked
+  // piece: both need a fresh move generation) to the best few only.
+  const scored: { m: Move; score: number; check: boolean }[] = [];
   for (const m of pool) {
     ch.move(m);
-    const gameOver = ch.isGameOver();
+    const gameOver = mateOrDraw(ch);
     const mate = ch.isCheckmate();
     const check = ch.inCheck();
     const key = ch.fen().split(" ").slice(0, 2).join(" ");
     const rep = seen.get(key) ?? 0;
     const hang = hanging(ch, w.side).value;
     const gain = m.captured ? captureGain(ch, m) : 0;
-    // Life keeps pieces aimed at the king, so a financial check can show as a board check when it comes.
-    const press = w.side === "b" && !check ? Math.min(3, pressure(ch, "b")) : 0;
-    // A blocked domain piece: prefer the move that frees it (e.g. a pawn opens the queen's diagonal).
-    const frees = !typed.length && w.piece && m.piece !== w.piece && mobility(ch, w.side, w.piece) > 0 ? 12 : 0;
     ch.undo();
 
     let s = 0;
     if (gameOver && !(w.mate && mate)) s -= 1000;
     if (w.mate) s += mate ? 500 : check ? 40 : 0;
-    if (w.check) s += check ? 200 : -50 + 15 * press;
+    if (w.check) s += check ? 200 : -50;
     else if (check && !w.mate) s -= 120;
-    else s += 2 * press;
     s -= rep * 30;
-    if (w.piece && m.piece !== w.piece) s -= 15 - frees;
+    if (w.piece && m.piece !== w.piece) s -= 15;
     if (w.bishop && m.piece === "b") s += (ch.squareColor(m.from) === w.bishop ? 6 : -6);
     if (w.castle) s += m.flags.includes("k") || m.flags.includes("q") ? 60 : 0;
     else if (m.flags.includes("k") || m.flags.includes("q")) s += 3;
@@ -305,10 +305,29 @@ function pickMove(ch: Chess, w: Want, salt: string, seen: Map<string, number>): 
       }
     }
     s += hash(salt, m.san) * 0.9;
-    if (!best || s > best.score) best = { m, score: s };
+    scored.push({ m, score: s, check });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  let best: { m: Move; score: number } | null = null;
+  for (const c of scored.slice(0, REFINE)) {
+    let s = c.score;
+    const lifePress = w.side === "b" && !c.check && !w.mate;
+    const blocked = !typed.length && !!w.piece && c.m.piece !== w.piece;
+    if (lifePress || blocked) {
+      ch.move(c.m);
+      // Life keeps pieces aimed at the king, so a financial check can show as a board check when it comes.
+      if (lifePress) s += (w.check ? 15 : 2) * Math.min(3, pressure(ch, "b"));
+      // A blocked domain piece: prefer the move that frees it (e.g. a pawn opens the queen's diagonal).
+      if (blocked && mobility(ch, w.side, w.piece!) > 0) s += 12;
+      ch.undo();
+    }
+    if (!best || s > best.score) best = { m: c.m, score: s };
   }
   return best?.m ?? null;
 }
+
+/** Candidates that get the expensive scoring terms. */
+const REFINE = 6;
 
 function doPly(ch: Chess, w: Want, salt: string, seen: Map<string, number>, card: string | null): BoardPly | null {
   const m = pickMove(ch, w, salt, seen);
@@ -339,21 +358,51 @@ function whiteWant(card: string, label: MoveLabel | null | undefined, target: Sq
 
 // ---------------------------------------------------------------- public API
 
+/** The board after a completed turn (both plies), for incremental rendering. */
+interface Snapshot {
+  fen: string;
+  seen: [string, number][];
+  turns: BoardTurn[];
+  captured: { w: PieceSymbol[]; b: PieceSymbol[] };
+  lifeTarget: Square | null;
+  playerTarget: Square | null;
+}
+const LINE_CACHE = new Map<string, Snapshot>();
+
 /**
  * Renders a game as a chess line. `labels[k]` is the engine's label of move k (null while it is not reviewed yet;
  * the move is then played as a neutral move and re-rendered when the review arrives).
  */
 export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]): BoardLine {
-  const ch = new Chess();
-  const seen = new Map<string, number>();
   const salt = String(game.settings.seed);
-  const turns: BoardTurn[] = [];
-  const captured = { w: [] as PieceSymbol[], b: [] as PieceSymbol[] };
-  let lifeTarget: Square | null = null;
-  let playerTarget: Square | null = null;
+  // Incremental: completed turns are cached by everything that shaped them, so a new review or a new move
+  // only renders what changed (a long game re-renders in milliseconds instead of a few hundred).
+  const keys: string[] = [];
+  let key = salt + "|" + game.positions[0].profileId + "|" + game.positions[0].turn;
+  for (let k = 0; k < game.moves.length; k++) {
+    const life = game.lifeEvents[k + 1];
+    const next = game.positions[k + 1];
+    key += `|${game.moves[k].card}:${labels[k] ?? ""}:${life?.card ?? ""}:${life?.earlier?.map((e) => e.card).join("+") ?? ""}:${next.status}:${next.check ? 1 : 0}`;
+    keys.push(key);
+  }
+  let start = 0;
+  let snap: Snapshot | undefined;
+  for (let k = keys.length - 1; k >= 0; k--) {
+    snap = LINE_CACHE.get(keys[k]);
+    if (snap) {
+      start = k + 1;
+      break;
+    }
+  }
+  const ch = new Chess(snap?.fen);
+  const seen = new Map<string, number>(snap?.seen ?? []);
+  const turns: BoardTurn[] = snap ? snap.turns.slice() : [];
+  const captured = { w: snap ? [...snap.captured.w] : ([] as PieceSymbol[]), b: snap ? [...snap.captured.b] : ([] as PieceSymbol[]) };
+  let lifeTarget: Square | null = snap?.lifeTarget ?? null;
+  let playerTarget: Square | null = snap?.playerTarget ?? null;
   let result: BoardLine["result"] = null;
 
-  for (let k = 0; k < game.positions.length; k++) {
+  for (let k = start; k < game.positions.length; k++) {
     const turn: BoardTurn = { fen: ch.fen() };
     turns.push(turn);
     const move = game.moves[k];
@@ -381,7 +430,8 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
       break;
     }
     const life = game.lifeEvents[k + 1];
-    const li = life?.card ? LIFE_INTENT[life.card] : undefined;
+    const lifeCard = life?.card ?? life?.earlier?.[life.earlier.length - 1]?.card ?? null;
+    const li = lifeCard ? LIFE_INTENT[lifeCard] : undefined;
     const want: Want = {
       side: "b",
       piece: li?.piece ?? null,
@@ -390,7 +440,7 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
       mate: next.status === "mate",
       target: li?.tone === "gift" ? null : lifeTarget,
     };
-    const black = doPly(ch, want, salt + ":b" + k, seen, life?.card ?? null);
+    const black = doPly(ch, want, salt + ":b" + k, seen, lifeCard);
     if (!black) break;
     turn.black = black;
     if (black.captured) captured.b.push(black.captured);
@@ -400,6 +450,8 @@ export function boardLine(game: Game, labels: (MoveLabel | null | undefined)[]):
       turns.push({ fen: ch.fen() });
       break;
     }
+    if (LINE_CACHE.size > 600) LINE_CACHE.clear();
+    LINE_CACHE.set(keys[k], { fen: ch.fen(), seen: [...seen], turns: turns.slice(), captured: { w: [...captured.w], b: [...captured.b] }, lifeTarget, playerTarget });
   }
   return { startFen: turns[0]?.fen ?? new Chess().fen(), turns, captured, result };
 }
