@@ -38,6 +38,9 @@ export interface Budget {
   c: number;
 }
 
+/** Next moves re-scored on all futures per root candidate (see `analyse`). */
+const PV_ALTERNATIVES = 3;
+
 export const DEFAULT_BUDGET: Budget = { scenarios: 40, plies: 2, paths: 96, c: 0.04 };
 
 /** Age at which a move is judged. */
@@ -284,9 +287,16 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
     }
   }
 
-  const pvOf = (a0: string): string[] => {
-    const seq = [a0];
-    for (let d = 1; d <= ctx.plies; d++) {
+  /** Children of a prefix, most visited first. */
+  const childrenOf = (prefix: string): string[] =>
+    [...stats.entries()]
+      .filter(([k]) => k.startsWith(prefix + ">") && !k.slice(prefix.length + 1).includes(">"))
+      .sort((x, y) => y[1].n - x[1].n || mean(y[1]) - mean(x[1]))
+      .map(([k]) => k.slice(prefix.length + 1));
+
+  const pvOf = (a0: string, start: string[] = [a0]): string[] => {
+    const seq = [...start];
+    for (let d = seq.length; d <= ctx.plies; d++) {
       const prefix = seq.join(">") + ">";
       let best: string | null = null;
       let bestN = 0;
@@ -309,12 +319,24 @@ export function analyse(root: GameState, settings: EngineSettings, opts: Analyse
   const scored = new Map<string, CandidateEval>();
   const holdState = applyCard(root, "hold", ctx.regime).state;
   for (const a0 of roots) {
-    const pv = pvOf(a0);
-    const lines: Line[] = [];
-    for (let j = 0; j < N; j++) {
-      lines.push(playLine(ctx, a0, (d) => sampled(ctx, j, d), (d, _seq, opts) => (pv[d] && opts.includes(pv[d]) ? pv[d] : fallback(opts))));
+    // Visit counts favour continuations that are dealt in many futures, not the best ones: re-score the most
+    // visited next moves on all futures (open loop, hold when not dealt) and keep the best plan.
+    const firsts = ctx.plies > 0 ? childrenOf(a0).slice(0, PV_ALTERNATIVES) : [];
+    const plans = firsts.length ? firsts.map((m) => pvOf(a0, [a0, m])) : [pvOf(a0)];
+    let pv = plans[0];
+    let best: ReturnType<typeof averaged> | null = null;
+    for (const plan of plans) {
+      const lines: Line[] = [];
+      for (let j = 0; j < N; j++) {
+        lines.push(playLine(ctx, a0, (d) => sampled(ctx, j, d), (d, _seq, opts) => (plan[d] && opts.includes(plan[d]) ? plan[d] : fallback(opts))));
+      }
+      const res = averaged(lines);
+      if (!best || res.e.e > best.e.e + 1e-12) {
+        best = res;
+        pv = plan;
+      }
     }
-    const { e, mateShare } = averaged(lines);
+    const { e, mateShare } = best!;
     const move = applyCard(root, a0, ctx.regime);
     const e1 = evaluatePosition(move.state, root.age + 1, ctx.regime, settings.weights, { paths: budget.paths, seed: ctx.leafSeed }).e;
     ctx.counters.leafEvals++;
