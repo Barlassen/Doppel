@@ -185,6 +185,28 @@ export interface SimInput {
    * "goal" stops right after the goal age (and the planned home) — identical goal odds, much faster.
    */
   horizon?: "full" | "goal";
+  // ---- Optional extensions used by Doppel Play (src/lib/game). Absent → the simulator behaves exactly as before. ----
+  /** Capital-market and household assumptions overriding `ASSUMPTIONS` (an economic regime). */
+  assumptions?: Partial<import("./monteCarlo").SimAssumptions>;
+  /** Income/spending phases overriding the profile in [startMonth, endMonth) (study, abroad, part-time). Today's CHF. */
+  phases?: IncomePhase[];
+  /** Start as a homeowner (value and mortgage in today's CHF). The profile's rent should then be 0. */
+  home?: { value: number; mortgage: number; floor?: number; rate?: number };
+  /** Amortising loans: interest accrues monthly, payments from `startMonth`. Outstanding principal counts against net worth. */
+  debts?: { principal: number; rate: number; monthlyPayment: number; startMonth?: number }[];
+  /** Random regime shocks on a separate stream: a job loss or a market crash in a given year. */
+  shocks?: { jobLossProbYear: number; jobLossMonths: number; crashProbYear: number };
+}
+
+export interface IncomePhase {
+  startMonth: number;
+  endMonth: number;
+  netIncomeMonth: number;
+  grossIncomeYear: number;
+  /** Total monthly spending incl. rent during the phase. */
+  expensesMonth: number;
+  /** false = no Swiss pillar 2 credits during the phase (abroad, self-employed). */
+  bvg?: boolean;
 }
 
 export interface YearBand {

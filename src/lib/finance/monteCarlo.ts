@@ -23,7 +23,7 @@ import {
 import type { HouseStats, LifeEvent, RetirementStats, RiskProfile, SimInput, SimResult, YearBand } from "./types";
 
 /** Yearly nominal capital-market and household assumptions. */
-export const ASSUMPTIONS = {
+export const ASSUMPTIONS: SimAssumptions = {
   equity: { mu: 0.065, sigma: 0.16 },
   bonds: { mu: 0.02, sigma: 0.05 },
   cashRate: 0.003,
@@ -47,6 +47,25 @@ export const ASSUMPTIONS = {
   /** Market drawdown that can trigger a panic sale. */
   panicDrawdown: 0.15,
 };
+
+export interface SimAssumptions {
+  equity: { mu: number; sigma: number };
+  bonds: { mu: number; sigma: number };
+  cashRate: number;
+  overdraftRate: number;
+  inflation: number;
+  wageGrowth: number;
+  home: { mu: number; sigma: number };
+  wageVol: number;
+  pillar2Rate: number;
+  unemploymentReplacement: number;
+  unemploymentInsuredCap: number;
+  crashShock: number;
+  retirementSpending: number;
+  endAge: number;
+  raiseNetShare: number;
+  panicDrawdown: number;
+}
 
 export const EQUITY_WEIGHT: Record<RiskProfile, number> = {
   conservative: 0.3,
@@ -83,7 +102,13 @@ export function simulate(input: SimInput): SimResult {
   const { profile: p, behavior } = input;
   const paths = input.paths ?? 1000;
   const seed = input.seed ?? 42;
-  const A = ASSUMPTIONS;
+  // Optional overrides (Doppel Play regimes). Without them every line below runs exactly as before.
+  const A: SimAssumptions = input.assumptions ? { ...ASSUMPTIONS, ...input.assumptions } : ASSUMPTIONS;
+  const phases = input.phases ?? [];
+  const startHome = input.home;
+  const mortgageRate = startHome?.rate ?? ACTUAL_MORTGAGE_RATE;
+  const debts0 = input.debts ?? [];
+  const shocks = input.shocks;
 
   const endAge = Math.max(A.endAge, p.retirementAge + 1, p.goal.age + 1);
   const fullMonths = (endAge - p.age) * 12;
@@ -145,8 +170,9 @@ export function simulate(input: SimInput): SimResult {
       price *= mInfl;
       priceIdx[m] = price;
       const retired = m >= retireMonth;
-      let gross = p.grossIncomeYear * wage;
-      let net = p.netIncomeMonth * wage;
+      const phase = phases.length ? phases.find((ph) => m >= ph.startMonth && m < ph.endMonth) : undefined;
+      let gross = (phase ? phase.grossIncomeYear : p.grossIncomeYear) * wage;
+      let net = (phase ? phase.netIncomeMonth : p.netIncomeMonth) * wage;
       let unemployed = false;
       let child = 0;
       for (const e of events) {
@@ -169,8 +195,9 @@ export function simulate(input: SimInput): SimResult {
       netIncome[m] = retired ? 0 : net;
       grossInc[m] = retired ? 0 : gross;
       // BVG savings credits stop during unemployment (ALV only insures death & disability).
-      p2Credit[m] = retired || unemployed ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wage) * wage) / 12;
-      const living = retired ? (baseMonthly - p.rentMonth) * A.retirementSpending + p.rentMonth : baseMonthly;
+      p2Credit[m] = retired || unemployed || phase?.bvg === false ? 0 : (bvgAgeCredit(ageNow) * coordinatedSalary(gross / wage) * wage) / 12;
+      const monthly = phase ? Math.max(p.rentMonth, phase.expensesMonth + (input.expenseDelta ?? 0)) : baseMonthly;
+      const living = retired ? (monthly - p.rentMonth) * A.retirementSpending + p.rentMonth : monthly;
       baseExp[m] = living * price + child;
       rentArr[m] = p.rentMonth * price;
     }
@@ -198,17 +225,22 @@ export function simulate(input: SimInput): SimResult {
     const randn = normalSampler(mulberry32(ps));
     // Separate stream for behavioural coin-flips so "ideal" and "real" twins see the same markets.
     const brand = mulberry32(ps ^ 0x5bd1e995);
+    // Optional regime shocks (Doppel Play): their own stream, so markets stay aligned across sibling moves.
+    const srand = shocks ? mulberry32(ps ^ 0x27d4eb2f) : null;
+    let shockCrashMonth = -1;
+    let shockJoblessUntil = -1;
+    const debt = debts0.map((d) => d.principal);
 
     let cash = p.cash;
     let port = p.portfolio;
     let parked = 0; // panic-sold money waiting in cash
     let p3a = p.pillar3a;
     let p2 = p.pillar2;
-    let homeValue = 0;
-    let mortgage = 0;
-    let amortMonthly = 0;
-    let mortgageFloor = 0;
-    let owner = false;
+    let homeValue = startHome ? startHome.value : 0;
+    let mortgage = startHome ? startHome.mortgage : 0;
+    let mortgageFloor = startHome ? (startHome.floor ?? startHome.value * FIRST_MORTGAGE_SHARE) : 0;
+    let amortMonthly = startHome ? Math.max(0, mortgage - mortgageFloor) / AMORTISATION_YEARS / 12 : 0;
+    let owner = !!startHome;
     let houseFailed = false;
     let crunch = false;
     let idx = 1;
@@ -222,7 +254,7 @@ export function simulate(input: SimInput): SimResult {
     let p2AtRet = 0;
 
     const row = path * (years + 1);
-    nw[row] = cash + port + p3a + p2;
+    nw[row] = cash + port + p3a + p2 + (owner ? homeValue - mortgage : 0) - debt.reduce((a, b) => a + b, 0);
 
     for (let m = 0; m < months; m++) {
       const price = priceIdx[m];
@@ -235,8 +267,14 @@ export function simulate(input: SimInput): SimResult {
         }
       }
 
+      if (srand && shocks && m % 12 === 0) {
+        if (srand() < shocks.crashProbYear) shockCrashMonth = m + Math.floor(srand() * 12);
+        if (m >= shockJoblessUntil && srand() < shocks.jobLossProbYear) shockJoblessUntil = m + Math.floor(srand() * 12) + shocks.jobLossMonths;
+      }
+      const shockJobless = shockJoblessUntil > m && shockJoblessUntil - (shocks?.jobLossMonths ?? 0) <= m;
+
       // --- markets (same draws for every scenario on this path) ---
-      const rE = crash[m] ? A.crashShock : eMu + eSd * randn();
+      const rE = crash[m] || m === shockCrashMonth ? A.crashShock : eMu + eSd * randn();
       const rB = bMu + bSd * randn();
       const rH = hMu + hSd * randn();
       if (m % 12 === 0) {
@@ -288,8 +326,20 @@ export function simulate(input: SimInput): SimResult {
 
       // --- income & spending ---
       const retired = m >= retireMonth;
-      const income = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * (1 - retTax) : netIncome[m] * wf;
+      const income = retired
+        ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * (1 - retTax)
+        : netIncome[m] * wf * (shockJobless ? A.unemploymentReplacement : 1);
       let expenses = baseExp[m];
+      for (let d = 0; d < debt.length; d++) {
+        if (debt[d] <= 0) continue;
+        const spec = debts0[d];
+        debt[d] += (debt[d] * spec.rate) / 12;
+        if (m >= (spec.startMonth ?? 0)) {
+          const pay = Math.min(spec.monthlyPayment, debt[d]);
+          debt[d] -= pay;
+          expenses += pay;
+        }
+      }
       cash += oneOff[m];
 
       // --- home purchase: the bank test runs at the purchase date with this future's equity & salary ---
@@ -330,14 +380,14 @@ export function simulate(input: SimInput): SimResult {
         // Interest on the current loan, upkeep on the current value, amortisation down to ⅔ of the price.
         const amort = mortgage > mortgageFloor ? Math.min(amortMonthly, mortgage - mortgageFloor) : 0;
         mortgage -= amort;
-        expenses += (mortgage * ACTUAL_MORTGAGE_RATE) / 12 + (homeValue * MAINTENANCE_RATE) / 12 + amort - rentArr[m];
+        expenses += (mortgage * mortgageRate) / 12 + (homeValue * MAINTENANCE_RATE) / 12 + amort - rentArr[m];
       }
       if (m === retireMonth) spendRet.push(expenses / price);
 
       // --- savings flow ---
       let surplus = income - expenses;
       if (!retired) {
-        p2 += p2Credit[m] * wf;
+        if (!shockJobless) p2 += p2Credit[m] * wf;
         if (surplus > 0 && monthlyInvest > 0) {
           const order = Math.min(monthlyInvest, surplus); // pay yourself first: leaves before payday spending
           port += order;
@@ -396,7 +446,9 @@ export function simulate(input: SimInput): SimResult {
       if (m % 12 === 11) {
         const y = (m + 1) / 12;
         const p2Value = retired ? p2AtRet * Math.max(0, 1 - (m + 1 - retireMonth) / (fullMonths - retireMonth)) : p2;
-        nw[row + y] = (cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0)) / price;
+        let owed = 0;
+        for (let d = 0; d < debt.length; d++) owed += debt[d];
+        nw[row + y] = (cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0) - owed) / price;
       }
     }
 
