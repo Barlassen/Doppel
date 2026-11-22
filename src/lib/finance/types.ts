@@ -1,4 +1,5 @@
 import type { Msg, Text } from "@/lib/i18n/types";
+import type { EconomyId, EconomyScenario } from "./economy";
 
 export type RiskProfile = "conservative" | "balanced" | "growth";
 
@@ -33,7 +34,125 @@ export interface LifeEvent {
    * Default: `amount` is in today's CHF and is indexed to its date (prices for one-offs, home prices for a home).
    */
   nominal?: boolean;
+  /**
+   * A life decision with its own cash-flow model (child phases, car, partner, move, education, workload,
+   * self-employment). When present, the engine models the event from this payload (`life.ts`) and ignores the
+   * flat `amount` / `durationMonths`; `type` is then only the legacy carrier that older UI code can still draw.
+   * Events stored before decisions existed have no `decision` and behave exactly as before.
+   */
+  decision?: Decision;
 }
+
+/** Values the user may give for a decision. Everything is optional: missing values use the sourced defaults of
+ *  `params.ts`, or are reported as "input needed" when no sourced default exists. */
+export interface ChildDecision {
+  kind: "child";
+  /** Age of the child at the event's month (0 = birth). */
+  ageYears?: number;
+  /** Daycare days per week from age 0.5 to 4.5 (0–5). */
+  kitaDaysPerWeek?: number;
+  /** Out-of-pocket daycare tariff, CHF/day. */
+  kitaDailyChf?: number;
+  /** After compulsory school: "auto" draws university vs apprenticeship per simulated future. */
+  tertiaryTrack?: "auto" | "university" | "apprenticeship";
+  /** University: lives away from home (default true). */
+  uniLivesAway?: boolean;
+  /** Probability of the university track when `tertiaryTrack` is "auto". */
+  uniProb?: number;
+  /** Direct monthly cost (food, clothes, activities), today's CHF, replacing the age bands. */
+  directMonthly?: number;
+  /** A parent reduces the workload to this percentage of today's (the user's salary scales with it) … */
+  parentWorkloadPct?: number;
+  /** … for this many months from the birth. */
+  parentWorkloadMonths?: number;
+}
+
+export interface CarDecision {
+  kind: "car";
+  /** "owned" = bought, "leased" = leasing contract, "ga" = public transport with a GA travelcard instead. */
+  mode: "owned" | "leased" | "ga";
+  /** Purchase price (owned) or list price (leased), today's CHF. */
+  price?: number;
+  annualKm?: number;
+  /** Owned: years until the car is replaced. Leased: contract term in years. */
+  replaceYears?: number;
+  /** Owned: share of the price the old car still sells for at replacement. */
+  resaleShare?: number;
+  /** Leased: monthly instalment, today's CHF. */
+  leaseMonthly?: number;
+  /** Insurance + road tax + parking per month, today's CHF (replaces the TCS-derived figure). */
+  fixedMonthly?: number;
+  /** Fuel or electricity, tyres and maintenance per km, CHF (replaces the TCS figure). */
+  variablePerKm?: number;
+  /** Today's transport spending this decision replaces (already inside the profile's spending), CHF/month. */
+  replacesMonthly?: number;
+  /** GA class (default 2). */
+  gaClass?: 1 | 2;
+  /** Costs stop after this many months (default: until age 80, the GA until 90). */
+  durationMonths?: number;
+}
+
+export interface PartnerDecision {
+  kind: "partner";
+  married?: boolean;
+  /** Partner's take-home pay, today's CHF/month. */
+  netIncomeMonth?: number;
+  /** Partner's gross salary, CHF/year (default: derived from the take-home pay). */
+  grossIncomeYear?: number;
+  /** Spending the partner adds to the household, today's CHF/month, without rent. */
+  expensesMonth?: number;
+  /** The household's total rent after moving in together, today's CHF/month. */
+  rentMonth?: number;
+  /** Change of the household's yearly tax bill caused by the marriage (positive = more tax), today's CHF. */
+  taxDeltaYear?: number;
+  /** Liquid savings the partner brings in, today's CHF. */
+  savings?: number;
+}
+
+export interface MoveDecision {
+  kind: "move";
+  /** New canton (two-letter code). */
+  canton?: string;
+  city?: string;
+  /** New rent, today's CHF/month. */
+  rentMonth?: number;
+  /** One-off moving cost, today's CHF. */
+  movingCost?: number;
+}
+
+export interface EducationDecision {
+  kind: "education";
+  program?: "master" | "bachelor" | "other";
+  /** Tuition per year, today's CHF. */
+  tuitionYear?: number;
+  durationMonths?: number;
+  /** Workload kept while studying, percent of today's (100 = keeps working full time). */
+  workloadPct?: number;
+  /** Gross salary change after the degree, CHF/year. */
+  raiseAfterYear?: number;
+}
+
+export interface WorkloadDecision {
+  kind: "workload";
+  /** New workload in percent of today's (80 = four days, 0 = sabbatical). */
+  percent: number;
+  /** Absent = until retirement. */
+  durationMonths?: number;
+}
+
+export interface SelfEmployedDecision {
+  kind: "selfEmployed";
+  /** Take-home pay from the business, today's CHF/month. */
+  netIncomeMonth?: number;
+  /** Yearly volatility of the business income (0.2 = ±20% in a typical year). */
+  incomeVolatility?: number;
+  /** Absent = until retirement. */
+  durationMonths?: number;
+}
+
+export type Decision = ChildDecision | CarDecision | PartnerDecision | MoveDecision | EducationDecision | WorkloadDecision | SelfEmployedDecision;
+export type DecisionKind = Decision["kind"];
+export const DECISION_KINDS: DecisionKind[] = ["child", "car", "partner", "move", "education", "workload", "selfEmployed"];
 
 export const TRANSACTION_CATEGORIES = [
   "groceries", "dining", "transport", "subscriptions", "shopping",
@@ -237,6 +356,8 @@ export interface Scenario {
   phases?: CashflowPhase[];
   /** Name of the applied life path, for its pill. */
   path?: { id: string; label: Text };
+  /** Economic scenario (`economy.ts`). Absent = baseline. */
+  economy?: EconomyId | EconomyScenario;
 }
 
 /**
@@ -285,6 +406,10 @@ export interface SimInput {
   accounting?: boolean;
   /** Record path 0's month-end cash and debt (nominal CHF) in `SimResult.trace`. */
   trace?: boolean;
+  /** Economic scenario: an id of `ECONOMIES` or a custom scenario. Absent = baseline (today's constants). */
+  economy?: EconomyId | EconomyScenario;
+  /** Also return `SimResult.detail`: the monthly budget schedule and cash quantiles (used by `outlook()`). */
+  detail?: boolean;
 }
 
 export interface GoalStats {
@@ -337,6 +462,8 @@ export interface HouseStats {
   medianLoan: number;
   /** Median yearly debt service on other loans at the purchase date (only when the profile has liabilities). */
   medianOtherDebtYear?: number;
+  /** Mortgage rate locked in at the purchase (only when an economic scenario moves it off the baseline). */
+  mortgageRate?: number;
 }
 
 export interface RetirementStats {
@@ -388,4 +515,52 @@ export interface SimResult {
   /** Only when the profile has liabilities. */
   debt?: DebtStats;
   trace?: { cash: number[]; debt: number[]; p3a?: number[] };
+  /** Economic scenario the run used. */
+  economy?: string;
+  /** Life decisions: share of futures per drawn outcome (e.g. a child's university track). */
+  life?: { alternatives: { eventId: string; prob: number; share: number }[]; inputsNeeded: number };
+  /** Only with `SimInput.detail`. */
+  detail?: SimDetail;
+}
+
+/** One budget line of the simulated household, per month, in today's CHF. */
+export interface BudgetLine {
+  id: string;
+  /** The event that caused the line; absent for the profile's own lines. */
+  eventId?: string;
+  kind: "income" | "partnerIncome" | "pension" | "rent" | "living" | "health" | "debt" | "home" | "event" | DecisionKind;
+  flow: "income" | "expense";
+  label: Msg;
+  /** CHF/month in today's CHF for every simulated month (expected value over drawn outcomes). */
+  monthly: Float64Array;
+  provenance?: Provenance | "user";
+  source?: string;
+  estimate?: boolean;
+  /** True = the amount is already inside another line ("income" or "rent"); shown as an explanation, never summed. */
+  info?: boolean;
+  /** True = a payment that builds an asset (mortgage amortisation): part of the budget, not a cost of the decision. */
+  transfer?: boolean;
+  /**
+   * Only for an outcome drawn per future (a child's track after school): the share of futures in which the line
+   * applies. `monthly` is then the expected value (amount × this probability).
+   */
+  prob?: number;
+}
+
+export interface SimDetail {
+  months: number;
+  /** Price level at the end of each month (1 = today). */
+  priceIdx: Float64Array;
+  lines: BudgetLine[];
+  /** One-off amounts (signed, today's CHF; negative = cost). */
+  oneOffs: { month: number; amount: number; label: Msg | string; eventId?: string; kind: BudgetLine["kind"]; transfer?: boolean }[];
+  /** Month-end bank cash (account + money parked after a panic sale), today's CHF: quantiles over the futures. */
+  cash: { p10: Float64Array; p50: Float64Array };
+  /** Cash + portfolio, today's CHF. */
+  liquid: { p10: Float64Array; p50: Float64Array };
+  /** First month with a cash crunch during working life, per future (Infinity = none). */
+  crunchByMonth: Float64Array;
+  retireMonth: number;
+  ahvMonth: number;
+  goalMonth: number;
 }

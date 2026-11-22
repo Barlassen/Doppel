@@ -48,6 +48,8 @@ export interface AffordabilityInput {
   closingRate?: number;
   /** Yearly payments on other loans (interest + principal), counted in the cost-to-income test. Default 0. */
   otherDebtYear?: number;
+  /** Imputed interest rate of the test. Default `STRESS_RATE` (5%); the engine passes the market rate when it is higher. */
+  stressRate?: number;
 }
 
 export interface TragbarkeitPlan {
@@ -71,13 +73,13 @@ export interface TragbarkeitPlan {
 }
 
 /** Highest loan whose imputed cost (plus other debt service) stays within ⅓ of gross income, for a given price. */
-export function maxLoanForIncome(price: number, grossIncomeYear: number, otherDebtYear = 0): number {
+export function maxLoanForIncome(price: number, grossIncomeYear: number, otherDebtYear = 0, stressRate = STRESS_RATE): number {
   const budget = grossIncomeYear * MAX_COST_TO_INCOME - price * MAINTENANCE_RATE - otherDebtYear;
   if (budget <= 0) return 0;
   const first = price * FIRST_MORTGAGE_SHARE;
-  const onlyFirst = budget / STRESS_RATE;
+  const onlyFirst = budget / stressRate;
   if (onlyFirst <= first) return onlyFirst;
-  return (budget + first / AMORTISATION_YEARS) / (STRESS_RATE + 1 / AMORTISATION_YEARS);
+  return (budget + first / AMORTISATION_YEARS) / (stressRate + 1 / AMORTISATION_YEARS);
 }
 
 /**
@@ -90,14 +92,15 @@ export function tragbarkeit(input: AffordabilityInput): TragbarkeitPlan {
   const closingCosts = price * (input.closingRate ?? 0);
   const hard = Math.max(0, input.hardEquityAvailable - closingCosts);
   const minEq = price * MIN_EQUITY;
-  const target = Math.min(price, Math.max(minEq, price - maxLoanForIncome(price, gross, otherDebt)));
+  const stressRate = Math.max(STRESS_RATE, input.stressRate ?? STRESS_RATE);
+  const target = Math.min(price, Math.max(minEq, price - maxLoanForIncome(price, gross, otherDebt, stressRate)));
 
   const hardUsed = Math.min(hard, target);
   // Pillar 2 (early withdrawal for owner-occupied property) may fund any equity except the hard 10%.
   const pillar2Used = Math.max(0, Math.min(pillar2Available, target - hardUsed));
   const equity = hardUsed + pillar2Used;
   const loan = Math.max(0, price - equity);
-  const yearlyCost = imputedCosts(price, loan);
+  const yearlyCost = imputedCosts(price, loan, stressRate);
   const costToIncome = gross > 0 ? (yearlyCost.total + otherDebt) / gross : Infinity;
   const equityGap = Math.max(Math.max(0, price * MIN_HARD_EQUITY - hardUsed), Math.max(0, minEq - equity));
   const pass = equityGap === 0 && costToIncome <= MAX_COST_TO_INCOME + 1e-9;
@@ -144,8 +147,8 @@ export function checkAffordability(input: AffordabilityInput): AffordabilityResu
   };
 }
 
-function imputedCosts(price: number, loan: number) {
-  const interest = loan * STRESS_RATE;
+function imputedCosts(price: number, loan: number, stressRate = STRESS_RATE) {
+  const interest = loan * stressRate;
   const maintenance = price * MAINTENANCE_RATE;
   const secondMortgage = Math.max(0, loan - price * FIRST_MORTGAGE_SHARE);
   const amortisation = secondMortgage / AMORTISATION_YEARS;
