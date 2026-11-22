@@ -3,8 +3,28 @@
  * header detection, Swiss dates and amounts, and merchant normalisation. Pure and deterministic (browser + Node).
  */
 
-/** Decodes a file: UTF-8 with or without BOM, else Windows-1252 (older Swiss e-banking exports). */
-export function decodeBytes(bytes: Uint8Array): { text: string; encoding: "utf-8" | "windows-1252" } {
+/** UTF-16 without a BOM: in Latin text every second byte is NUL. Looks at the first 400 bytes. */
+function utf16Guess(bytes: Uint8Array): "utf-16le" | "utf-16be" | undefined {
+  const n = Math.min(bytes.length, 400) & ~1;
+  if (n < 8) return;
+  let even = 0;
+  let odd = 0;
+  for (let i = 0; i < n; i += 2) {
+    if (bytes[i] === 0) even++;
+    if (bytes[i + 1] === 0) odd++;
+  }
+  if (odd > n * 0.3 && even < n * 0.05) return "utf-16le";
+  if (even > n * 0.3 && odd < n * 0.05) return "utf-16be";
+}
+
+/**
+ * Decodes a file: UTF-16 (BOM, or the NUL pattern of an Excel "Unicode text" export), UTF-8 with or without BOM,
+ * else Windows-1252 (older Swiss e-banking exports).
+ */
+export function decodeBytes(bytes: Uint8Array): { text: string; encoding: "utf-8" | "utf-16le" | "utf-16be" | "windows-1252" } {
+  const bom16 = bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : undefined;
+  const wide = bom16 ?? utf16Guess(bytes);
+  if (wide) return { text: new TextDecoder(wide).decode(bom16 ? bytes.subarray(2) : bytes), encoding: wide };
   const bom = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
   const body = bom ? bytes.subarray(3) : bytes;
   try {
@@ -110,26 +130,28 @@ export function parseDate(raw: string | undefined): string | undefined {
 
 /**
  * Swiss and European number formats: `1'234.50`, `1’234.50`, `-12.30`, `12,30`, `1.234,50`, `(12.30)`, `12.30-`,
- * `CHF 12.–`. Returns undefined for anything else (never guesses).
+ * `(-12.30)`, `CHF 12.–`. Returns undefined for anything else (never guesses).
  */
 export function parseAmount(raw: string | undefined): number | undefined {
   let s = (raw ?? "").trim().replace(/[\u00a0\u202f\u2009 ]/g, "");
   if (!s) return;
   s = s.replace(/^(?:CHF|EUR|USD|GBP|Fr\.?|SFr\.?)/i, "").replace(/(?:CHF|EUR|USD|GBP)$/i, "");
   let negative = false;
-  if (/^\(.*\)$/.test(s)) {
-    negative = true;
-    s = s.slice(1, -1);
-  }
+  // Accounting brackets mean "negative". A minus inside them says the same thing again; it does not cancel it.
+  const bracketed = /^\(.*\)$/.test(s);
+  if (bracketed) s = s.slice(1, -1);
   if (/^[-−–]/.test(s)) {
-    negative = !negative;
+    negative = true;
     s = s.slice(1);
   } else if (s.startsWith("+")) s = s.slice(1);
   s = s.replace(/[.,][-–]$/, "");
   if (/[-−]$/.test(s)) {
-    negative = !negative;
+    // "-12.30-" is not a number any bank prints.
+    if (negative) return;
+    negative = true;
     s = s.slice(0, -1);
   }
+  negative = negative || bracketed;
   s = s.replace(/['’`´]/g, "");
   const dot = s.lastIndexOf(".");
   const comma = s.lastIndexOf(",");
