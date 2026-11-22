@@ -1641,6 +1641,9 @@ export const tr = {
     won: "Şah mat: {age} yaşında finansal olarak özgürsün. Şimdi çalışmayı bıraksan birikimin, emeklilik fonun (BVG) ve AHV (devlet emekliliği) harcamalarını simüle edilen geleceklerin en az %90'ında 95 yaşına kadar karşılıyor.",
     ended: "Oyun finansal özgürlük olmadan {age} yaşına ulaştı.",
     goalLine: "Hedef sermaye {target:chf}, yaş {age} (emeklilik fonu dahil servet)",
+    line: "Mat ölçüsü: şimdi çalışmayı bıraksan birikimin, emeklilik fonun ve AHV, geleceklerin {p:pct} kadarında 95 yaşına kadar yetiyor (Hayat'ı mat etmek için %90 gerekli).",
+    lineRetired: "Mat ölçüsü: emekli maaşlarınla birikimin, geleceklerin {p:pct} kadarında 95 yaşına kadar yetiyor (%90 gerekli).",
+    pensionNote: "Emeklilik fonun aylık maaşa dönüştü: AHV dahil ayda net {pension:chf}, harcaman ise ayda {spending:chf}. Emekli maaşı servete sayılmaz; bu yüzden her şey yolundayken bile servet hedefin altına düşebilir. Belirleyici olan, birikiminin aradaki farkı 95 yaşına kadar karşılayıp karşılamadığı.",
     turnYears: "{years} yıllık tur",
     earlier: "Bu turun önceki yıllarında",
     rating: {

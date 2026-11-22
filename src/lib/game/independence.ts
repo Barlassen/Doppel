@@ -11,10 +11,14 @@
  * - Game rating: the outcome of the game against the outcome of holding every year on the same dice (same markets,
  *   same Life cards), so luck and a rich start count far less than the decisions.
  */
-import { RETIREMENT_TAX_FACTOR, effectiveTaxRate } from "@/lib/finance/pension";
+import { HEALTH_EXCESS_GROWTH } from "@/lib/finance/canton";
+import { AHV_AGE, RETIREMENT_TAX_FACTOR, effectiveTaxRate } from "@/lib/finance/pension";
+import { mulberry32, normalSampler } from "@/lib/finance/rng";
+import { hashSeed } from "./regime";
+import { EQUITY_WEIGHT } from "./sim";
 import { simulate } from "./sim";
 import type { Regime } from "./regime";
-import { type GameState, netWorth, toSimInput } from "./state";
+import { type GameState, monthlyOutflow, netWorth, toSimInput } from "./state";
 
 /** Savings must last until this age. */
 export const FI_END_AGE = 95;
@@ -35,12 +39,7 @@ export function legacyTarget(children: number): number {
 
 /** P(liquid savings last until 95) if the player stops working at `retireAge` (at least next year). */
 export function fiProbability(s: GameState, regime: Regime, retireAge: number, seed: number, paths = FI_PATHS): number {
-  if (s.pension) {
-    // Already retired: the money must not run out before 95 with the pensions in payment.
-    const input = toSimInput(s, FI_END_AGE, regime, paths, seed);
-    input.assumptions = { ...input.assumptions, endAge: FI_END_AGE };
-    return 1 - simulate(input).crunchProb;
-  }
+  if (s.pension) return retireeLastsProbability(s, regime, seed, paths);
   const input = toSimInput(s, s.age + 1, regime, paths, seed);
   const age = Math.max(s.age + 1, retireAge);
   input.profile = { ...input.profile, retirementAge: age };
@@ -50,6 +49,48 @@ export function fiProbability(s: GameState, regime: Regime, retireAge: number, s
   input.phases = (input.phases ?? []).map((p) => ({ ...p, endMonth: Math.min(p.endMonth, (age - s.age) * 12) })).filter((p) => p.endMonth > p.startMonth);
   const res = simulate(input);
   return res.retirement?.lastsTo90Prob ?? 0;
+}
+
+/**
+ * A retiree: P(liquid savings stay above zero until 95), year by year. Savings earn the portfolio's return (equity
+ * share of the risk profile, regime means and volatilities); each year they pay the gap between spending (growing
+ * with inflation, health premiums faster) and net pensions (the pension-fund annuity fixed, AHV indexed), plus any
+ * work in retirement. The game simulator's cash-crunch measure does not count retired months, so this is computed
+ * here, deterministically (seeded).
+ */
+export function retireeLastsProbability(s: GameState, regime: Regime, seed: number, paths = FI_PATHS): number {
+  const rand = mulberry32(hashSeed(seed, s.profileId, s.turn, "retiree"));
+  const gauss = normalSampler(rand);
+  const wE = EQUITY_WEIGHT[s.riskProfile];
+  const mu = wE * regime.equity.mu + (1 - wE) * regime.bonds.mu;
+  const sigma = Math.sqrt((wE * regime.equity.sigma) ** 2 + ((1 - wE) * regime.bonds.sigma) ** 2);
+  const years = Math.max(0, FI_END_AGE - s.age);
+  const tax = 1 - effectiveTaxRate(s.marginalTaxRate) * RETIREMENT_TAX_FACTOR;
+  const spending0 = monthlyOutflow(s) * 12;
+  const premium0 = s.healthPremium * 12;
+  const work = s.phases.filter((p) => p.kind === "retiredWork");
+  let lasting = 0;
+  for (let i = 0; i < paths; i++) {
+    let liquid = s.cash + s.portfolio + s.pillar3a;
+    let price = 1;
+    let premiumExtra = 0;
+    let ok = true;
+    for (let y = 0; y < years; y++) {
+      const age = s.age + y;
+      const pension = (s.pension!.bvgMonth + (age >= AHV_AGE ? s.pension!.ahvMonth * price : 0)) * 12 * tax;
+      const earned = work.reduce((a, p) => a + Math.max(0, Math.min(p.end, (y + 1) * 12) - Math.max(p.start, y * 12)) * p.net, 0);
+      const spending = spending0 * price + premiumExtra;
+      liquid = liquid * (1 + mu + sigma * gauss()) + pension + earned - spending;
+      if (liquid < 0) {
+        ok = false;
+        break;
+      }
+      price *= 1 + regime.inflation;
+      premiumExtra = premium0 * price * (Math.pow(1 + HEALTH_EXCESS_GROWTH, y + 1) - 1);
+    }
+    if (ok) lasting++;
+  }
+  return lasting / paths;
 }
 
 /** Is the player financially independent now (could stop working next year)? */

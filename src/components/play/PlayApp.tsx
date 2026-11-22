@@ -329,7 +329,7 @@ export default function PlayApp() {
                   }}
                   position={viewedPos}
                 />
-                <PositionPanel position={viewedPos} profile={gameProfile} turn={viewedTurn} />
+                <PositionPanel position={viewedPos} profile={gameProfile} turn={viewedTurn} regime={game.settings.regime} seed={game.settings.seed} />
                 <LifeCard life={game.lifeEvents[viewedTurn]} regime={game.settings.regime} />
                 <DecisionArea
                   position={viewedPos}

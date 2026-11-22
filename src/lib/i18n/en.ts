@@ -1633,6 +1633,9 @@ export const en = {
     won: "Checkmate: you are financially independent at {age}. If you stopped working now, savings, pension fund and AHV would pay your spending until 95 in at least 90% of the simulated futures.",
     ended: "The game reached age {age} without financial independence.",
     goalLine: "Goal capital {target:chf} at {age} (net worth incl. pension fund)",
+    line: "Mate measure: if you stopped working now, savings, pension fund and AHV would last until 95 in {p:pct} of the futures (90% needed to mate Life).",
+    lineRetired: "Mate measure: with your pensions, your savings last until 95 in {p:pct} of the futures (90% needed).",
+    pensionNote: "Your pension fund became a monthly pension: {pension:chf} a month net, incl. AHV, against {spending:chf} of spending. A pension is not counted in net worth, so net worth can fall below the goal while you are still fine; what decides is whether savings cover the gap until 95.",
     turnYears: "{years}-year turn",
     earlier: "Earlier in this turn",
     rating: {

@@ -1635,6 +1635,9 @@ export const de = {
     won: "Schachmatt: Du bist mit {age} finanziell unabhängig. Würdest du jetzt aufhören zu arbeiten, zahlten Ersparnisse, Pensionskasse und AHV deine Ausgaben in mindestens 90 % der simulierten Zukünfte bis 95.",
     ended: "Die Partie hat das Alter {age} ohne finanzielle Unabhängigkeit erreicht.",
     goalLine: "Zielkapital {target:chf} mit {age} (Vermögen inkl. Pensionskasse)",
+    line: "Matt-Mass: Würdest du jetzt aufhören zu arbeiten, reichten Ersparnisse, Pensionskasse und AHV in {p:pct} der Zukünfte bis 95 (90 % nötig, um das Leben mattzusetzen).",
+    lineRetired: "Matt-Mass: Mit deinen Renten reichen die Ersparnisse in {p:pct} der Zukünfte bis 95 (90 % nötig).",
+    pensionNote: "Deine Pensionskasse wurde zur monatlichen Rente: {pension:chf} netto pro Monat inkl. AHV, gegenüber {spending:chf} Ausgaben. Eine Rente zählt nicht zum Vermögen, darum kann das Vermögen unter das Ziel fallen, obwohl alles in Ordnung ist; entscheidend ist, ob die Ersparnisse die Lücke bis 95 decken.",
     turnYears: "Zug über {years} Jahre",
     earlier: "Früher in diesem Zug",
     rating: {

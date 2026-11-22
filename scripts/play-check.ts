@@ -20,10 +20,11 @@ import { analyse, bruteForce, reviewMove } from "../src/lib/game/engine";
 import { WEIGHT_PRESETS, combine, evaluatePosition, mateValue } from "../src/lib/game/evaluate";
 import { advance, currentPosition, isOver, newGame, play, type Game, type GameSettings } from "../src/lib/game/game";
 import { holdLine, rateGame } from "../src/lib/game/rating";
+import { FI_THRESHOLD, fiProbability } from "../src/lib/game/independence";
 import { replay, toRecord } from "../src/lib/game/notation";
 import { BUCKET_Z, MEDIAN_BUCKET, REGIME, marketYear, type Regime, uniform } from "../src/lib/game/regime";
 import { accountOpening, ubsOpening } from "../src/lib/game/start";
-import { type GameState, initialState, ledgerError, netWorth, stepYear, toSimInput } from "../src/lib/game/state";
+import { type GameState, initialState, ledgerError, netWorth, stepYear, toSimInput, monthlyOutflow, pensionNet } from "../src/lib/game/state";
 import { ALEXIA_ID } from "../src/lib/ubs";
 
 let failures = 0;
@@ -53,6 +54,11 @@ function engineGame(start: GameState, s: GameSettings, budget = { scenarios: 12,
     g = play(g, a.best);
   }
   return { game: g, picks };
+}
+
+/** The same person one year after retiring at 65 (pensions in payment). */
+function pensionerFor(s: GameState): GameState {
+  return stepYear({ ...s, age: 65, retirementAge: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET)).state;
 }
 
 function profileFor(over: Partial<Profile>): Profile {
@@ -273,6 +279,14 @@ async function main() {
     const yl = stepYear({ ...lump, age: 65 }, marketYear(REGIME.normal, MEDIAN_BUCKET));
     const lp = yl.state.pension;
     check("lump sum: the pension fund is paid out as capital, no annuity", !!lp && lp.bvgMonth === 0 && yl.state.portfolio > lump.portfolio + 400_000 * 0.9 && ledgerError(yl.ledger) < 1e-6, `portfolio CHF ${Math.round(lump.portfolio).toLocaleString("en")} → ${Math.round(yl.state.portfolio).toLocaleString("en")} · BVG annuity ${Math.round(lp?.bvgMonth ?? -1)}`);
+
+    // A retiree whose savings run out before 95 is not independent; one whose pensions cover the spending is.
+    const pensioner = pensionerFor(worker);
+    const retiredShort = { ...pensioner, cash: 20_000, portfolio: 120_000, expenses: pensionNet(pensioner) + 1500, expenseDelta: 0 };
+    const retiredFine = { ...retiredShort, expenses: pensionNet(retiredShort) * 0.9, rent: 0 };
+    const pShort = fiProbability(retiredShort, REGIME.normal, retiredShort.age + 1, 7);
+    const pFine = fiProbability(retiredFine, REGIME.normal, retiredFine.age + 1, 7);
+    check("retiree independence: savings must cover the pension gap until 95", pShort < FI_THRESHOLD && pFine >= FI_THRESHOLD, `gap CHF ${Math.round(monthlyOutflow(retiredShort) - pensionNet(retiredShort))}/mo: ${(pShort * 100).toFixed(0)}% · pensions cover spending: ${(pFine * 100).toFixed(0)}%`);
 
     // Independence ends the game as a win.
     const rich = { ...accountOpening(PROFILES[1]), age: 55, cash: 400_000, portfolio: 3_000_000, check: null };

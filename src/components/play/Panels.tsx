@@ -8,7 +8,7 @@ import { DEPTHS } from "@/lib/game/engine";
 import { LABEL_GLYPH, PRESETS, type MoveLabel, type PresetId, type Weights } from "@/lib/game/evaluate";
 import type { Game, LifeRecord, MoveRecord } from "@/lib/game/game";
 import { REGIME, REGIMES, type RegimeId } from "@/lib/game/regime";
-import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlySurplus, netWorth, realNetWorth } from "@/lib/game/state";
+import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlyOutflow, monthlySurplus, netWorth, pensionNet, realNetWorth } from "@/lib/game/state";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { type UbsProfileSummary, ubsScenarioCatalog } from "@/lib/ubs";
@@ -17,7 +17,7 @@ import { DonutTable, EvalBars, ImpactDonut, LinesChart } from "./Charts";
 import type { Opening } from "./PlayApp";
 import { cardGlyph } from "./ChessBoard";
 import { cantonLine } from "../CantonLine";
-import type { Rating } from "@/lib/game/independence";
+import { type Rating, fiProbability } from "@/lib/game/independence";
 import { rateGame } from "@/lib/game/rating";
 import { LABEL_TONE, cardDesc, cardTitle, explain, paramLabel, paramValue } from "./text";
 
@@ -286,7 +286,7 @@ export function EvalCard(props: {
 
 // ---------------- position ----------------
 
-export function PositionPanel({ position: p, profile, turn }: { position: GameState; profile: Profile | null; turn: number }) {
+export function PositionPanel({ position: p, profile, turn, regime, seed }: { position: GameState; profile: Profile | null; turn: number; regime: RegimeId; seed: number }) {
   const { t, tm, fmt } = useI18n();
   const k = p.priceIndex;
   const homeEq = p.home ? (p.home.value - p.home.mortgage) / k : 0;
@@ -352,8 +352,29 @@ export function PositionPanel({ position: p, profile, turn }: { position: GameSt
           ))}
         </div>
       )}
+      <IndependenceLine position={p} regime={regime} seed={seed} />
       <p className="mt-2 text-[11px] text-ink-3">{t("play.position.startChf")}</p>
     </section>
+  );
+}
+
+/**
+ * The mate measure, live: the chance that savings (+ pensions) pay the spending until 95 if the player stopped
+ * working now (retirees: with the pensions in payment). The win needs 90%. Same function as the game's win test.
+ */
+function IndependenceLine({ position: p, regime, seed }: { position: GameState; regime: RegimeId; seed: number }) {
+  const { t } = useI18n();
+  const prob = useMemo(() => (p.status === "playing" ? fiProbability(p, REGIME[regime], p.age + 1, seed) : null), [p, regime, seed]);
+  const k = p.priceIndex;
+  return (
+    <div className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-ink-2" data-testid="play-fi">
+      {prob !== null && (
+        <p>
+          <span className="font-medium text-ink">{t(p.pension ? "fi.lineRetired" : "fi.line", { p: prob })}</span>
+        </p>
+      )}
+      {p.pension && <p className="mt-1">{t("fi.pensionNote", { pension: pensionNet(p) / k, spending: monthlyOutflow(p) / k })}</p>}
+    </div>
   );
 }
 

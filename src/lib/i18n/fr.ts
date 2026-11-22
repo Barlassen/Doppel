@@ -1644,6 +1644,9 @@ export const fr = {
     won: "Échec et mat : vous êtes financièrement indépendant à {age} ans. Si vous arrêtiez de travailler maintenant, épargne, caisse de pension et AVS paieraient vos dépenses jusqu’à 95 ans dans au moins 90 % des futurs simulés.",
     ended: "La partie a atteint {age} ans sans indépendance financière.",
     goalLine: "Capital visé {target:chf} à {age} ans (patrimoine, caisse de pension comprise)",
+    line: "Mesure du mat : si vous arrêtiez de travailler maintenant, épargne, caisse de pension et AVS dureraient jusqu’à 95 ans dans {p:pct} des futurs (90 % nécessaires pour mater la vie).",
+    lineRetired: "Mesure du mat : avec vos rentes, l’épargne dure jusqu’à 95 ans dans {p:pct} des futurs (90 % nécessaires).",
+    pensionNote: "Votre caisse de pension est devenue une rente mensuelle : {pension:chf} net par mois, AVS comprise, face à {spending:chf} de dépenses. Une rente ne compte pas dans le patrimoine, qui peut donc passer sous l’objectif alors que tout va bien ; ce qui compte, c’est que l’épargne couvre l’écart jusqu’à 95 ans.",
     turnYears: "Tour de {years} ans",
     earlier: "Plus tôt dans ce tour",
     rating: {
