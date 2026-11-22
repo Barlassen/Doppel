@@ -472,6 +472,10 @@ export const tr = {
   },
 
   vision: {
+    pixelMeasured: "Paylar piksellerden ölçüldü; model yalnızca lejantı okudu.",
+    pixelFallback: "Piksel geometrisi belirsiz; model tahminlerini kontrol et.",
+    pixelDisagreement: "Piksel payları modelden 10 yüzde puanından fazla farklı; piksel değerleri kullanıldı.",
+
     whyHeading: "Görsel model neden gerekti",
     whyOcrSufficient: "Basılı metin doğrusal; yerel OCR ve regex yeterli (0 görsel token).",
     whyPlan:

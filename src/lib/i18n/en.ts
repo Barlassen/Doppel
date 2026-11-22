@@ -471,6 +471,10 @@ export const en = {
   },
 
   vision: {
+    pixelMeasured: "Shares measured from pixels; the model only read the legend.",
+    pixelFallback: "Pixel geometry uncertain; model estimates require review.",
+    pixelDisagreement: "Pixel shares differ from model estimates by over 10 percentage points; pixel values used.",
+
     whyHeading: "Why vision was needed",
     whyOcrSufficient: "Printed text is linear; local OCR and regex suffice (0 vision tokens).",
     whyPlan:

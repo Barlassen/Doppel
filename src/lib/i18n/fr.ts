@@ -475,6 +475,10 @@ export const fr = {
   },
 
   vision: {
+    pixelMeasured: "Parts mesurées sur les pixels ; le modèle a seulement lu la légende.",
+    pixelFallback: "Géométrie incertaine ; vérifiez les estimations du modèle.",
+    pixelDisagreement: "Écart supérieur à 10 points de pourcentage ; valeurs des pixels utilisées.",
+
     whyHeading: "Pourquoi la vision était nécessaire",
     whyOcrSufficient: "Le texte imprimé est linéaire\u202f; l’OCR local et les regex suffisent (0 token visuel).",
     whyPlan:

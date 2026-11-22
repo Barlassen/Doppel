@@ -1,3 +1,5 @@
+import { measureDonut } from "./donut";
+import { withPixelAllocation } from "./chart";
 import { msg, translateText, type Msg } from "@/lib/i18n";
 import { callTwin } from "@/lib/llm";
 import { heuristicExtract } from "../heuristics";
@@ -195,10 +197,17 @@ export async function tryVisionSnap(
 
   const rawChart =
     (response.ok && response.data ? validateChartExtraction(response.data) : undefined) ??
-    offlineChartFromOcr(ocrText, detection.chartSubtype);
+    (response.offline ? offlineChartFromOcr(ocrText, detection.chartSubtype) : {});
 
   const tVerify = performance.now();
-  const verified = verifyChart(rawChart);
+  const probe = document.createElement("canvas");
+  const ratio = Math.min(1, 900 / Math.max(croppedCanvas.width, croppedCanvas.height));
+  probe.width = Math.round(croppedCanvas.width * ratio); probe.height = Math.round(croppedCanvas.height * ratio);
+  const ctx = probe.getContext("2d", { willReadFrequently: true });
+  ctx?.drawImage(croppedCanvas, 0, 0, probe.width, probe.height);
+  const pixels = ctx ? measureDonut(ctx.getImageData(0, 0, probe.width, probe.height)) : undefined;
+  const verified = verifyChart(withPixelAllocation(rawChart, pixels));
+  if (rawChart.legend || rawChart.allocation) steps.push({name: msg("vision.stepVerify"), ms: 0, detail: msg(pixels && verified.checks.some(c => c.key === "vision.pixelMeasured") ? "vision.pixelMeasured" : "vision.pixelFallback")});
   steps.push({
     name: msg("vision.stepVerify"),
     ms: performance.now() - tVerify,
@@ -238,7 +247,7 @@ export async function tryVisionSnap(
       },
     },
     preview: compressed.dataUrl,
-    visionReason: detection.reason,
+    visionReason: verified.checks.find(c => c.key === "vision.pixelMeasured") ?? verified.warnings.find(c => c.key === "vision.pixelFallback") ?? detection.reason,
     cropSize: { width: compressed.width, height: compressed.height },
   };
 }
