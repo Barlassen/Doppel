@@ -49,15 +49,17 @@ export const NAIVE_PRICE = {
   model: NAIVE_MODEL,
 } as const;
 
-/**
- * Small model list pricing used only for offline benchmark estimates when OPENROUTER_API_KEY is unset.
- * Google Gemini 2.5 Flash-Lite OpenRouter list price: $0.10 / 1M input, $0.40 / 1M output.
- */
-export const SMALL_MODEL_PRICE = {
+/** OpenRouter catalog rates in USD per 1M tokens, checked 2026-11-22. Live ledger costs come from usage. */
+export const DEFAULT_TEXT_MODEL_PRICE = {
   input: 0.1,
-  output: 0.4,
-  label: "Gemini 2.5 Flash-Lite",
-  model: "google/gemini-2.5-flash-lite",
+  output: 0.3,
+  model: "qwen/qwen3-30b-a3b-instruct-2507",
+} as const;
+
+export const DEFAULT_VISION_MODEL_PRICE = {
+  input: 0.15,
+  output: 0.6,
+  model: "qwen/qwen3-vl-30b-a3b-instruct",
 } as const;
 
 /**

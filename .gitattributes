@@ -1,3 +1,4 @@
-# Sample statements must keep LF on every OS: import-check compares them byte for byte with the generator.
-public/samples/imports/** text eol=lf
-data/ubs/** text eol=lf
+# Sample statements are compared byte for byte with their generator (scripts/import-check.ts), and the UBS
+# starter data is kept exactly as published: never convert line endings for these files.
+public/samples/imports/** -text
+data/ubs/** -text

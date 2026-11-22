@@ -32,15 +32,17 @@ import type { ReceiptItem } from "@/lib/finance/types";
 import { extractionToUpdate } from "@/lib/twin/actions";
 import type { DocKind, Extraction } from "@/lib/snap/types";
 import {
+  DEFAULT_TEXT_MODEL_PRICE,
+  DEFAULT_VISION_MODEL_PRICE,
   NAIVE_MODEL,
-  NAIVE_PRICE,
-  SMALL_MODEL_PRICE,
   estimateEnergyWh,
   estimateTextTokens,
   naiveSnap,
 } from "@/lib/frugal/tokens";
 
 const BENCH_DIR = "public/samples/bench";
+const TEXT_MODEL = process.env.DOPPEL_TEXT_MODEL || DEFAULT_TEXT_MODEL_PRICE.model;
+const VISION_MODEL = process.env.DOPPEL_VISION_MODEL || DEFAULT_VISION_MODEL_PRICE.model;
 const OCR_CONFIDENCE_THRESHOLD = 65;
 const LOCAL_REGEX_CONFIDENCE_THRESHOLD = 75;
 
@@ -696,7 +698,7 @@ interface OpenRouterCallResult {
   data?: Extraction;
   promptTokens: number;
   completionTokens: number;
-  costUsd: number;
+  costUsd?: number;
   ms: number;
   model: string;
   error?: string;
@@ -722,6 +724,7 @@ async function callOpenRouter(
       max_tokens: maxTokens,
       temperature: 0,
       response_format: { type: "json_object" },
+      provider: { require_parameters: true },
       usage: { include: true },
     }),
   });
@@ -731,7 +734,6 @@ async function callOpenRouter(
       ok: false,
       promptTokens: 0,
       completionTokens: 0,
-      costUsd: 0,
       ms,
       model,
       error: `HTTP ${res.status}`,
@@ -761,7 +763,7 @@ async function callOpenRouter(
     data: parsed,
     promptTokens: out.usage?.prompt_tokens ?? 0,
     completionTokens: out.usage?.completion_tokens ?? 0,
-    costUsd: out.usage?.cost ?? 0,
+    costUsd: out.usage?.cost,
     ms,
     model: out.model ?? model,
   };
@@ -830,9 +832,9 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
       ],
       250,
     );
-    if (nr.ok) {
+    if (nr.ok && nr.costUsd !== undefined) {
       naiveTokens = nr.promptTokens + nr.completionTokens;
-      naiveCostUsd = nr.costUsd > 0 ? nr.costUsd : (nr.promptTokens * NAIVE_PRICE.input + nr.completionTokens * NAIVE_PRICE.output) / 1e6;
+      naiveCostUsd = nr.costUsd;
       naiveBasis = "measured";
       naiveAmountOk = amountCorrect(nr.data?.amount, doc.groundTruth.amount);
       naiveMs = nr.ms;
@@ -914,19 +916,14 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     if (apiKey) {
       const lr = await callOpenRouter(
         apiKey,
-        process.env.DOPPEL_TEXT_MODEL ?? SMALL_MODEL_PRICE.model,
+        TEXT_MODEL,
         [
           { role: "system", content: textPrompt },
           { role: "user", content: textInput },
         ],
         receipt ? RECEIPT_OUTPUT_TOKENS : 120,
       );
-      if (lr.ok && lr.data) {
-        const tok = lr.promptTokens + lr.completionTokens;
-        const cost =
-          lr.costUsd > 0
-            ? lr.costUsd
-            : (lr.promptTokens * SMALL_MODEL_PRICE.input + lr.completionTokens * SMALL_MODEL_PRICE.output) / 1e6;
+      if (lr.ok && lr.data && lr.costUsd !== undefined) {
         return {
           doc,
           width,
@@ -940,8 +937,8 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
           amountOk: amountCorrect(lr.data.amount, doc.groundTruth.amount),
           kindOk: lr.data.kind === doc.groundTruth.kind,
           ms: performance.now() - tStart,
-          tokens: tok,
-          costUsd: cost,
+          tokens: lr.promptTokens + lr.completionTokens,
+          costUsd: lr.costUsd,
           llmBasis: "llm-measured",
           naiveTokens,
           naiveCostUsd,
@@ -955,7 +952,7 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     // Offline fallback: record actual offline heuristic extraction + explicitly labelled text-LLM cost estimate
     const estIn = estimateTextTokens(textPrompt) + estimateTextTokens(textInput) + 12;
     const estOut = receipt ? 80 + (localExt.items?.length ?? 0) * 22 : 65;
-    const estCost = (estIn * SMALL_MODEL_PRICE.input + estOut * SMALL_MODEL_PRICE.output) / 1e6;
+    const estCost = (estIn * DEFAULT_TEXT_MODEL_PRICE.input + estOut * DEFAULT_TEXT_MODEL_PRICE.output) / 1e6;
     return {
       doc,
       width,
@@ -992,19 +989,14 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     const dataUrl = `data:image/jpeg;base64,${visionBuf.toString("base64")}`;
     const vr = await callOpenRouter(
       apiKey,
-      process.env.DOPPEL_VISION_MODEL ?? SMALL_MODEL_PRICE.model,
+      VISION_MODEL,
       [
         { role: "system", content: EXTRACT_SYS + " " + RECEIPT_MODEL_FIELDS },
         { role: "user", content: [{ type: "text", text: "Extract JSON." }, { type: "image_url", image_url: { url: dataUrl } }] },
       ],
       RECEIPT_OUTPUT_TOKENS,
     );
-    if (vr.ok && vr.data) {
-      const tok = vr.promptTokens + vr.completionTokens;
-      const cost =
-        vr.costUsd > 0
-          ? vr.costUsd
-          : (vr.promptTokens * SMALL_MODEL_PRICE.input + vr.completionTokens * SMALL_MODEL_PRICE.output) / 1e6;
+    if (vr.ok && vr.data && vr.costUsd !== undefined) {
       return {
         doc,
         width,
@@ -1019,8 +1011,8 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
         amountOk: amountCorrect(vr.data.amount, doc.groundTruth.amount),
         kindOk: vr.data.kind === doc.groundTruth.kind,
         ms: performance.now() - tStart,
-        tokens: tok,
-        costUsd: cost,
+        tokens: vr.promptTokens + vr.completionTokens,
+        costUsd: vr.costUsd,
         llmBasis: "llm-measured",
         naiveTokens,
         naiveCostUsd,
@@ -1031,11 +1023,11 @@ async function runDoc(doc: BenchDoc, worker: Worker, apiKey?: string): Promise<D
     }
   }
 
-  // Offline fallback for Tier 2: run heuristic on raw OCR text (honest offline result) + estimated Gemini Flash-Lite 512px cost
+  // Offline fallback for Tier 2: use the raw OCR heuristic and estimate 512px vision cost.
   const fallbackExt = rawExt;
   const estIn = 258 + estimateTextTokens(EXTRACT_SYS + " " + RECEIPT_MODEL_FIELDS) + 12;
   const estOut = doc.groundTruth.items ? 80 + doc.groundTruth.items.length * 22 : 70;
-  const estCost = (estIn * SMALL_MODEL_PRICE.input + estOut * SMALL_MODEL_PRICE.output) / 1e6;
+  const estCost = (estIn * DEFAULT_VISION_MODEL_PRICE.input + estOut * DEFAULT_VISION_MODEL_PRICE.output) / 1e6;
   return {
     doc,
     width,
@@ -1100,8 +1092,9 @@ function scoreItems(extracted: Extraction, expected: NonNullable<BenchDoc["groun
 async function main() {
   const unit = runHeuristicUnitChecks();
   const apiKey = loadApiKey();
+  const modelLabel = `text: ${TEXT_MODEL}, vision: ${VISION_MODEL}, baseline: ${NAIVE_MODEL}`;
   const modeLabel = apiKey
-    ? `Live OpenRouter (${process.env.DOPPEL_TEXT_MODEL ?? SMALL_MODEL_PRICE.model} + ${NAIVE_MODEL})`
+    ? `Live OpenRouter (${modelLabel})`
     : "Measured local (jsQR + Tesseract + local-regex) + estimated cloud tiers (no OPENROUTER_API_KEY set)";
 
   console.log(`\nMode: ${modeLabel}`);
@@ -1232,8 +1225,10 @@ async function main() {
     .join("\n");
 
   const runDate = new Date().toISOString().slice(0, 10);
+  const doppelEstimates = results.some((r) => r.llmBasis === "llm-estimated");
+  const naiveEstimates = results.some((r) => r.naiveBasis === "estimated");
   const basisSummary = apiKey
-    ? "All cloud tiers and GPT-4o naive comparisons were **measured live** via OpenRouter."
+    ? `Live OpenRouter (${modelLabel}). ${doppelEstimates || naiveEstimates ? "Some calls failed to return a usable result with cost. Their fallback rows and estimates are labelled, and aggregate figures include those estimates." : "All cloud calls were measured live."}`
     : "No `OPENROUTER_API_KEY` was set. All results and timings are from local OCR or offline fallbacks. The run sent 0 bytes to a provider and used 0 provider tokens. Cloud token and cost columns estimate what a live run would use. Tier 2 text, Tier 2 vision and GPT-4o accuracy require a live run.";
 
   const md = `# Doppel — Multimodal Frugality Benchmark
@@ -1241,6 +1236,8 @@ async function main() {
 Generated directly by [\`scripts/benchmark.ts\`](../scripts/benchmark.ts) on **${runDate}**.
 
 > **Measurement basis:** ${basisSummary}
+>
+> Estimated cloud costs use the default text and vision catalog rates.
 
 ## 1. Evaluation set (${n} documents)
 
@@ -1265,11 +1262,11 @@ ${tierRows}
 
 Assumptions for scale projection: **${SNAPS_PER_USER_MONTH} snaps / user / month** across **${USERS.toLocaleString("en-US")} active users** (${MONTHLY_SNAPS.toLocaleString("en-US")} snaps/month) with this benchmark's document mix (bills, receipts, listings, payslips, handwritten notes; clean + phone photos).
 
-| Metric | Doppel cascade${apiKey ? " (measured)" : " (measured local + est. cloud)"} | Naive GPT-4o high-detail${apiKey ? " (measured)" : " (estimated)"} | Delta |
+| Metric | Doppel cascade${doppelEstimates ? " (includes offline fallbacks and estimates)" : " (measured)"} | Naive GPT-4o high-detail${naiveEstimates ? " (includes estimates)" : " (measured)"} | Delta |
 |---|---:|---:|---:|
 | Docs resolved locally at **0 tokens** | **${zeroTokDocs.length}/${n} (${zeroTokPct.toFixed(0)}%)** | 0/${n} (0%) | +${zeroTokPct.toFixed(0)} pp local |
 | Local-tier amount accuracy (Tier 0 + local-regex) | **${totalLocalAccOk}/${zeroTokDocs.length} (${zeroTokDocs.length ? Math.round((totalLocalAccOk / zeroTokDocs.length) * 100) : 0}%)** | — | 0 bytes left device |
-| Overall amount accuracy ${apiKey ? "(live)" : "(offline-only run)"} | ${totalMeasuredAccOk}/${n} (${Math.round((totalMeasuredAccOk / n) * 100)}%)${!apiKey && cloudEscalated.length ? ` *(${cloudEscalated.length} docs escalate to cloud VLM/LLM)*` : ""} | ${apiKey ? `${results.filter((r) => r.naiveAmountOk).length}/${n}` : "not run (no key)"} | — |
+| Overall amount accuracy | ${totalMeasuredAccOk}/${n} (${Math.round((totalMeasuredAccOk / n) * 100)}%)${doppelEstimates ? " *(includes offline fallbacks)*" : ""}${!apiKey && cloudEscalated.length ? ` *(${cloudEscalated.length} docs escalate to cloud VLM/LLM)*` : ""} | ${apiKey ? `${results.filter((r) => r.naiveAmountOk).length}/${n}` : "not run (no key)"} | — |
 | Avg latency per doc (Node) | ${Math.round(avgMs)} ms | ${apiKey ? `${Math.round(results.reduce((s, r) => s + (r.naiveMs ?? 0), 0) / n)} ms` : "~1,800–3,500 ms (typical VLM RTT)"} | — |
 | Avg tokens / doc | **${Math.round(avgOursTok)} tok** | ${Math.round(avgNaiveTok)} tok | **−${tokReduction.toFixed(1)}%** |
 | Avg cost / doc | **${fmtUsd(avgOursCost)}** | ${fmtUsd(avgNaiveCost)} | **−${costReduction.toFixed(1)}%** |

@@ -146,8 +146,9 @@ The Node benchmark shares the receipt gate and OCR languages with the app. It do
 
 ## 5. Model gateway (`/api/twin`)
 
-* OpenRouter, default `google/gemini-2.5-flash-lite` for text and vision (`DOPPEL_TEXT_MODEL`,
-  `DOPPEL_VISION_MODEL`). `temperature: 0`, JSON response format except for narration, `usage: { include: true }`.
+* OpenRouter defaults to `qwen/qwen3-30b-a3b-instruct-2507` for text and `qwen/qwen3-vl-30b-a3b-instruct`
+  for vision. Set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to override them. Requests use `temperature: 0`
+  and `usage: { include: true }`. Every task except narration requests JSON and requires providers to support the request parameters.
 * Output caps are 160 for general text extraction, 2,200 for receipt text or image extraction, 150 for commands, 160 for narration and 400 for naive comparisons.
 * Request limits: 12 requests per minute per IP, 6 in flight, body ≤ 3.5 MB, Tier 2 images ≤ 512px and ≤ 1 MB.
 * Tasks:

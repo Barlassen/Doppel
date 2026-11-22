@@ -20,12 +20,12 @@ Two limits apply to every entry. Code and commits show what was built; they do n
   1. Tier 0: `jsQR` across up to 4 crops/scales (`<= 1000px` full, bottom half, bottom-right, `<= 2000px` full with inversion) + SIX QR-bill parser (`0` tokens, `0` bytes sent).
   2. Cache: difference hash (`dHash`) + 512px FNV-1a luminance checksum in `localStorage` (`0` tokens).
   3. Tier 1 local: crop to ink, grayscale + 2–98 percentile contrast stretch, Tesseract.js (`eng+deu+fra`) in a Web Worker, and deterministic DE/FR/EN regex extraction (`0` tokens).
-  4. Tier 1 cloud: if regex cannot resolve the document and OCR confidence is `>= 65%`, send at most 24 deduplicated lines (`<= 600` chars) to a small text model (`google/gemini-2.5-flash-lite`).
+  4. Tier 1 cloud: if regex cannot resolve the document and OCR confidence is `>= 65%`, send at most 24 deduplicated lines (`<= 600` chars) to a small text model (see Decision 16).
   5. Tier 2 cloud: only when OCR confidence is `< 65%` or OCR fails, compress the cropped image to a `<= 512px` grayscale JPEG (`q = 0.6`, ~11–17 KB) and send it to a small vision model.
 * **Alternative rejected:** Sending every uploaded photo at full resolution straight to a frontier vision model (`openai/gpt-4o`), or sending all OCR text to an LLM without a local regex pass.
 * **Why:** Swiss QR-bills already encode structured payment data in the QR payload; printed receipts, listings, and payslips follow fixed keyword patterns that regex can extract locally; handwriting and severely blurred photos drop Tesseract confidence below 65%, where only a vision model succeeds.
 * **Where it lives:** `src/lib/snap/pipeline.ts`, `src/lib/snap/qrBill.ts`, `src/lib/snap/image.ts`, `src/lib/snap/ocr.ts`, `src/lib/snap/heuristics.ts`.
-* **Measured evidence:** In `docs/BENCHMARK.md` (16 documents): 11/16 (69%) resolved at 0 tokens (2 QR, 9 local regex), 1/16 at Tier 1 text LLM (244 tokens), 4/16 at Tier 2 vision LLM (402–451 tokens, 11–17 KB JPEG). Average tokens dropped from 966 (measured live GPT-4o) to 123 (−87.3%), cost per 1,000 docs from $2.61 to $0.02 (−99.2%), with 16/16 amount accuracy on both sides.
+* **Measured evidence:** In the historical 16-document Gemini run, 11/16 (69%) resolved at 0 tokens (2 QR, 9 local regex), 1/16 used the text model (244 tokens), and 4/16 used vision (402–451 tokens, 11–17 KB JPEG). Average tokens dropped from 966 for GPT-4o to 123 (−87.3%), and cost per 1,000 documents from $2.61 to $0.02 (−99.2%), with 16/16 amount accuracy on both sides. [Historical live report](https://github.com/Barlassen/Doppel/blob/279287d8d82f3f09036240ec343606c6e40113ba/docs/BENCHMARK.md)
 
 ### 3. Amount-line OCR confidence penalty and 80% browser local-regex gate (vs 75% in the Node benchmark)
 * **Decision:** In `src/lib/snap/ocr.ts`, compute OCR confidence as `min(pageConfidence, amountLineConfidence)` across lines matching `AMOUNT_CUE` (`CHF`, `k`, `Nettolohn`, `Total`, `Kaufpreis`, etc.). In `src/lib/snap/pipeline.ts`, accept `local-regex` only when `confidence >= 80`, `kind !== "other"`, `amount` is valid, and a supporting field (`merchant`, `rooms`, `location`, or `date`) is present.
@@ -78,14 +78,13 @@ Two limits apply to every entry. Code and commits show what was built; they do n
 * **Alternative rejected:** Counting offline fallbacks as "100% saved", upscaling small images to 2048×2048 before applying the tile formula, or including all 150 raw transaction rows in the reasoning baseline.
 * **Why:** Recorded in commits `9f5aa69` and `30978fd`, `src/lib/frugal/ledger.ts:127-137`, and `src/lib/frugal/tokens.ts:63-79`: prevents offline runs or bloated baselines from exaggerating token and cost savings.
 * **Where it lives:** `src/lib/frugal/ledger.ts`, `src/lib/frugal/tokens.ts`, `src/components/Inspector.tsx`.
-* **Measured evidence:** Live comparison across 16 documents in `docs/BENCHMARK.md` measured 966 average GPT-4o tokens/doc ($0.00261/doc) vs 123 Doppel tokens/doc ($0.000020/doc).
+* **Measured evidence:** The historical live comparison across 16 documents measured 966 average GPT-4o tokens per document ($0.00261) and 123 for the Gemini cascade ($0.000020). [Historical live report](https://github.com/Barlassen/Doppel/blob/279287d8d82f3f09036240ec343606c6e40113ba/docs/BENCHMARK.md)
 
-### 10. Default cloud models (`google/gemini-2.5-flash-lite` vs `openai/gpt-4o`)
-* **Decision:** Default `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` ($0.10 / $0.40 per 1M input/output tokens) and `DOPPEL_NAIVE_MODEL` to `openai/gpt-4o` ($2.50 / $10.00 per 1M tokens) via OpenRouter.
+### 10. Original cloud models (`google/gemini-2.5-flash-lite` and `openai/gpt-4o`)
+* **Decision:** The original OpenRouter defaults used Gemini 2.5 Flash-Lite for text and vision. Decision 16 supersedes those defaults. The naive baseline uses GPT-4o.
 * **Alternative rejected:** Sending Tier 1/2 calls to a frontier model, or benchmarking the cascade against sending the full image to the same small model (`google/gemini-2.5-flash-lite`).
 * **Why:** `gemini-2.5-flash-lite` is used as a low-cost small model for compact text and 512px thumbnails, while `gpt-4o` high-detail models the common default of sending raw uploads to a frontier VLM. Why `docs/BENCHMARK.md` does not also include a `full image -> gemini-2.5-flash-lite` baseline column: it was not run yet. Until it is, we cannot say how much of the cost saving comes from the cascade and how much from the cheaper model. The token saving (123 vs 966) is mostly the 11 documents that use no model at all.
-* **Where it lives:** `src/app/api/twin/route.ts:5-7`, `src/lib/frugal/tokens.ts:44-61`.
-* **Measured evidence:** In `docs/BENCHMARK.md`, token reduction alone (independent of model price) is `−87.3%` (`123` vs `966` tokens/doc), with `11/16` documents using `0` tokens on any model.
+* **Measured evidence:** The historical live Gemini run recorded a token reduction of 87.3% against GPT-4o (123 versus 966 tokens per document), with 11/16 documents using zero tokens. [Historical live report](https://github.com/Barlassen/Doppel/blob/279287d8d82f3f09036240ec343606c6e40113ba/docs/BENCHMARK.md)
 
 ### 11. Self-hosted Tesseract.js runtime and `tessdata_fast` (`eng+deu+fra`)
 * **Decision:** Copy `worker.min.js` and the three v7 LSTM WASM loaders (`lstm`, `simd-lstm`, `relaxedsimd-lstm`) from `node_modules` into `public/tesseract/runtime/` on `postinstall` (`scripts/copy-tesseract-assets.mjs`), commit `eng`, `deu`, and `fra` `.traineddata.gz` in `public/tesseract/`, and run OCR in a Web Worker with a 12 s init deadline and 8 s recognition deadline (`src/lib/snap/ocr.ts`).
@@ -122,12 +121,31 @@ Two limits apply to every entry. Code and commits show what was built; they do n
 * **Where it lives:** `src/lib/finance/monteCarlo.ts`, `src/lib/finance/pension.ts`, `src/components/RetirementCard.tsx`.
 * **Measured evidence:** `scripts/engine-check.ts` ("Oktay retire at"): savings last to 90 in 0.0% of paths when retiring at 60 or 63 and 0.1% at 65; in the worst 10% they run out at 60, 63 and 67.
 
+### 16. Open-weight defaults for text and vision
+
+Use the non-thinking Qwen3 30B A3B Instruct 2507 for compact OCR, commands, categorisation and narration, and Qwen3-VL 30B A3B Instruct for image extraction. The text model's multilingual instruction tuning suits the app's four languages. The VL model's image input covers receipts, floor plans and charts. Both models have published weights and three endpoints listed with `response_format` support on the verification date. JSON requests use `response_format: { type: "json_object" }` and `provider.require_parameters: true`. The TypeScript validators still check the content. [OpenRouter JSON mode and routing](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-support-all-parameters)
+
+OpenRouter catalog prices checked on **2026-11-22**, in USD per million tokens. Provider rates vary. The ledger and Inspector display OpenRouter's reported usage and cost for live calls.
+
+| Role | Model | Input modalities used | Input | Output | OpenRouter endpoint metadata |
+|---|---|---|---:|---:|---|
+| Text | `qwen/qwen3-30b-a3b-instruct-2507` | Text | $0.10 | $0.30 | [Text endpoints](https://openrouter.ai/api/v1/models/qwen/qwen3-30b-a3b-instruct-2507/endpoints) |
+| Vision | `qwen/qwen3-vl-30b-a3b-instruct` | Text, image | $0.15 | $0.60 | [Vision endpoints](https://openrouter.ai/api/v1/models/qwen/qwen3-vl-30b-a3b-instruct/endpoints) |
+| Previous defaults | `google/gemini-2.5-flash-lite` | Text, image | $0.10 | $0.40 | [Gemini endpoints](https://openrouter.ai/api/v1/models/google/gemini-2.5-flash-lite/endpoints) |
+| Naive baseline | `openai/gpt-4o` | Text, image | $2.50 | $10.00 | [GPT-4o endpoints](https://openrouter.ai/api/v1/models/openai/gpt-4o/endpoints) |
+
+Catalog rates come from the top-level `pricing` field. The endpoint lists also show provider-specific prices, supported parameters and model modalities. [OpenRouter models catalog](https://openrouter.ai/api/v1/models)
+
+**Alternatives considered.** Llama 3.3 70B was a text option. The instruction-tuned Qwen model met the JSON requirement at a lower catalog rate. Mistral Small 3.2 was a cheaper multimodal option, while Qwen3-VL was selected as the Qwen-VL candidate requested for this task. Qwen3-VL 8B listed a higher catalog rate and fewer endpoints than the 30B A3B variant. Gemini is the previously measured option and remains available via both model overrides. These choices are based on catalog data. [Llama endpoints](https://openrouter.ai/api/v1/models/meta-llama/llama-3.3-70b-instruct/endpoints) · [Mistral endpoints](https://openrouter.ai/api/v1/models/mistralai/mistral-small-3.2-24b-instruct/endpoints) · [Qwen3-VL 8B endpoints](https://openrouter.ai/api/v1/models/qwen/qwen3-vl-8b-instruct/endpoints)
+
+**Measured evidence.** The README records the historical Gemini document results and the pending Qwen comparison. The current 19-document report measures local OCR and offline fallbacks, with estimates for cloud tokens and cost. The live Gemini vision report lists its mapping and risk misses. Barlas will run the Qwen measurements and compare extraction accuracy, tokens, cost and latency before retaining the new choice on each route. Set both model variables explicitly for matched runs, including `DOPPEL_VISION_MODEL` for the separate floor-plan and chart benchmark, whose script default is still Gemini. [Evidence table](../README.md#evidence) · [Document report](BENCHMARK.md) · [Vision report](VISION_BENCHMARK.md)
+
 ---
 
 ## 2. Likely jury questions and answers
 
 ### Q1. Why not just send every photo straight to GPT-4o (or a single vision LLM)?
-Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In our 16-document benchmark (`docs/BENCHMARK.md`), 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy. Caveat to say out loud: this is the Node benchmark with a 75% local gate. The app uses 80% plus a second field and different OCR settings, so its local share on this set has not been measured (Q10).
+Because most financial documents do not need vision tokens. A Swiss QR-bill already encodes the exact IBAN, creditor, and CHF amount in its SIX QR payload, which `jsQR` decodes locally in the browser at 0 tokens (`src/lib/snap/qrBill.ts`). Clean printed receipts, property listings, and payslips read at 0 tokens via local Tesseract OCR and regex (`src/lib/snap/heuristics.ts`). In the historical 16-document Gemini run, 11/16 documents resolved locally with 0 bytes leaving the device, cutting average tokens from 966 to 123 (−87.3%) and cost per 1,000 documents from $2.61 to $0.02 (−99.2%) with the same 16/16 amount accuracy. The run used the Node mirror's 75% local gate. The current browser gate and the Qwen models still need live comparison. [Historical live report](https://github.com/Barlassen/Doppel/blob/279287d8d82f3f09036240ec343606c6e40113ba/docs/BENCHMARK.md)
 
 ### Q2. Why not send the full image to Gemini 2.5 Flash-Lite every time instead of building a 4-tier cascade?
 Two reasons: privacy and token volume. First, for the 11/16 documents resolved at Tier 0 (`qr`) and Tier 1 (`local-regex`), zero bytes leave the browser, so a client's payslip, address and IBAN stay on their device (`src/lib/snap/pipeline.ts`). Second, volume: only 5 of 16 documents make a cloud call at all, and those send at most 600 characters of text (244 tokens in the benchmark) or a 512px grayscale JPEG (11–17 KB, 402–451 tokens). Tokens drop by 87.3% against GPT-4o. We did not measure "full image to Flash-Lite" as a separate baseline (Decision 10), so we cannot say how much of the saving is the cascade and how much is the cheaper model.
@@ -168,7 +186,7 @@ The Inspector (`src/components/Inspector.tsx`) records `bytesSent` and the exact
 ### Q10. What are the main limitations of your current prototype and benchmark?
 We list five in `README.md`, `docs/PITCH.md`, and `docs/BENCHMARK.md`:
 1. **Benchmark vs browser gate:** `scripts/benchmark.ts` runs a Node mirror with `eng+deu`, page-average OCR confidence, and a 75% `local-regex` threshold; the browser app uses `eng+deu+fra`, `min(pageConfidence, amountLineConfidence)`, and an 80% threshold plus a second field. The two receipts recorded at 75% and 79% would not pass the app's gate on those scores; the app's local share has not been measured.
-2. **Benchmark latency column:** `runDoc()` in `scripts/benchmark.ts` starts the timer before the live GPT-4o baseline call, so the `Latency` column in `docs/BENCHMARK.md` includes both GPT-4o and the Doppel cascade.
+2. **Benchmark latency column.** The historical 16-document cascade timings included the GPT-4o baseline request. The current script times the cascade separately.
 3. **Synthetic evaluation set:** All 16 benchmark documents are synthetic SVGs and `sharp`-degraded JPEGs, not real camera photos.
 4. **Energy figures:** Wh numbers (`0.0006 Wh/tok` frontier, `0.0002 Wh/tok` small model, `0.002 Wh` local pass in `src/lib/frugal/tokens.ts`) are fixed coefficients, not measurements. The cited reports give per-query figures, not per-token rates for this pipeline.
 5. **Single-lever solver:** `solveGoal()` searches single levers plus one delay + spending-cut combination, and runs on the main thread (1,000 paths chunked via `setTimeout` in `DoppelApp.tsx`) rather than in a Web Worker.
