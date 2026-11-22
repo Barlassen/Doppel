@@ -37,8 +37,15 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
 ];
 
+// Opt-in, for the desktop app only (desktop/, docs/DESKTOP.md): `DOPPEL_STANDALONE=1 next build` also writes the
+// self-contained server to .next/standalone. That server keeps its page cache in memory (isrFlushToDisk off), so it
+// never writes into the installed app. Without the variable the build is exactly the normal one.
+const standalone = process.env.DOPPEL_STANDALONE === "1";
+const desktopBuild = { output: "standalone" as const, outputFileTracingRoot: process.cwd(), experimental: { isrFlushToDisk: false } };
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  ...(standalone ? desktopBuild : {}),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

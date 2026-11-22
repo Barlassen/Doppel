@@ -97,6 +97,8 @@ pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android
                                 parity test against the TS engine. Owned by a separate workstream.
 mobile/                         Doppel for Expo Go (Android): a native shell around this web app in a WebView.
                                 No finance code. Its own rules are in mobile/AGENTS.md. See docs/MOBILE.md.
+desktop/                        Doppel as a desktop app: an Electron shell that runs the production server inside the
+                                app and opens one window on it. Changes nothing under src/. See docs/DESKTOP.md.
 ```
 
 Further reading:

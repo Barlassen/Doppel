@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+<title>Doppel could not start</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<main class="page">
+  <div>
+    <h1>Doppel could not start</h1>
+    <p class="muted" id="message">The built-in server did not come up.</p>
+  </div>
+  <div class="card">
+    <p class="small">The log has the details:</p>
+    <code id="log-path"></code>
+    <pre id="tail" hidden></pre>
+  </div>
+  <p class="small">Your data is untouched: it lives in this app's data folder, not in the server.</p>
+  <div class="actions">
+    <button type="button" class="link grow" data-action="showLog">Show the log file</button>
+    <button type="button" data-action="settings">Assistant settings…</button>
+    <button type="button" data-action="quit">Quit</button>
+    <button type="button" class="primary" data-action="retry">Try again</button>
+  </div>
+</main>
+<script src="error.js"></script>
+</body>
+</html>

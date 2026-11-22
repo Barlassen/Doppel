@@ -43,3 +43,8 @@ next-env.d.ts
 
 # tesseract language data cached by scripts/pipeline-check.ts
 *.traineddata
+
+# desktop app (desktop/, docs/DESKTOP.md): its dependencies, the staged server and the packaged apps
+/desktop/node_modules
+/desktop/.stage/
+/desktop/dist/

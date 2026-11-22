@@ -66,6 +66,18 @@ npm run qr                         # second terminal: the server address as a QR
 
 It has not been run on a phone yet. [mobile/README.md](mobile/README.md) has the full steps, including networks that isolate clients; [docs/MOBILE.md](docs/MOBILE.md) explains the choice, compares it with a PWA, an EAS build and `pocket/`, and lists what is not verified.
 
+## Desktop app
+
+Doppel also runs as a desktop app that starts with a double-click, with no terminal and no Node installed. It is an Electron shell (`desktop/`) around the same web app: it starts the production server inside the app on a local port, opens one window on it, and keeps your data between launches. A key is optional and set under **Assistant settings…** in the app's menu; none is bundled.
+
+```bash
+npm ci && npm run desktop:install
+npm run desktop:dev      # run it unpackaged
+npm run desktop:build    # macOS: desktop/dist/mac/Doppel.app and .dmg files (x64, arm64)
+```
+
+The builds are unsigned, so a downloaded copy needs one extra step on first launch. That step, the Windows installer, where the data lives and what was and was not verified are in [docs/DESKTOP.md](docs/DESKTOP.md).
+
 ## How it works
 
 ```

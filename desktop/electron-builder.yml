@@ -1,0 +1,53 @@
+# Packaging for the Doppel desktop app. Run through `npm run desktop:build` (see docs/DESKTOP.md).
+appId: ch.doppel.desktop
+productName: Doppel
+copyright: Doppel team. Fictional sample data only.
+directories:
+  output: dist
+  buildResources: build
+# The shell itself (a few small files) goes into app.asar; it has no runtime dependencies.
+files:
+  - app/**/*
+  - package.json
+asar: true
+npmRebuild: false
+# The staged Doppel server (scripts/desktop-stage.mjs): Next standalone + public/ + .next/static, plain JavaScript.
+# It is copied from .stage (not .stage/server) on purpose: electron-builder drops a node_modules folder that sits
+# directly in a copied folder, and the server's node_modules has to ship.
+extraResources:
+  - from: .stage
+    to: .
+    filter:
+      - server/**/*
+publish: null
+
+mac:
+  category: public.app-category.finance
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  artifactName: Doppel-${version}-mac-${arch}.${ext}
+  # No Apple Developer ID here: the app gets an ad-hoc signature (needed on Apple silicon) and is not notarized,
+  # so the first launch needs the Gatekeeper step in docs/DESKTOP.md.
+  identity: "-"
+  type: distribution
+  hardenedRuntime: false
+  notarize: false
+  extendInfo:
+    NSCameraUsageDescription: Doppel uses the camera to capture documents and for hand control.
+    NSMicrophoneUsageDescription: Doppel uses the microphone for dictating what-if questions.
+dmg:
+  title: Doppel ${version}
+  sign: false
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: Doppel-Setup-${version}.${ext}
+  shortcutName: Doppel
