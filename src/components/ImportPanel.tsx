@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react";
 import {
   addImport,
   categoryOverrides,
@@ -12,6 +12,8 @@ import {
   type Account,
 } from "@/lib/accounts";
 import { categoryMsg } from "@/lib/data/merchants";
+import type { BehaviorProfile } from "@/lib/finance/behavioralEngine";
+import { dateCh, receiptMoney } from "@/lib/format";
 import { TRANSACTION_CATEGORIES, type TransactionCategory } from "@/lib/finance/types";
 import type { LedgerEntry } from "@/lib/frugal/ledger";
 import { msg, type Msg, type Text } from "@/lib/i18n/types";
@@ -32,6 +34,7 @@ import {
 } from "@/lib/import";
 import { categorizeWithModel } from "@/lib/import/categorizeClient";
 import { buildReview, finalizeReview, isAdded, reviewCounts, reviewOverrides, setRowCategory, type Review } from "@/lib/import/review";
+import { LearnedPanel, learnedFrom } from "./Learned";
 import { CardHeader, Disclosure } from "./ui";
 
 /** Sample files generated from the built-in accounts (scripts/make-import-samples.ts). */
@@ -57,6 +60,15 @@ const field = "w-full min-w-0 rounded-md border border-line bg-surface px-2 py-1
 const pill = "rounded-full border border-line px-3 py-1.5 text-xs font-medium enabled:hover:border-ink-3 disabled:opacity-45";
 const primary = "rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-bg disabled:opacity-45";
 
+/** A statement file handed over from elsewhere (the new-account wizard) to be reviewed in this panel. */
+export interface IncomingStatement {
+  /** Changes with every hand-over, so the same file can be sent twice. */
+  id: number;
+  accountId: string;
+  fileName: string;
+  bytes: Uint8Array;
+}
+
 type Filter = "new" | "review" | "duplicates" | "excluded" | "trades";
 
 interface Pending {
@@ -76,20 +88,29 @@ interface Mapping {
   trade: TradeMapping;
 }
 
+/**
+ * The dashboard's first data action: upload a bank statement (CSV, camt.053, broker / 3a export), review it, and see
+ * what the twin learned from the account's data. `children` is the secondary entry below it (other documents).
+ */
 export function ImportPanel({
   account,
+  behavior,
   onLedger,
   onDataChange,
-  openToken,
+  incoming,
+  children,
 }: {
   account: Account;
+  /** The behaviour analysis of the account's data, for "What the twin learned". */
+  behavior: BehaviorProfile;
   onLedger: (entry: LedgerEntry) => void;
   /** Called right before the store changes, with the label for the hero's impact line. */
   onDataChange: (label: Text) => void;
-  /** Changing this number scrolls the panel into view and opens the file picker (wizard's import step). */
-  openToken?: number;
+  /** A statement picked in the new-account wizard: its review starts as soon as that account is shown. */
+  incoming?: IncomingStatement | null;
+  children?: ReactNode;
 }) {
-  const { t, tm, fmt } = useI18n();
+  const { t, tm } = useI18n();
   const [pending, setPending] = useState<Pending | null>(null);
   const [mapping, setMapping] = useState<Mapping | null>(null);
   const [error, setError] = useState<Msg | null>(null);
@@ -109,11 +130,15 @@ export function ImportPanel({
     setDone(null);
   }, [accountId]);
 
+  const handledIncoming = useRef(0);
   useEffect(() => {
-    if (!openToken) return;
-    root.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    input.current?.click();
-  }, [openToken]);
+    if (!incoming || incoming.accountId !== accountId || handledIncoming.current === incoming.id) return;
+    handledIncoming.current = incoming.id;
+    root.current?.scrollIntoView({ block: "start" });
+    setBusy(true);
+    void handle(incoming.fileName, incoming.bytes).catch(() => setError(msg("data.unreadable"))).finally(() => setBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per hand-over
+  }, [incoming, accountId]);
 
   useEffect(() => {
     if (pending && !pending.categorizing) reviewHeading.current?.focus();
@@ -206,35 +231,19 @@ export function ImportPanel({
   }
 
   const disabled = busy || !!pending?.categorizing;
+  const learned = useMemo(() => learnedFrom(account.profile, behavior), [account.profile, behavior]);
   return (
-    <section ref={root} className="card min-w-0 scroll-mt-24 p-5 sm:p-6" aria-labelledby="import-title">
+    <section ref={root} className="card min-w-0 scroll-mt-24 p-5 sm:p-6" aria-labelledby="import-title" data-testid="statement-card">
       <CardHeader title={<span id="import-title">{t("data.importTitle")}</span>} />
-      <p className="mb-4 text-sm text-ink-2">{t("data.importIntro")}</p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={primary} disabled={disabled} onClick={() => input.current?.click()}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <button type="button" className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-bg disabled:opacity-45" disabled={disabled} onClick={() => input.current?.click()}>
           {t("data.chooseFile")}
         </button>
-        <span className="text-xs text-ink-3">{t("data.formats")}</span>
+        <span className="text-xs text-ink-2">{t("data.formats")}</span>
       </div>
       <input ref={input} type="file" accept=".csv,.txt,.xml,text/csv,application/xml,text/xml" className="hidden"
         aria-label={t("data.chooseFile")} onChange={pick} />
-
-      <Disclosure summary={t("data.samples")} className="mt-3">
-        <p className="mb-2 text-xs text-ink-2">{t("data.samplesHint")}</p>
-        <ul className="grid gap-1.5 sm:grid-cols-2">
-          {IMPORT_SAMPLES.map((s) => (
-            <li key={s.file}>
-              <button type="button" disabled={disabled} onClick={() => void sample(s.file)}
-                aria-label={t("data.sampleAria", { account: s.account, provider: s.provider, format: s.format })}
-                className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line px-2.5 py-1.5 text-left text-xs enabled:hover:border-ink-3 disabled:opacity-50">
-                <span className="min-w-0 truncate"><b className="font-medium">{s.account}</b> · {s.provider}</span>
-                <span className="shrink-0 text-ink-3">{s.format}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Disclosure>
 
       <div role="status" className="text-sm">
         {busy && !pending && <p className="mt-3 text-ink-2">{t("data.reading")}</p>}
@@ -258,26 +267,51 @@ export function ImportPanel({
           onCancel={() => setPending(null)} onConfirm={confirm} />
       )}
 
-      {imports.length > 0 && (
-        <Disclosure summary={t("data.history", { count: imports.length })} className="mt-4">
-          <ul className="space-y-2">
-            {[...imports].reverse().map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs">
-                <span className="min-w-0">
-                  <span className="block truncate font-medium" title={r.fileName}>{r.fileName}</span>
-                  <span className="block text-ink-3">
-                    {fmt.ym(Number(r.at.slice(0, 4)) * 100 + Number(r.at.slice(5, 7)))}{" · "}
-                    {t("data.historyCounts", { transactions: r.counts.transactions, trades: r.counts.trades, duplicates: r.counts.duplicates })}
-                  </span>
-                </span>
-                <button type="button" className={pill} onClick={() => undo(r.id, r.fileName)} aria-label={t("data.undoAria", { file: r.fileName })}>
-                  {t("data.undo")}
+      {!pending && !mapping && (
+        <div className="mt-4">
+          <LearnedPanel learned={learned} fresh={!!done} />
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2.5">
+        <Disclosure summary={t("data.samples")} testId="statement-samples">
+          <ul className="grid gap-1.5">
+            {IMPORT_SAMPLES.map((s) => (
+              <li key={s.file}>
+                <button type="button" disabled={disabled} onClick={() => void sample(s.file)}
+                  aria-label={t("data.sampleAria", { account: s.account, provider: s.provider, format: s.format })}
+                  className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line px-2.5 py-1.5 text-left text-xs enabled:hover:border-ink-3 disabled:opacity-50">
+                  <span className="min-w-0 truncate"><b className="font-medium">{s.account}</b> · {s.provider}</span>
+                  <span className="shrink-0 text-ink-2">{s.format}</span>
                 </button>
               </li>
             ))}
           </ul>
         </Disclosure>
-      )}
+
+        {children}
+
+        {imports.length > 0 && (
+          <Disclosure summary={t("data.history", { count: imports.length })}>
+            <ul className="space-y-2">
+              {[...imports].reverse().map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-2 px-3 py-2 text-xs">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium" title={r.fileName}>{r.fileName}</span>
+                    <span className="block text-ink-2">
+                      {dateCh(r.at)}{" · "}
+                      {t("data.historyCounts", { transactions: r.counts.transactions, trades: r.counts.trades, duplicates: r.counts.duplicates })}
+                    </span>
+                  </span>
+                  <button type="button" className={pill} onClick={() => undo(r.id, r.fileName)} aria-label={t("data.undoAria", { file: r.fileName })}>
+                    {t("data.undo")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Disclosure>
+        )}
+      </div>
     </section>
   );
 }
@@ -321,9 +355,6 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
         </p>
       </div>
 
-      <p className="num text-xs text-ink-2" data-testid="import-counts">
-        {t("data.counts", { transactions: counts.transactions, trades: counts.trades, duplicates: counts.duplicates, income: counts.income, transfers: counts.transfers, review: counts.review })}
-      </p>
       <div role="status" className="text-xs">
         {categorizing ? <p className="text-ink-2">{t("data.categorizing")}</p> : pending.modelNote && <p className="text-ink-2">{tm(pending.modelNote)}</p>}
       </div>
@@ -343,8 +374,8 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
             <li key={r.id} className={`grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 rounded-md bg-surface px-2 py-1.5 text-xs ${r.duplicate ? "opacity-55" : ""}`}>
               <span className="min-w-0">
                 <span className="block truncate font-medium">{r.trade.instrument}</span>
-                <span className="block text-ink-3">
-                  {r.trade.date} · {t(`data.side.${r.trade.side}`)} · {t(`data.tradeAccount.${r.trade.account}`)}
+                <span className="block text-ink-2">
+                  {dateCh(r.trade.date)} · {t(`data.side.${r.trade.side}`)} · {t(`data.tradeAccount.${r.trade.account}`)}
                   {r.duplicate && <> · {t("data.duplicate")}</>}
                 </span>
               </span>
@@ -353,22 +384,11 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
           ))}
         </ul>
       ) : rows.length ? (
-        <div className="max-h-96 overflow-y-auto rounded-md bg-surface">
-          <table className="w-full table-fixed text-xs">
-            <thead className="sticky top-0 bg-surface text-left text-[11px] text-ink-3">
-              <tr>
-                <th scope="col" className="px-2 py-1.5 font-medium">{t("data.colMerchant")}</th>
-                <th scope="col" className="w-[4.75rem] px-1 py-1.5 text-right font-medium sm:w-24">{t("data.colAmount")}</th>
-                <th scope="col" className="w-[7.5rem] px-2 py-1.5 font-medium sm:w-40">{t("data.colCategory")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <Row key={r.id} row={r} onCategory={onCategory} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="max-h-96 divide-y divide-line overflow-y-auto rounded-md bg-surface" data-testid="import-rows">
+          {rows.map((r) => (
+            <Row key={r.id} row={r} onCategory={onCategory} />
+          ))}
+        </ul>
       ) : (
         <p className="text-xs text-ink-2">{t("data.emptyFilter")}</p>
       )}
@@ -398,32 +418,38 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
   );
 }
 
+/**
+ * One statement row: merchant and amount on the first line, date and category below. Stacked on purpose: the card
+ * is 290–360 px wide on every screen, where a three-column table squeezed the merchant to a single letter.
+ */
 function Row({ row, onCategory }: { row: ReviewRow; onCategory: (rowId: string, c: TransactionCategory) => void }) {
-  const { t, tm, fmt } = useI18n();
+  const { t, tm } = useI18n();
   const counted = row.kind === "spend" || row.kind === "refund";
   return (
-    <tr className={`border-t border-line align-top ${row.duplicate ? "opacity-55" : ""}`}>
-      <td className="min-w-0 px-2 py-1.5">
-        <span className="block truncate font-medium" title={row.raw}>{row.merchant}</span>
-        <span className="block truncate text-[11px] text-ink-3">
-          {row.date}
-          {row.duplicate ? <> · {t("data.duplicate")}</> : !counted ? <> · {t(`data.kind.${row.kind}`)}</> : row.kind === "refund" ? <> · {t("data.kind.refund")}</> : null}
-          {row.needsReview && !row.duplicate && <> · <span className="text-warn">{t("data.needsReview")}</span></>}
+    <li className={`px-2 py-1.5 text-xs ${row.duplicate ? "opacity-55" : ""}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate font-medium" title={row.raw}>{row.merchant}</span>
+        <span className="num shrink-0">{receiptMoney(-row.amount)}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="flex min-w-0 text-[11px] text-ink-2">
+          <span className="num shrink-0">{dateCh(row.date)}</span>
+          <span className="min-w-0 truncate">
+            {row.duplicate ? <> · {t("data.duplicate")}</> : !counted ? <> · {t(`data.kind.${row.kind}`)}</> : row.kind === "refund" ? <> · {t("data.kind.refund")}</> : null}
+            {row.needsReview && !row.duplicate && <> · <span className="text-warn">{t("data.needsReview")}</span></>}
+          </span>
         </span>
-      </td>
-      <td className="num px-1 py-1.5 text-right">{fmt.num(-row.amount, 2)}</td>
-      <td className="px-2 py-1">
         {counted && !row.duplicate ? (
-          <select className={`${field} py-1 text-xs ${row.needsReview ? "border-warn" : ""}`} value={row.category}
-            aria-label={t("data.categoryAria", { merchant: row.merchant, date: row.date })}
+          <select className={`w-32 min-w-0 shrink rounded-md border bg-surface px-2 py-1 text-xs text-ink ${row.needsReview ? "border-warn" : "border-line"}`} value={row.category}
+            aria-label={t("data.categoryAria", { merchant: row.merchant, date: dateCh(row.date) })}
             onChange={(e) => onCategory(row.id, e.currentTarget.value as TransactionCategory)}>
             {TRANSACTION_CATEGORIES.map((c) => <option key={c} value={c}>{tm(categoryMsg(c))}</option>)}
           </select>
-        ) : (
-          <span className="text-[11px] text-ink-3">{counted ? tm(categoryMsg(row.category)) : "—"}</span>
-        )}
-      </td>
-    </tr>
+        ) : counted ? (
+          <span className="shrink-0 text-[11px] text-ink-2">{tm(categoryMsg(row.category))}</span>
+        ) : null}
+      </div>
+    </li>
   );
 }
 

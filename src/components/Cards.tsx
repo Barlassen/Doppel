@@ -10,17 +10,7 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Text } from "@/lib/i18n/types";
 import type { FloorPlanVerification } from "@/lib/snap/vision";
 import { FloorPlanAffordabilitySummary } from "./VisionReview";
-import { CardHeader, Disclosure } from "./ui";
-
-const EVENT_ICON: Record<LifeEvent["type"], string> = {
-  house: "🏠",
-  child: "👶",
-  jobloss: "💼",
-  crash: "📉",
-  raise: "📈",
-  expense: "🎯",
-  income: "💰",
-};
+import { CardHeader, Disclosure, EVENT_ICON, ON_TRACK } from "./ui";
 
 export function Timeline({
   events,
@@ -45,7 +35,7 @@ export function Timeline({
       <ul className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {sorted.map((e) => (
           <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
-            <span>{EVENT_ICON[e.type]}</span>
+            <span aria-hidden="true">{EVENT_ICON[e.type]}</span>
             <div className="min-w-0 flex-1 basis-32">
               <div className="font-medium break-words">{tm(e.labelMsg ?? e.label)}</div>
               <div className="num text-xs text-ink-2">
@@ -68,7 +58,7 @@ export function Timeline({
 
 function IconBtn({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button {...p} className="num rounded-md px-1.5 py-0.5 text-[11px] text-ink-2 transition hover:bg-surface hover:text-ink">
+    <button type="button" {...p} className="num grid min-h-7 min-w-7 place-items-center rounded-md px-1.5 text-[11px] text-ink-2 transition hover:bg-surface hover:text-ink">
       {children}
     </button>
   );
@@ -257,8 +247,10 @@ export function RecipesCard({
   onApply: (r: Recipe) => void;
 }) {
   const { t, fmt, tm, rich } = useI18n();
-  const onTrack = baseProb >= 0.8 && recipes.length === 0;
-  const anyFix = recipes.some((r) => r.reaches);
+  // A lever that leaves the rounded odds where they are is not a next step: it is left out.
+  const useful = recipes.filter((r) => r.reaches || Math.round(r.newProb * 100) > Math.round(baseProb * 100));
+  const onTrack = baseProb >= ON_TRACK && useful.length === 0;
+  const anyFix = useful.some((r) => r.reaches);
   return (
     <section className="card p-5 sm:p-6">
       <CardHeader
@@ -270,10 +262,10 @@ export function RecipesCard({
       ) : (
         <>
           <ul className={`divide-y divide-line ${loading ? "opacity-60" : ""}`}>
-            {recipes.map((r) => (
+            {useful.map((r) => (
               <li key={r.id} className="flex items-center gap-4 py-3 first:pt-0">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{tm(r.title)}</div>
+                  <div className="text-sm font-medium">{tm(recipeTitle(r))}</div>
                   <div className="mt-0.5 text-xs text-ink-2">{tm(r.detail)}</div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -288,7 +280,7 @@ export function RecipesCard({
                   <button
                     onClick={() => onApply(r)}
                     disabled={loading}
-                    aria-label={t("recipes.applyAria", { title: r.title })}
+                    aria-label={t("recipes.applyAria", { title: recipeTitle(r) })}
                     className="rounded-full border border-line px-3 py-1 text-xs font-medium text-s1 transition enabled:hover:border-s1 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {t("recipes.apply")}
@@ -309,16 +301,24 @@ export function RecipesCard({
   );
 }
 
+/** "Invest CHF 0k idle cash + max out 3a" has nothing idle to invest: what is left of that lever is the 3a part. */
+function recipeTitle(r: Recipe): Recipe["title"] {
+  return r.id === "invest" && r.title.params?.k === 0 ? { key: "ux.recipeMax3a" } : r.title;
+}
+
 /** "Your private banker": one button, then the narration (cloud text in the current locale, else the local template). */
 export function BankerCard({
   text,
   loading,
   started,
+  source,
   onExplain,
 }: {
   text?: string;
   loading: boolean;
   started: boolean;
+  /** Who worded `text`: a language model (its name) or the built-in offline template. */
+  source?: { model: string } | "template";
   onExplain: () => void;
 }) {
   const { t } = useI18n();
@@ -328,6 +328,7 @@ export function BankerCard({
         title={t("banker.title")}
         aside={
           <button
+            type="button"
             onClick={onExplain}
             disabled={loading}
             className="rounded-full border border-line px-3 py-1 text-xs font-medium transition hover:border-ink-3 disabled:opacity-50"
@@ -337,7 +338,16 @@ export function BankerCard({
         }
       />
       {loading && <p className="pulse-soft text-sm text-ink-2">{t("banker.loading")}</p>}
-      {!loading && text !== undefined && <p className="font-serif text-xl leading-snug">{t("common.quote", { text })}</p>}
+      {!loading && text !== undefined && (
+        <>
+          <p className="font-serif text-xl leading-snug">{t("common.quote", { text })}</p>
+          {source && (
+            <p className="mt-2 text-xs text-ink-2" data-testid="banker-source">
+              {source === "template" ? t("ux.bankerTemplate") : t("ux.bankerModel", { model: source.model })}
+            </p>
+          )}
+        </>
+      )}
       {!started && <p className="text-sm text-ink-2">{t("banker.hint")}</p>}
     </section>
   );

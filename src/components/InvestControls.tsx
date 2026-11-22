@@ -7,7 +7,7 @@ import { RISK_PROFILES } from "@/lib/finance/types";
 import { EQUITY_WEIGHT } from "@/lib/finance/monteCarlo";
 import type { ReactNode } from "react";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { CardHeader } from "./ui";
+import { CardHeader, oddsTone } from "./ui";
 
 /**
  * Hero settings row: investment risk profile, pillar 3a toggle (with a short tax hint when it is off), the standing
@@ -24,6 +24,7 @@ export function InvestControls({
   panicHistory,
   marginalTaxRate,
   no3a,
+  economy,
   children,
 }: {
   risk: RiskProfile;
@@ -36,6 +37,11 @@ export function InvestControls({
   marginalTaxRate: number;
   /** Already retired: no pillar 3a contributions are possible, so the toggle and its tax line are hidden. */
   no3a?: boolean;
+  /**
+   * Extension point: a control for the economic scenario the futures are drawn from (e.g. base / high inflation /
+   * recession). Rendered in the settings row after the 3a toggle; nothing is shown while it is not passed.
+   */
+  economy?: ReactNode;
   children?: ReactNode;
 }) {
   const { t, fmt } = useI18n();
@@ -68,11 +74,12 @@ export function InvestControls({
         {monthlyInvest > 0 && (
           <span className="flex items-center gap-1 rounded-full bg-surface-2 py-1 pr-1 pl-3">
             {t("invest.standingOrder", { amount: monthlyInvest })}
-            <button onClick={onClearInvest} aria-label={t("change.stopStandingOrder")} className="rounded-full px-1.5 text-ink-3 hover:text-ink">
+            <button type="button" onClick={onClearInvest} aria-label={t("change.stopStandingOrder")} className="grid min-h-6 min-w-6 place-items-center rounded-full text-ink-3 hover:text-ink">
               ✕
             </button>
           </span>
         )}
+        {economy && <div className="min-w-0" data-slot="economy">{economy}</div>}
         {children && <div className="min-w-0 sm:ml-auto">{children}</div>}
       </div>
       {risk === "growth" && panicHistory && (
@@ -106,11 +113,19 @@ const TILE_DIVIDERS = [
   "border-l border-line px-3",
 ];
 
-/** Cost of waiting: odds if the idle cash is put to work now, in 2 or in 5 years. */
+/** A difference of this many points between two runs of 1,000 futures is simulation noise, not a cost of waiting. */
+const WAITING_NOISE_POINTS = 1;
+
+/**
+ * Cost of waiting: odds if the idle cash is put to work now, in 2 or in 5 years. The card is left out when waiting
+ * changes nothing (every figure is within simulation noise of "now"): there is then nothing to decide.
+ */
 export function WaitingStrip({ items, loading }: { items: WaitingCost[] | null | undefined; loading?: boolean }) {
   const { t, tm, fmt } = useI18n();
   if (items === null) return null;
-  const now = items?.[0]?.prob ?? 0;
+  const points = (p: number) => Math.round(p * 100);
+  const now = points(items?.[0]?.prob ?? 0);
+  if (items && items.every((w) => Math.abs(points(w.prob) - now) <= WAITING_NOISE_POINTS)) return null;
   return (
     <section className="card p-5 sm:p-6">
       <CardHeader title={t("waiting.title")} className="mb-1" />
@@ -122,9 +137,10 @@ export function WaitingStrip({ items, loading }: { items: WaitingCost[] | null |
           {items.map((w, i) => (
             <div key={w.startMonth} className={TILE_DIVIDERS[i] ?? TILE_DIVIDERS[1]}>
               <div className="text-xs text-ink-2">{tm(w.label)}</div>
-              <div className={`num text-xl font-semibold ${w.prob >= 0.8 ? "text-good" : w.prob >= 0.5 ? "text-warn" : "text-bad"}`}>{fmt.pct(w.prob)}</div>
+              <div className={`num text-xl font-semibold ${oddsTone(w.prob)}`}>{fmt.pct(w.prob)}</div>
+              {/* The difference of the two rounded figures on screen, so "77% → 74%" reads "−3". */}
               {w.startMonth !== 0 && <div className="num text-xs text-ink-2">{t("common.pp", {
-                value: w.prob < now ? fmt.signed(-Math.round((now - w.prob) * 100)) : "±0",
+                value: points(w.prob) === now ? "±0" : fmt.signed(points(w.prob) - now),
               })}</div>}
             </div>
           ))}

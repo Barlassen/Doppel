@@ -1,6 +1,24 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
+import type { LifeEvent } from "@/lib/finance/types";
+
+/** Goal odds from which a plan counts as on track (the solver's target, see goalSolver.ts), and as possible. */
+export const ON_TRACK = 0.8;
+export const POSSIBLE = 0.5;
+/** One colour rule for every odds figure on the dashboard. */
+export const oddsTone = (p: number) => (p >= ON_TRACK ? "text-good" : p >= POSSIBLE ? "text-warn" : "text-bad");
+
+/** One icon per life-event type: the timeline list and the chart markers use the same ones. */
+export const EVENT_ICON: Record<LifeEvent["type"], string> = {
+  house: "🏠",
+  child: "👶",
+  jobloss: "💼",
+  crash: "📉",
+  raise: "📈",
+  expense: "🎯",
+  income: "💰",
+};
 
 /** One header style for every card: small caps title on the left, an optional control or badge on the right. */
 export function CardHeader({ title, aside, className = "" }: { title: ReactNode; aside?: ReactNode; className?: string }) {
@@ -15,10 +33,30 @@ export function CardHeader({ title, aside, className = "" }: { title: ReactNode;
 /**
  * Progressive disclosure for supporting rows and footnotes. A native <details> element, so it is keyboard and
  * screen-reader accessible without extra state; the chevron is drawn in CSS (see `.disclosure` in globals.css).
+ * Pass `open` + `onToggle` to control it (e.g. to open it when its content needs attention).
  */
-export function Disclosure({ summary, children, className = "" }: { summary: ReactNode; children: ReactNode; className?: string }) {
+export function Disclosure({
+  summary,
+  children,
+  className = "",
+  open,
+  onToggle,
+  testId,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+  className?: string;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
+  testId?: string;
+}) {
   return (
-    <details className={`disclosure ${className}`}>
+    <details
+      className={`disclosure ${className}`}
+      data-testid={testId}
+      {...(open !== undefined ? { open } : {})}
+      onToggle={onToggle ? (e) => onToggle(e.currentTarget.open) : undefined}
+    >
       <summary className="text-xs font-medium text-ink-2 hover:text-ink">{summary}</summary>
       <div className="mt-3">{children}</div>
     </details>

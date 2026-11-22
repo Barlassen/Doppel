@@ -7,8 +7,9 @@ const serif = Instrument_Serif({ variable: "--font-serif", subsets: ["latin"], w
 const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Doppel — your financial twin",
-  description: "Snap a bill, a receipt or a listing. Your financial twin updates instantly — with frugal multimodal AI.",
+  // English on the server; the dashboard sets the localized title after mount (`ux.docTitle`).
+  title: "Doppel: your financial twin",
+  description: "Upload a bank statement. Your financial twin learns your habits and shows where they lead, under explicit assumptions.",
   icons: { icon: "/icon.svg" },
 };
 

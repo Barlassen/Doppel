@@ -24,7 +24,13 @@ function speechRecognition() {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-export function CommandBar({ onSubmit, busy, message }: { onSubmit: (t: string) => void; busy: boolean; message?: Msg }) {
+export function CommandBar({ onSubmit, busy, message, hasHome = true }: {
+  onSubmit: (t: string) => void;
+  busy: boolean;
+  message?: Msg;
+  /** False while no home purchase is on the timeline: the "delay the flat" example cannot apply and is left out. */
+  hasHome?: boolean;
+}) {
   const { locale, t, tm } = useI18n();
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
@@ -135,7 +141,7 @@ export function CommandBar({ onSubmit, busy, message }: { onSubmit: (t: string) 
         </button>
       </form>
       <div id={examplesId} className="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t("cmd.examplesAria")}>
-        {commandExamples(locale).slice(0, allExamples ? undefined : VISIBLE_EXAMPLES).map(({ id, text: example }) => (
+        {commandExamples(locale).filter(({ id }) => hasHome || id !== "delay").slice(0, allExamples ? undefined : VISIBLE_EXAMPLES).map(({ id, text: example }) => (
           <button
             type="button"
             key={id}

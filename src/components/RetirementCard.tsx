@@ -2,7 +2,8 @@
 
 import type { RetirementStats } from "@/lib/finance/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import { CardHeader, Disclosure } from "./ui";
+import { BOUNDS } from "@/lib/twin/actions";
+import { CardHeader, Disclosure, oddsTone } from "./ui";
 
 /** Answers "Am I saving enough for retirement?" with plain numbers from the simulator. */
 export function RetirementCard({
@@ -20,8 +21,6 @@ export function RetirementCard({
   alreadyRetired?: boolean;
 }) {
   const { t, fmt, rich } = useI18n();
-  const ok = stats ? stats.lastsTo90Prob >= 0.8 : false;
-  const meh = stats ? stats.lastsTo90Prob >= 0.5 : false;
   const gap = stats ? stats.monthlySpending - stats.monthlyIncomeAtRetirement : 0;
   return (
     <section className="card p-5 sm:p-6">
@@ -30,8 +29,9 @@ export function RetirementCard({
         aside={
           alreadyRetired ? undefined : <div className="flex shrink-0 items-center gap-1 rounded-full border border-line px-1 text-xs">
             <button
-              className="rounded-full px-1.5 py-0.5 text-ink-2 hover:text-ink disabled:opacity-40"
-              disabled={disabled || retirementAge <= 55}
+              type="button"
+              className="grid min-h-7 min-w-7 place-items-center rounded-full text-ink-2 hover:text-ink disabled:opacity-40"
+              disabled={disabled || retirementAge <= BOUNDS.retirementAge[0]}
               onClick={() => onChangeAge(retirementAge - 1)}
               title={t("retire.earlier")}
               aria-label={t("retire.earlier")}
@@ -40,8 +40,9 @@ export function RetirementCard({
             </button>
             <span className="num font-medium whitespace-nowrap">{t("retire.at", { age: retirementAge })}</span>
             <button
-              className="rounded-full px-1.5 py-0.5 text-ink-2 hover:text-ink disabled:opacity-40"
-              disabled={disabled || retirementAge >= 70}
+              type="button"
+              className="grid min-h-7 min-w-7 place-items-center rounded-full text-ink-2 hover:text-ink disabled:opacity-40"
+              disabled={disabled || retirementAge >= BOUNDS.retirementAge[1]}
               onClick={() => onChangeAge(retirementAge + 1)}
               title={t("retire.later")}
               aria-label={t("retire.later")}
@@ -58,7 +59,7 @@ export function RetirementCard({
       ) : (
         <>
           <p className="text-sm text-ink-2">
-            {rich("retire.lasts", { odds: <b className={`num text-lg ${ok ? "text-good" : meh ? "text-warn" : "text-bad"}`}>{fmt.pct(stats.lastsTo90Prob)}</b> })}{" "}
+            {rich("retire.lasts", { odds: <b className={`num text-lg ${oddsTone(stats.lastsTo90Prob)}`}>{fmt.pct(stats.lastsTo90Prob)}</b> })}{" "}
             {stats.depletionAgeP10 !== null
               ? rich("retire.badCase", { age: <b className="num text-ink">{stats.depletionAgeP10}</b> })
               : t("retire.badCaseOk")}
@@ -81,7 +82,7 @@ export function RetirementCard({
               <dt className="text-ink-2">{t("retire.gap")}</dt>
               <dd className={`text-right ${gap > 0 ? "text-bad" : "text-good"}`}>{gap > 0 ? t("common.perMonth", { amount: fmt.chf(gap) }) : t("retire.gapNone")}</dd>
               <dt className="text-ink-2">{t("retire.savingsAt", { age: stats.age })}</dt>
-              <dd className="text-right">{fmt.chfShort(stats.medianLiquidAtRetirement)}</dd>
+              <dd className="text-right">{fmt.chf(stats.medianLiquidAtRetirement)}</dd>
               <dt className="text-ink-2">{t("retire.replacement")}</dt>
               <dd className="text-right">
                 {fmt.pct(stats.replacementRatio)} <span className="text-ink-2">{t("retire.replacementNote")}</span>

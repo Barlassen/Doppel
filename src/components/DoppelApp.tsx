@@ -13,7 +13,7 @@ import {
   type Account,
   type AccountsState,
 } from "@/lib/accounts";
-import { simulate } from "@/lib/finance/monteCarlo";
+import { ASSUMPTIONS, EQUITY_WEIGHT, simulate } from "@/lib/finance/monteCarlo";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { solveGoal, type Recipe, type SolverResult } from "@/lib/finance/goalSolver";
 import { checkAffordability } from "@/lib/finance/swissRules";
@@ -27,9 +27,10 @@ import {
   type HabitCosts,
   type WaitingCost,
 } from "@/lib/finance/scenario";
-import { GOAL_DEFINITION, type Profile, type RiskProfile, type Scenario, type SimResult } from "@/lib/finance/types";
+import { GOAL_DEFINITION, type LifeEvent, type Profile, type RiskProfile, type Scenario, type SimResult } from "@/lib/finance/types";
 import {
   applyScenarioOps,
+  BOUNDS,
   compactEvents,
   describeOps,
   extractionToUpdate,
@@ -38,6 +39,7 @@ import {
   validateLocalOps,
   type Op,
 } from "@/lib/twin/actions";
+import { orderedParsers } from "@/lib/twin/intents";
 import { callTwin } from "@/lib/llm";
 import { entryFromCommand, entryFromNarrate, entryFromSnap, type LedgerEntry } from "@/lib/frugal/ledger";
 import type { SnapResult, Usage } from "@/lib/snap/types";
@@ -52,6 +54,7 @@ import { pct } from "@/lib/format";
 import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, msg, translate, translateText, type Locale, type Msg, type Text } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import { ConeChart } from "./ConeChart";
+import type { IncomingStatement } from "./ImportPanel";
 import { CommandBar } from "./CommandBar";
 import { SnapPanel, type SnapItem } from "./SnapPanel";
 import { FrugalBadge, Inspector } from "./Inspector";
@@ -164,12 +167,12 @@ export default function DoppelApp() {
   const [narrative, setNarrative] = useState<{
     loading: boolean;
     fallback: Msg[];
-    cloud?: { locale: Locale; text: string };
+    cloud?: { locale: Locale; text: string; model: string };
   } | null>(null);
   const [impact, setImpact] = useState<Impact | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [ubsPickerOpen, setUbsPickerOpen] = useState(false);
-  const [importOpenToken, setImportOpenToken] = useState(0);
+  const [incomingStatement, setIncomingStatement] = useState<IncomingStatement | null>(null);
   const pendingDataChange = useRef<{ accountId: string; label: Text; before: number } | null>(null);
 
   // Account-scoped request revision: async results that resolve after an account switch are ignored.
@@ -292,6 +295,22 @@ export default function DoppelApp() {
     const fresh = getAccount(id);
     if (fresh && id === accountRef.current.id) loadAccount(fresh, true);
   }
+
+  // The <title> follows the language. React owns the server-rendered <title> and writes the English text back when
+  // it re-renders the head, so the localized title is re-applied whenever that element changes.
+  useEffect(() => {
+    const want = t("ux.docTitle");
+    const apply = () => {
+      if (document.title !== want) document.title = want;
+    };
+    apply();
+    const el = document.querySelector("head > title");
+    if (!el) return;
+    const observer = new MutationObserver(apply);
+    observer.observe(el, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `t` changes with the locale
+  }, [locale]);
 
   // Hydration: read the stored accounts after mount, then follow the store's active account.
   useEffect(() => {
@@ -560,6 +579,29 @@ export default function DoppelApp() {
   }
 
   // ---------------- what-if commands ----------------
+  /**
+   * Why the local parsers produced no valid change, when the reason is known: the what-if was understood but cannot
+   * apply (a retirement age outside the engine's range, or "delay the home" with no home on the timeline). The
+   * parsers return raw ops; only the validation dropped them, so no parser change is needed for these two messages.
+   */
+  function whyNotApplied(text: string): Msg | null {
+    const events = scenarioRef.current.events;
+    const ctx = { text, events, now: new Date(), retirementAge: effProfile.retirementAge, house: events.find((e) => e.type === "house") };
+    const parsers = orderedParsers(locale);
+    const [minAge, maxAge] = BOUNDS.retirementAge;
+    for (const op of parsers.flatMap((parser) => parser.parse(ctx))) {
+      if (op.op === "set" && op.key === "retirementAge" && typeof op.value === "number" && (op.value < minAge || op.value > maxAge)) {
+        return msg("ux.cmdRetireRange", { min: minAge, max: maxAge });
+      }
+    }
+    if (!ctx.house) {
+      const probe: LifeEvent = { id: "probe-home", type: "house", label: "", month: 0, amount: 0 };
+      const withHome = parsers.flatMap((parser) => parser.parse({ ...ctx, events: [...events, probe], house: probe }));
+      if (withHome.some((op) => op.op === "shift" && op.id === probe.id)) return msg("ux.cmdNoHome");
+    }
+    return null;
+  }
+
   async function onCommand(text: string) {
     const rev = profileRevRef.current;
     const accountId = accountRef.current.id;
@@ -583,6 +625,11 @@ export default function DoppelApp() {
         }),
       );
       status = msg("cmd.parsedLocally");
+    } else if (whyNotApplied(text)) {
+      // Understood locally, but it cannot apply: say why instead of sending it to a model.
+      setCmdMsg(whyNotApplied(text) ?? undefined);
+      setCmdBusy(false);
+      return;
     } else {
       const now = new Date().toISOString().slice(0, 7);
       const r = await callTwin<{ ops: unknown }>({ task: "command", text, now, events: compactEvents(scenarioRef.current.events) });
@@ -654,10 +701,10 @@ export default function DoppelApp() {
     const t0 = performance.now();
     const request = { task: "narrate", lang: locale, facts };
     const r = await callTwin<string>(request);
-    let cloud: { locale: Locale; text: string } | undefined;
+    let cloud: { locale: Locale; text: string; model: string } | undefined;
     let usage: Usage;
     if (r.ok && typeof r.data === "string") {
-      cloud = { locale, text: r.data };
+      cloud = { locale, text: r.data, model: r.usage?.model ?? "LLM" };
       usage = { ...r.usage!, mode: "llm" };
     } else {
       usage = { promptTokens: 0, completionTokens: 0, costUsd: 0, model: "template (offline)", mode: "offline" };
@@ -689,28 +736,46 @@ export default function DoppelApp() {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-full focus:bg-ink focus:px-3 focus:py-1.5 focus:text-xs focus:font-medium focus:text-bg">
+        {t("ux.skip")}
+      </a>
+      {/* Header. Below `sm`: logo + page nav + a compact language select on the first row, account + tokens on the second. */}
       <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur">
         <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-2 sm:grid-cols-[auto_1fr_auto_auto] sm:gap-3 sm:py-3">
-          <div className="flex items-center gap-2">
-            <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
-            <span className="font-serif text-2xl leading-none">Doppel</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent text-sm font-bold text-white">D</span>
+            <span className="hidden font-serif text-2xl leading-none min-[360px]:inline">Doppel</span>
             <SiteNav current="dashboard" />
           </div>
-          <div className="flex items-center justify-self-end rounded-full border border-line p-0.5" role="group" aria-label={t("lang.switcher")}>
-            {LOCALES.map((option) => (
-              <button
-                key={option}
-                type="button"
-                lang={LOCALE_TAGS[option]}
-                aria-label={LOCALE_NAMES[option]}
-                aria-pressed={locale === option}
-                onClick={() => setLocale(option)}
-                className={`rounded-full px-2 py-1 text-[11px] font-medium ${locale === option ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
-              >
-                {option.toUpperCase()}
-              </button>
-            ))}
+          <div className="justify-self-end">
+            <select
+              aria-label={t("lang.switcher")}
+              data-testid="lang-select"
+              value={locale}
+              onChange={(e) => setLocale(e.currentTarget.value as Locale)}
+              className="min-h-7 rounded-full border border-line bg-surface px-2 text-[11px] font-medium text-ink sm:hidden"
+            >
+              {LOCALES.map((option) => (
+                <option key={option} value={option} lang={LOCALE_TAGS[option]} aria-label={LOCALE_NAMES[option]}>
+                  {option.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <div className="hidden items-center rounded-full border border-line p-0.5 sm:flex" role="group" aria-label={t("lang.switcher")}>
+              {LOCALES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  lang={LOCALE_TAGS[option]}
+                  aria-label={LOCALE_NAMES[option]}
+                  aria-pressed={locale === option}
+                  onClick={() => setLocale(option)}
+                  className={`min-h-6 rounded-full px-2 py-1 text-[11px] font-medium ${locale === option ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"}`}
+                >
+                  {option.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
           {/* Mobile: own full-width row; from sm the two items join the header grid (`contents`). */}
           <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:contents">
@@ -730,7 +795,7 @@ export default function DoppelApp() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pt-8 pb-24">
+      <main id="main" className="mx-auto max-w-6xl px-4 pt-8 pb-24">
         {/* Hero: identity, headline, one supporting line, settings row */}
         <Hero
           name={effProfile.name}
@@ -750,7 +815,29 @@ export default function DoppelApp() {
           notes={
             <>
               {debtToday > 0 && <li>{t("ubs.heroDebt", { debt: debtToday })}</li>}
-              <li>{cantonLine(t, effProfile.canton, effProfile.healthPremiumMonth ?? defaultHealthPremium(effProfile))}</li>
+              <li data-testid="assumptions">
+                {t("ux.assumptions", {
+                  equity: ASSUMPTIONS.equity.mu,
+                  equityVol: ASSUMPTIONS.equity.sigma,
+                  bonds: ASSUMPTIONS.bonds.mu,
+                  bondsVol: ASSUMPTIONS.bonds.sigma,
+                  cash: ASSUMPTIONS.cashRate,
+                  inflation: ASSUMPTIONS.inflation,
+                  wages: ASSUMPTIONS.wageGrowth,
+                  overdraft: ASSUMPTIONS.overdraftRate,
+                  share: EQUITY_WEIGHT[effProfile.riskProfile],
+                })}
+              </li>
+              <li>
+                {cantonLine(t, effProfile.canton, effProfile.healthPremiumMonth ?? defaultHealthPremium(effProfile))}
+                {effProfile.healthPremiumMonth === undefined && <> {t("ux.premiumAssumed")}</>}
+              </li>
+              {!effProfile.origin && (
+                <li>
+                  {t(account.builtIn ? "ux.inputsDemo" : "ux.inputsOwn", { transactions: effProfile.transactions.length, trades: effProfile.trades.length })}
+                </li>
+              )}
+              <li>{t("ux.notAdvice")}</li>
             </>
           }
         >
@@ -764,6 +851,7 @@ export default function DoppelApp() {
             panicHistory={effProfile.history.soldInDrawdown}
             marginalTaxRate={effProfile.marginalTaxRate}
             no3a={effProfile.retirementAge <= effProfile.age}
+            // Extension point: pass the economic-scenario control here (`economy={<… />}`) once the engine offers one.
           >
             <PlanCompare
               plan={pin}
@@ -778,10 +866,11 @@ export default function DoppelApp() {
         <UbsSourceNote profile={effProfile} />
 
         <div className="mt-6 mb-6">
-          <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} />
+          <CommandBar onSubmit={onCommand} busy={cmdBusy} message={cmdMsg} hasHome={scenario.events.some((e) => e.type === "house")} />
         </div>
 
-        {/* Your future: the chart next to the snap input that changes it */}
+        {/* Your future: the chart, next to the data that feeds it (bank statement first, other documents second) */}
+        <h2 className="sr-only">{t("ux.futureTitle")}</h2>
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <section className="card p-4 sm:p-6">
             <CardHeader title={t("chart.title")} />
@@ -789,10 +878,13 @@ export default function DoppelApp() {
               real={real}
               ideal={ideal}
               goal={effProfile.goal}
-              planA={planAResult && planAResult !== real ? planAResult : null}
+              // The plan before the last decision (auto-pinned) or the pinned Plan A: the "before" line.
+              before={planAResult && planAResult !== real ? planAResult : null}
+              beforeLabel={pin?.label}
               retirementAge={effProfile.retirementAge}
-              eventAges={scenario.events.map((e) => ({ age: effProfile.age + Math.floor(e.month / 12), id: e.id }))}
+              events={scenario.events.map((e) => ({ id: e.id, age: effProfile.age + Math.floor(e.month / 12), type: e.type, label: e.labelMsg ?? e.label }))}
               targetLine={goalIsNetWorth}
+              netWorthToday={netWorthToday}
             />
             {!goalIsNetWorth && <p className="mt-2 text-xs text-ink-2">{t("ubs.chartMetricNote")}</p>}
             <div className="mt-5">
@@ -838,12 +930,22 @@ export default function DoppelApp() {
               </div>
             )}
           </section>
-          <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
+          <ImportPanel
+            account={account}
+            behavior={behavior}
+            onLedger={(entry) => addLedger(account.id, entry)}
+            onDataChange={onDataChange}
+            incoming={incomingStatement}
+          >
+            <SnapPanel key={profileId} onResult={onSnap} items={snaps} />
+          </ImportPanel>
         </div>
 
         <div className="mt-14 space-y-14">
           <Section title={t("layout.decisions")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
+            {/* Extension point "decisions": every big decision is one card in this grid (home, retirement, debt, …).
+                New life decisions from the engine go here as further cards, in the same CardHeader style. */}
+            <div className="grid items-start gap-5 lg:grid-cols-2" data-slot="decisions">
               {account.id === ALEXIA_ID && (
                 <AlexiaPaths base={base} scenario={accountStart} activePath={scenario.path?.id} onApply={applyAlexiaPath} onPin={pinAlexiaPath} />
               )}
@@ -882,6 +984,7 @@ export default function DoppelApp() {
                 text={narrative && !narrative.loading
                   ? narrative.cloud?.locale === locale ? narrative.cloud.text : narrative.fallback.map(tm).join(" ")
                   : undefined}
+                source={narrative?.cloud?.locale === locale ? { model: narrative.cloud.model } : "template"}
                 onExplain={narrate}
               />
             </div>
@@ -901,15 +1004,7 @@ export default function DoppelApp() {
           </Section>
 
           <Section title={t("data.sectionTitle")}>
-            <div className="grid items-start gap-5 lg:grid-cols-2">
-              <ImportPanel
-                account={account}
-                onLedger={(entry) => addLedger(account.id, entry)}
-                onDataChange={onDataChange}
-                openToken={importOpenToken}
-              />
-              <TransactionsPanel account={account} onDataChange={onDataChange} />
-            </div>
+            <TransactionsPanel account={account} onDataChange={onDataChange} />
           </Section>
         </div>
       </main>
@@ -917,10 +1012,10 @@ export default function DoppelApp() {
       <AccountWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
-        onCreated={(id, withImport) => {
+        onCreated={(id, statement) => {
           setWizardOpen(false);
           setActiveAccount(id);
-          if (withImport) setImportOpenToken((n) => n + 1);
+          if (statement) setIncomingStatement((prev) => ({ id: (prev?.id ?? 0) + 1, accountId: id, ...statement }));
         }}
       />
       {ubsPickerOpen && (
@@ -943,7 +1038,7 @@ function Pill({ label, onClear }: { label: Msg; onClear: () => void }) {
   return (
     <span className="flex items-center gap-1 rounded-full bg-surface-2 py-1 pr-1 pl-3">
       {tm(label)}
-      <button onClick={onClear} aria-label={t("pill.clear", { label })} className="rounded-full px-1.5 text-ink-3 hover:text-ink">
+      <button type="button" onClick={onClear} aria-label={t("pill.clear", { label })} className="grid min-h-6 min-w-6 place-items-center rounded-full text-ink-3 hover:text-ink">
         ✕
       </button>
     </span>

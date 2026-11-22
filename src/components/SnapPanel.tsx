@@ -9,7 +9,7 @@ import { isReceiptItemAmount, MAX_RECEIPT_ITEMS, RECEIPT_ITEM_NAME_LIMIT, receip
 import { TierChip } from "./Inspector";
 import { VisionReviewCard } from "./VisionReview";
 import { ReceiptDetails } from "./ReceiptDetails";
-import { CardHeader } from "./ui";
+import { Disclosure } from "./ui";
 
 import { msg, type Msg, type Text } from "@/lib/i18n/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
@@ -54,6 +54,11 @@ export function SnapPanel({ onResult, items, forceLlm }: {
   const uploadInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const uploadButton = useRef<HTMLButtonElement>(null);
+  // Secondary entry: closed until the user opens it; a scan in review or a new result opens it.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (review || items.length > 0) setOpen(true);
+  }, [review, items.length]);
 
   async function handle(src: File | string, name: Text) {
     if (active.current || review) return;
@@ -98,56 +103,50 @@ export function SnapPanel({ onResult, items, forceLlm }: {
 
   const disabled = busy || !!review;
   return (
-    <section className="card min-w-0 p-5 sm:p-6">
-      <CardHeader title={t("snap.title")} className="mb-1" />
-      <p className="mb-4 text-sm text-ink-2">{t("snap.intro")}</p>
-
-      <button
-        type="button"
-        ref={uploadButton}
-        disabled={disabled}
-        aria-label={t("snap.uploadAria")}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!disabled) setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDrag(false);
-          const file = e.dataTransfer.files[0];
-          if (file) void handle(file, file.name);
-        }}
-        onClick={() => { if (!active.current) uploadInput.current?.click(); }}
-        className={`flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 py-4 text-center transition disabled:opacity-60 ${
-          drag ? "border-s1 bg-s1/5" : "border-line enabled:hover:border-ink-3"
-        }`}
-      >
-        <span className="text-xl" aria-hidden="true">📷</span>
-        <span className="mt-1 text-sm font-medium">{t("snap.drop")}</span>
-      </button>
-      <input ref={uploadInput} type="file" accept="image/*" className="hidden" onChange={pick} />
-      <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
-
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-ink-2">{t("common.separator", { first: t("snap.maxSize"), second: t("snap.subtitle") })}</p>
+    <Disclosure summary={t("ux.otherDocs")} open={open} onToggle={setOpen} testId="other-docs">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          ref={uploadButton}
+          disabled={disabled}
+          aria-label={t("snap.uploadAria")}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!disabled) setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            const file = e.dataTransfer.files[0];
+            if (file) void handle(file, file.name);
+          }}
+          onClick={() => { if (!active.current) uploadInput.current?.click(); }}
+          className={`min-w-0 flex-1 rounded-xl border-2 border-dashed px-3 py-2.5 text-center text-xs font-medium transition disabled:opacity-60 ${
+            drag ? "border-s1 bg-s1/5" : "border-line enabled:hover:border-ink-3"
+          }`}
+        >
+          <span aria-hidden="true">📷 </span>{t("snap.drop")}
+        </button>
         <button type="button" disabled={disabled}
           onClick={() => { if (!active.current) cameraInput.current?.click(); }}
           className="rounded-full border border-line px-3 py-1.5 text-xs font-medium enabled:hover:border-ink-3 disabled:opacity-50">
           {t("snap.takePhoto")}
         </button>
       </div>
+      <input ref={uploadInput} type="file" accept="image/*" className="hidden" onChange={pick} />
+      <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
       <div role="status" className="text-sm text-ink-2">
         {progress && <p className="mt-2">{tm(progress)}</p>}
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5">
+      <div className="mt-3 grid grid-cols-4 gap-1.5">
         {SAMPLES.map((s) => (
           <button type="button" key={s.id} disabled={disabled} title={t(`snap.samples.${s.id}Hint`)} aria-label={t(`snap.samples.${s.id}`)}
             onClick={() => void handle(s.file, msg(`snap.samples.${s.id}`))}
             className="min-w-0 rounded-lg border border-line p-1.5 text-left transition enabled:hover:border-ink-3 disabled:opacity-50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={s.file} alt="" className="h-12 w-full rounded object-cover object-top" />
+            <img src={s.file} alt="" className="h-9 w-full rounded object-cover object-top" />
             <div className="mt-1 truncate text-[11px] font-medium">{t(`snap.samples.${s.id}`)}</div>
           </button>
         ))}
@@ -189,7 +188,7 @@ export function SnapPanel({ onResult, items, forceLlm }: {
           ))}
         </ul>
       )}
-    </section>
+    </Disclosure>
   );
 }
 
