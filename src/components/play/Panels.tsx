@@ -135,7 +135,6 @@ export function SetupPanel(props: {
         </button>
       </div>
       {q && <p className="mt-1 text-[11px] text-ink-3">{t("prefs.count", { n: shown.length, total: props.ubsProfiles.length })}</p>}
-      <p className="mt-2 text-xs text-ink-3">{t(`play.regime.${props.regime}Hint` as MessageKey)}</p>
       <fieldset className="mt-3" data-testid="play-prefs">
         <legend className="text-xs font-medium text-ink-2">{t("prefs.title")}</legend>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -150,7 +149,6 @@ export function SetupPanel(props: {
             );
           })}
         </div>
-        <p className="mt-1.5 text-[11px] text-ink-3">{t("prefs.note")}</p>
       </fieldset>
       {o && (
         <p className="mt-1 text-xs text-ink-2">
@@ -460,7 +458,7 @@ export function LifeCard({ life, regime }: { life: LifeRecord | undefined; regim
   );
 }
 
-function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; index?: number; position: GameState; regime: RegimeId; onPlay: () => void; extra?: ReactNode }) {
+function CardTile({ id, index, position, regime, onPlay, extra, onPreview }: { id: string; index?: number; position: GameState; regime: RegimeId; onPlay: () => void; extra?: ReactNode; onPreview?: (card: string | null) => void }) {
   const i = useI18n();
   const def = cardById(id);
   const params = useMemo(() => def.params(position, REGIME[regime]), [def, position, regime]);
@@ -471,6 +469,10 @@ function CardTile({ id, index, position, regime, onPlay, extra }: { id: string; 
         onClick={onPlay}
         data-testid="play-card"
         data-card={id}
+        onMouseEnter={() => onPreview?.(id)}
+        onMouseLeave={() => onPreview?.(null)}
+        onFocus={() => onPreview?.(id)}
+        onBlur={() => onPreview?.(null)}
         aria-keyshortcuts={index ? String(index) : undefined}
         className="flex min-h-24 flex-1 flex-col items-start gap-1 rounded-lg p-1 text-left hover:bg-surface-2"
       >
@@ -501,6 +503,8 @@ export function DecisionArea(props: {
   onWhatIf: (card: string) => void;
   over: boolean;
   thinking: boolean;
+  /** Tells the board which decision is under the pointer or the focus (its piece and target are shown there). */
+  onPreview?: (card: string | null) => void;
 }) {
   const i = useI18n();
   const { t } = i;
@@ -547,7 +551,7 @@ export function DecisionArea(props: {
           <p className={`mb-3 text-xs ${props.position.check ? "font-medium text-warn" : "text-ink-3"}`}>{props.position.check ? t("threat.respond") : t("play.move.hint")}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             {cards.map((c, k) => (
-              <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} />
+              <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} onPreview={props.onPreview} />
             ))}
           </div>
           {holdAllowed && (
@@ -555,6 +559,10 @@ export function DecisionArea(props: {
               type="button"
               onClick={() => props.onPlay("hold")}
               data-testid="play-hold"
+              onMouseEnter={() => props.onPreview?.("hold")}
+              onMouseLeave={() => props.onPreview?.(null)}
+              onFocus={() => props.onPreview?.("hold")}
+              onBlur={() => props.onPreview?.(null)}
               aria-keyshortcuts="H"
               className="mt-3 flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-dashed border-line px-4 py-3 text-left hover:bg-surface-2"
             >
