@@ -74,7 +74,7 @@ async function main() {
   let replayDiff = 0;
   let shortGames = 0;
   let centreFirst = 0;
-  let castled = { w: 0, b: 0 };
+  const castled = { w: 0, b: 0 };
   let minorsOut = 0;
   let longGames = 0;
   let maxMs = 0;

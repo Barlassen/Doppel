@@ -171,8 +171,8 @@ export function ChessBoard({ line, moves, view, live, over, evalE, hand, seed, o
           </span>
           <Tray pieces={taken.b} color="w" lead={material < 0 ? -material : 0} />
         </div>
-        <div className="flex gap-1.5">
-          <div className="relative w-3.5 shrink-0 overflow-hidden rounded border border-line bg-[#2b2a27]" role="img" aria-label={t("board.evalLabel")}>
+        <div className="-mx-3.5 flex gap-1.5 sm:mx-0">
+          <div className="relative hidden w-3.5 shrink-0 sm:block overflow-hidden rounded border border-line bg-[#2b2a27]" role="img" aria-label={t("board.evalLabel")}>
             <div className="absolute inset-x-0 bottom-0 bg-[#f3f1ea] transition-[height] duration-300" style={{ height: `${pct}%` }} />
           </div>
           <div className="relative grid flex-1 grid-cols-8 grid-rows-8 overflow-hidden rounded-md border border-line select-none" style={{ aspectRatio: "1", containerType: "inline-size" }} role="grid" aria-label={t("board.boardLabel")} data-testid="play-board">

@@ -8,7 +8,7 @@ import { DEPTHS } from "@/lib/game/engine";
 import { LABEL_GLYPH, PRESETS, type MoveLabel, type PresetId, type Weights } from "@/lib/game/evaluate";
 import type { Game, LifeRecord, MoveRecord } from "@/lib/game/game";
 import { REGIME, REGIMES, type RegimeId } from "@/lib/game/regime";
-import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, incomeAt, monthlyOutflow, monthlySurplus, netWorth, pensionNet, realNetWorth, targetAt } from "@/lib/game/state";
+import { CREDIT_LINE, type GameState, bufferMonths, debtTotal, monthlyOutflow, monthlySurplus, pensionNet, realNetWorth, targetAt } from "@/lib/game/state";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { type UbsProfileSummary, ubsScenarioCatalog } from "@/lib/ubs";
@@ -72,7 +72,7 @@ export function SetupPanel(props: {
   derivedPrefs: string[];
   onPrefs: (p: string[]) => void;
 }) {
-  const { t, tm } = useI18n();
+  const { t } = useI18n();
   const o = props.opening;
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -150,13 +150,6 @@ export function SetupPanel(props: {
           })}
         </div>
       </fieldset>
-      {o && (
-        <p className="mt-1 text-xs text-ink-2">
-          <span className="font-medium text-ink">{o.profile.name}</span> · {tm(o.profile.tagline)} ·{" "}
-          {t("play.setup.opening", { nw: netWorth(o.state), net: incomeAt(o.state, 0).net, target: o.state.goal.target, age: o.state.goal.age })}
-          {debtTotal(o.state) > 0 && <> · {t("play.setup.debt", { amount: debtTotal(o.state) })}</>}
-        </p>
-      )}
     </section>
   );
 }
@@ -356,7 +349,6 @@ export function PositionPanel({ position: p, profile, turn, regime, seed }: { po
         </div>
       )}
       <IndependenceLine position={p} regime={regime} seed={seed} />
-      <p className="mt-2 text-[11px] text-ink-3">{t("play.position.startChf")}</p>
     </section>
   );
 }
@@ -514,7 +506,6 @@ export function DecisionArea(props: {
     return (
       <section className="card p-4 sm:p-5" aria-labelledby="play-whatif">
         <CardHeader title={<span id="play-whatif">{t("play.moves.whatIf")}</span>} />
-        <p className="mb-3 text-xs text-ink-3">{t("play.moves.whatIfHint", { turn: r.move.turn + 1 })}</p>
         {!r.analysis && <p className="text-sm text-ink-3 pulse-soft">{t("play.move.reviewing")}</p>}
         <div className="grid gap-3 sm:grid-cols-2">
           {cands.map((c) => {
@@ -548,7 +539,7 @@ export function DecisionArea(props: {
         <p className="text-sm text-ink-2">{t("play.move.over")}</p>
       ) : (
         <>
-          <p className={`mb-3 text-xs ${props.position.check ? "font-medium text-warn" : "text-ink-3"}`}>{props.position.check ? t("threat.respond") : t("play.move.hint")}</p>
+          {props.position.check && <p className="mb-3 text-xs font-medium text-warn">{t("threat.respond")}</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             {cards.map((c, k) => (
               <CardTile key={c} id={c} index={k + 1} position={props.position} regime={props.regime} onPlay={() => props.onPlay(c)} onPreview={props.onPreview} />
@@ -711,7 +702,6 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
             ))}
           </div>
           {r.card !== best.card && <ScoreBreakdown mine={mine} best={best} weights={weights} />}
-          {r.card !== best.card && <p className="mt-2 text-xs text-ink-2">{t("play.explain.scoreVsRings", { age: a.horizonAge })}</p>}
           <div className="mt-4">
             <div className="label mb-2">{t("play.review.donutTitle")}</div>
             <div className={`grid gap-3 ${r.card !== best.card ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -720,7 +710,6 @@ export function AnalysisPanel({ info, compare, onCompare, engineMs, weights }: {
               ))}
             </div>
             <DonutTable you={mine.donut} best={best.donut} showBest={r.card !== best.card} />
-            <p className="mt-2 text-[11px] text-ink-3">{t("play.review.donutNote", { age: a.horizonAge })}</p>
           </div>
           <LuckMeter luck={info.luck} bucket={info.move.market} />
           <p className="mt-3 text-[11px] text-ink-3">
@@ -797,7 +786,6 @@ export function MoveList({ moves, san, view, onView, mainLine, onMain, onExport 
           {t("play.moves.latest")}
         </button>
       )}
-      <p className="mt-3 text-[11px] text-ink-3">{t("play.keys")}</p>
     </section>
   );
 }
@@ -852,7 +840,6 @@ function GameRating({ game }: { game: Game }) {
           {t("fi.rating.yourNetWorth", { nw: rating.player.kind === "mated" ? 0 : rating.player.netWorth })}
         </p>
       )}
-      <p className="mt-2 text-[11px] text-ink-3">{t("fi.rating.formula")}</p>
     </div>
   );
 }
@@ -886,7 +873,6 @@ export function EndReview({ game, moves }: { game: Game; moves: MoveInfo[] }) {
           <div className="num font-serif text-3xl leading-tight text-ink">{fmt.chfShort(realNetWorth(last))}</div>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-ink-3">{t("play.end.accuracyNote")}</p>
       <GameRating game={game} />
       <div className="mt-3 flex flex-wrap gap-1.5">
         {[...counts.entries()].map(([label, n]) => (
