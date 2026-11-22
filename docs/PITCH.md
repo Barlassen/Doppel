@@ -10,29 +10,29 @@ Before going on stage: `npm run build && npm start` with `OPENROUTER_API_KEY` in
 
 Click: switch the header account to Meriç.
 
-On screen: Meriç, 27, Lausanne, CHF 92k gross, goal CHF 400k net worth by 40 with a flat in Renens. Headline 9%. "Disciplined you" 25%. Behaviour card.
+On screen: Meriç, 27, Lausanne, CHF 92k gross, goal CHF 400k net worth by 40 with a flat in Renens. Headline 59%. "Disciplined you" 75%. Behaviour card.
 
 Points to make:
-- The 9% and the 25% are the same person in the same simulated markets. The difference is her habits, taken from five months of (fictional) transactions and trades.
-- The behaviour card finds a payday spending spike of 1.8x, 5 subscriptions (two video and two music services overlap), food delivery 8 times a month, and that she sold 37% of her equities in the August 2026 drawdown. Payday spending costs 14 points. Median cost by age 40: CHF 25,100. Her flat is priced in today's CHF (CHF 540,000) and costs CHF 582,000 at the purchase date in five years; the bank lends in 12% of futures.
-- Switch to Barlas (on track, 91%) and Oktay (off track, 0%) to show that every screen follows the account's own data.
+- The 59% and the 75% are the same person in the same simulated markets. The difference is her habits, taken from five months of (fictional) transactions and trades.
+- The behaviour card finds a payday spending spike of 1.8x, 5 subscriptions (two video and two music services overlap), food delivery 8 times a month, and that she sold 37% of her equities in the August 2026 drawdown. Payday spending costs 17 points. Median cost by age 40: CHF 33,000. Her flat is priced in today's CHF (CHF 510,000) and costs CHF 550,000 at the purchase date in five years; the bank lends in 85% of futures.
+- Switch to Barlas (on track, 92%) and Oktay (off track, 0%) to show that every screen follows the account's own data.
 - No model was called. This is 1,000 Monte Carlo paths in TypeScript.
 
-Source: `scripts/engine-check.ts` prints 8.7% / 24.8%, leakage −14.2 pp, home bought in 12.1% of futures. Spike 1.82x, 5 subscriptions and CHF 25,089 come from `analyzeBehavior()` and `ideal.medianAtGoal − real.medianAtGoal` (`src/components/DoppelApp.tsx`, `behaviorCost`).
+Source: `scripts/engine-check.ts` prints 58.7% / 75.3%, leakage −16.8 pp, home bought in 84.5% of futures. Spike 1.82x, 5 subscriptions and CHF 33,001 come from `analyzeBehavior()` and `ideal.medianAtGoal − real.medianAtGoal` (`src/components/DoppelApp.tsx`, `behaviorCost`).
 
 ### 2. Snap a flat listing (about 40 s)
 
 Click: sample **Listing** (4.5 rooms, 8050 Zürich, CHF 940,000). A review card appears with route "Local regex" and the OCR confidence. Click **Add to twin**.
 
-On screen: odds go from 9% to 0%. The bank affordability card turns red.
+On screen: odds go from 59% to 0%. The bank affordability card turns red.
 
 Points to make:
 - The listing was read by local OCR and regex. Zero tokens, nothing left the browser.
 - Nothing entered the twin until Meriç confirmed the fields.
-- The card runs the Swiss affordability rule (5% stress rate, 1% upkeep, amortisation, at most a third of gross income). At the purchase date the home costs CHF 1,013,000 (CHF 940,000 today, grown with home prices) and her cost would be 73% of gross income. She is CHF 115,533 a year short; the most she could buy then is CHF 563,000.
+- The card runs the Swiss affordability rule (5% stress rate, 1% upkeep, amortisation, at most a third of gross income). At the purchase date the home costs CHF 1,013,000 (CHF 940,000 today, grown with home prices) and her cost would be 73% of gross income. She is CHF 115,129 a year short; the most she could buy then is CHF 565,000.
 - The same function runs inside every simulated future. In none of them does the bank lend, so the goal fails in all of them.
 
-Source: `engine-check.ts` "after snapping the 940k Zürich listing": card FAIL 72.7%, max price CHF 563,000, bought in 0.0% of futures. The CHF 115,533 is `incomeGap` from `tragbarkeit()` in `src/lib/finance/swissRules.ts`. Browser route: `scripts/browser-smoke.mjs` asserts the listing resolves via `local-regex`.
+Source: `engine-check.ts` "after snapping the 940k Zürich listing": card FAIL 72.6%, max price CHF 565,000, bought in 0.0% of futures. The CHF 115,129 is `incomeGap` from `tragbarkeit()` in `src/lib/finance/swissRules.ts`. Browser route: `scripts/browser-smoke.mjs` asserts the listing resolves via `local-regex`.
 
 ### 3. Find my path (about 20 s)
 
@@ -40,10 +40,10 @@ Point at the **Find my path** card.
 
 Points to make:
 - The solver searches a fixed set of levers (spending cut, investing idle cash, delaying the purchase, delay plus cut). With the CHF 940k listing no lever reaches the goal, and the card says "improves to" instead of pretending it solves the problem.
-- Remove the listing (✕ on the timeline) to go back to her flat in Renens. Now two recipes reach 80%: spend CHF 470 a month less (83%), or buy 18 months later and spend CHF 400 a month less (82%). Investing the CHF 3k idle cash and maxing out 3a improves the odds to 50%; buying 18 months later alone to 48%. They are the best of those levers, not a proof that no better plan exists.
+- Remove the listing (✕ on the timeline) to go back to her flat in Renens. Now two recipes reach 80%: invest the CHF 3k idle cash and max out 3a (86%), or spend CHF 210 a month less (82%). They are the best of those levers, not a proof that no better plan exists.
 - Each recipe is re-scored on the same 1,000 paths as the headline, so after **Apply** the headline shows the same number. Plan A stays on the chart as a dotted line.
 
-Source: `engine-check.ts` lists Meriç's recipes with "applied headline 83.3% ✓ consistent" and "82.4% ✓ consistent", and after the listing "improves to 0.0%".
+Source: `engine-check.ts` lists Meriç's recipes with "applied headline 86.1% ✓ consistent" and "82.0% ✓ consistent", and after the listing "improves to 0.0%".
 
 ### 4. One what-if (about 15 s)
 

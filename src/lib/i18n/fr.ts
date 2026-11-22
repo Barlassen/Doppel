@@ -1872,6 +1872,7 @@ export const fr = {
       eduTuition: "Taxes d’études",
       workloadIncome: "Variation du revenu due au taux d’activité",
       selfIncome: "Variation du revenu due à l’activité indépendante",
+      carLoan: "Mensualité du crédit auto ({months} mois)",
     },
     oneOff: {
       carPurchase: "Achat de la voiture",
@@ -1879,6 +1880,7 @@ export const fr = {
       carSale: "Vente de la voiture",
       partnerSavings: "Épargne du ou de la partenaire",
       movingCost: "Frais de déménagement",
+      carDownPayment: "Acompte pour la voiture",
     },
     alt: {
       university: "Voie des hautes écoles",
@@ -1910,6 +1912,7 @@ export const fr = {
       sabbaticalEnd: "Fin du congé sabbatique",
       selfStart: "Activité indépendante",
       selfEnd: "Fin de l’activité indépendante",
+      carLoanEnd: "Crédit auto remboursé",
     },
     need: {
       partnerIncome: "Salaire net du ou de la partenaire par mois",
@@ -1925,6 +1928,13 @@ export const fr = {
       eduRaise: "Variation du salaire après le diplôme",
       selfIncome: "Revenu net tiré de l’entreprise",
       selfVolatility: "Variation du revenu de l’entreprise d’une année à l’autre",
+      carLoanRate: "Taux d’intérêt du crédit auto",
+      title: "Cette décision a besoin de vos chiffres",
+      blocked: "Pas encore appliqué. Il manque : {items}",
+    },
+    recipe: {
+      carToGaTitle: "Abonnement général à la place de la voiture",
+      carToGaDetail: "La voiture coûte environ {car:chf} par mois, un abonnement général {ga:chf} : {saving:chf} par mois restent dans le budget.",
     },
     examples: {
       car: "Acheter une voiture pour 35k en 2027",

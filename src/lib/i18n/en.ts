@@ -1861,6 +1861,7 @@ export const en = {
       eduTuition: "Tuition",
       workloadIncome: "Income change from the workload",
       selfIncome: "Income change from self-employment",
+      carLoan: "Car loan instalment ({months} months)",
     },
     oneOff: {
       carPurchase: "Car purchase",
@@ -1868,6 +1869,7 @@ export const en = {
       carSale: "Sale of the car",
       partnerSavings: "Partner's savings",
       movingCost: "Moving costs",
+      carDownPayment: "Down payment for the car",
     },
     alt: {
       university: "University track",
@@ -1899,6 +1901,7 @@ export const en = {
       sabbaticalEnd: "Sabbatical ends",
       selfStart: "Self-employed",
       selfEnd: "Self-employment ends",
+      carLoanEnd: "Car loan repaid",
     },
     need: {
       partnerIncome: "Partner's take-home pay per month",
@@ -1914,6 +1917,13 @@ export const en = {
       eduRaise: "Salary change after the degree",
       selfIncome: "Take-home pay from the business",
       selfVolatility: "How much the business income varies from year to year",
+      carLoanRate: "Interest rate of the car loan",
+      title: "This decision needs your figures",
+      blocked: "Not applied yet. Missing: {items}",
+    },
+    recipe: {
+      carToGaTitle: "GA travelcard instead of the car",
+      carToGaDetail: "The car costs about {car:chf} a month, a GA {ga:chf}: {saving:chf} a month stay in the budget.",
     },
     examples: {
       car: "Buy a car for 35k in 2027",

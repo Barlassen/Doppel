@@ -26,7 +26,8 @@ import {
   effectiveTaxRate,
 } from "./pension";
 import { debtSchedule } from "./debt";
-import { HEALTH_EXCESS_GROWTH, defaultHealthPremium, premiumDrift } from "./canton";
+import { HEALTH_EXCESS_GROWTH, premiumDrift } from "./canton";
+import { healthPremiumOf } from "./investBehavior";
 import { BASELINE_REGIME, ECONOMIES, economyYears, resolveEconomy, type EconomyRegime } from "./economy";
 import { compileLife } from "./life";
 import { BASELINE, PENSION, TRANSMISSION } from "./params";
@@ -116,6 +117,7 @@ const SALT_BEHAVIOUR = 0x5bd1e995;
 const SALT_JOB = 0x27d4eb2d;
 const SALT_LIFE = 0x165667b1;
 const SALT_SELF = 0x2c1b3c6d;
+const SALT_SHOCK = 0x7f4a7c15;
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
@@ -224,7 +226,8 @@ export function simulate(input: SimInput): SimResult {
   const baseMonthly = Math.max(p.rentMonth, p.expensesMonth + (input.expenseDelta ?? 0));
   // What the engine really applies: spending cannot be cut below the rent.
   const expenseDeltaApplied = baseMonthly - p.expensesMonth;
-  const premium = p.healthPremiumMonth ?? defaultHealthPremium(p);
+  // The person's own premium when the profile or its statements have one, else the canton's mean (investBehavior.ts).
+  const premium = healthPremiumOf(p).value;
   // Already retired at the start: today's spending already is retirement spending.
   const retSpending = p.retirementAge <= p.age ? 1 : A.retirementSpending;
   const bvgInsured = p.bvgInsured !== false;
@@ -279,7 +282,8 @@ export function simulate(input: SimInput): SimResult {
     const lifeOne = hasLife ? new Float64Array(months) : null;
     if (hasLife) {
       for (const l of life.lines) {
-        if (l.structural || l.alt !== undefined) continue;
+        // Lines fixed in nominal CHF (loan instalments) are added below, once the price index is known.
+        if (l.structural || l.alt !== undefined || l.fixedFrom !== undefined) continue;
         const target = l.flow === "expense" ? lifeExp! : lifeInc!;
         for (let m = 0; m < months; m++) target[m] += l.monthly[m];
       }
@@ -420,6 +424,28 @@ export function simulate(input: SimInput): SimResult {
   }
   if (want && hasLife) for (const o of life.oneOffs) if (o.month >= 0 && o.month < months) dOneOffs.push({ month: o.month, amount: o.amount, label: o.label, eventId: o.eventId, kind: o.kind });
 
+  // Contracts of life decisions fixed in nominal CHF (a car loan): instalments, what a bank counts as debt service
+  // (loan and leasing instalments), and the outstanding loan balance as a liability.
+  const startPriceAt = (m: number) => (m > 0 ? priceIdx[Math.min(months, m) - 1] : 1);
+  let lifeService: Float64Array | null = null;
+  let lifeDebt: Float64Array | null = null;
+  if (hasLife) {
+    for (const l of life.lines) {
+      if (l.structural || l.alt !== undefined) continue;
+      const fixed = l.fixedFrom !== undefined ? startPriceAt(l.fixedFrom) : 0;
+      if (fixed) for (let m = 0; m < months; m++) baseExp[m] += l.monthly[m] * fixed;
+      if (l.obligation) {
+        lifeService ??= new Float64Array(months);
+        for (let m = 0; m < months; m++) lifeService[m] += l.monthly[m] * (fixed || priceIdx[m]);
+      }
+    }
+    for (const loan of life.loans) {
+      lifeDebt ??= new Float64Array(months);
+      const fixed = startPriceAt(loan.fromMonth);
+      for (let m = 0; m < months; m++) lifeDebt[m] += loan.balance[m] * fixed;
+    }
+  }
+
   // Outcomes drawn per future (a child's track): net cost of each outcome, nominal.
   const nAlt = hasLife ? life.alternatives.length : 0;
   const altTrue: Float64Array[] = [];
@@ -437,6 +463,7 @@ export function simulate(input: SimInput): SimResult {
     altFalse.push(f);
   }
   const altHits = new Array<number>(nAlt).fill(0);
+  const anyShock = !acc && (crash.some((c) => c === 1) || econ.shocks.size > 0);
   const anySelfVol = hasLife && life.selfVol.some((v) => v > 0);
 
   // AHV of the household in today's CHF: the user's pension, plus the partner's (a married couple is capped).
@@ -490,6 +517,8 @@ export function simulate(input: SimInput): SimResult {
     const randn = normalSampler(mulberry32(ps));
     // Separate stream for behavioural coin-flips so "ideal" and "real" twins see the same markets.
     const brand = mulberry32(ps ^ SALT_BEHAVIOUR);
+    // The reaction to a crash event or a scenario shock has its own coin, so those never move the other coin flips.
+    const crand = behavior && anyShock ? mulberry32(ps ^ SALT_SHOCK) : null;
     // More separate streams: the economy's job-loss risk, drawn life outcomes, self-employed income luck.
     const jrand = anyJobRisk ? mulberry32(ps ^ SALT_JOB) : null;
     const srandn = anySelfVol ? normalSampler(mulberry32(ps ^ SALT_SELF)) : null;
@@ -504,6 +533,9 @@ export function simulate(input: SimInput): SimResult {
     let cash = p.cash;
     let port = p.portfolio;
     let parked = 0; // panic-sold money waiting in cash
+    let parkedC = 0; // sold in the panic after a crash event or scenario shock
+    let reentryC = 0;
+    let outC = 0;
     let p3a = p.pillar3a;
     let p2 = p.pillar2;
     let homeValue = 0;
@@ -536,10 +568,10 @@ export function simulate(input: SimInput): SimResult {
       k === "netWorth"
         ? nwNow
         : k === "cash"
-          ? (cash + parked) / priceNow
+          ? (cash + parked + parkedC) / priceNow
           : k === "liquid"
-            ? (cash + parked + port) / priceNow
-            : (cash + parked + port + p3a) / priceNow;
+            ? (cash + parked + parkedC + port) / priceNow
+            : (cash + parked + parkedC + port + p3a) / priceNow;
     let goalWorth = goalYear === 0 ? valueOf(metric, nw[row], 1) : 0;
     for (let g = 0; g < listed.length; g++) if (listed[g].year === 0) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row], 1);
 
@@ -557,7 +589,9 @@ export function simulate(input: SimInput): SimResult {
       // --- markets (same draws for every scenario on this path; none in accounting mode) ---
       // The equity draw is always consumed, so a crash month replaces one return and leaves every other draw alone.
       const zE = acc ? 0 : randn();
-      const rE = acc ? 0 : crash[m] ? A.crashShock : shock[m] === shock[m] ? shock[m] : eMuM[m] + eSdM[m] * zE;
+      // rN = the month's drawn return; rE = what the market really does (a crash or shock replaces the draw).
+      const rN = acc ? 0 : eMuM[m] + eSdM[m] * zE;
+      const rE = acc ? 0 : crash[m] ? A.crashShock : shock[m] === shock[m] ? shock[m] : rN;
       const rB = acc ? 0 : bMuM[m] + bSdM[m] * randn();
       const rH = acc ? 0 : hMuM[m] + hSdM[m] * randn();
       if (m % 12 === 0) {
@@ -583,7 +617,9 @@ export function simulate(input: SimInput): SimResult {
         }
       }
       const luck = fixedIncome[m] ? 1 : wf;
-      idx *= 1 + rE;
+      // The index behind the ordinary panic episodes follows the drawn returns only. A crash event therefore cannot
+      // use up (or move) an episode the same future has without it: it adds its own reaction below and nothing else.
+      idx *= 1 + rN;
       if (idx > peak) {
         peak = idx;
         episodeUsed = false;
@@ -591,6 +627,7 @@ export function simulate(input: SimInput): SimResult {
       const cashM = cashRM[m];
       port *= 1 + wE * rE + (1 - wE) * rB;
       parked *= 1 + cashM;
+      if (parkedC > 0) parkedC *= 1 + cashM;
       p3a *= 1 + P3A_EQUITY_WEIGHT * rE + (1 - P3A_EQUITY_WEIGHT) * rB;
       if (m < retireMonth) p2 *= 1 + p2RM[m];
       cash *= 1 + (cash > 0 ? cashM : overdraftM);
@@ -613,10 +650,26 @@ export function simulate(input: SimInput): SimResult {
           outMonths = 0;
         }
       }
+      // The same habit after a crash event or scenario shock: sell at the bottom, come back once the market has
+      // regained its level from before the crash (idx / (1 + rE) on the drawn-return index).
+      if (parkedC > 0) {
+        outC++;
+        if (outC >= (behavior?.panicOutMonths ?? 6) && idx >= reentryC) {
+          port += parkedC;
+          parkedC = 0;
+        }
+      }
+      if (crand && rE !== rN && rE <= -A.panicDrawdown && crand() < behavior!.panicSellProb) {
+        const sold = port * behavior!.panicSellShare;
+        port -= sold;
+        parkedC += sold;
+        reentryC = Math.max(reentryC, idx / (1 + rE));
+        outC = 0;
+      }
 
       // --- retirement transition ---
       if (m === retireMonth) {
-        liquidAtRet.push((cash + port + parked + p3a) / price);
+        liquidAtRet.push((cash + port + parked + parkedC + p3a) / price);
         p2AtRet = p2;
         bvgMonthly = (p2 * conversion) / 12;
         bvgReal.push(bvgMonthly / price);
@@ -654,21 +707,21 @@ export function simulate(input: SimInput): SimResult {
       // --- home purchase: the bank test runs at the purchase date with this future's equity & salary ---
       if (house && m === house.month) {
         const buffer = BUFFER_MONTHS * expenses;
-        const hardAvail = Math.max(0, cash - buffer) + parked + port + p3a;
+        const hardAvail = Math.max(0, cash - buffer) + parked + parkedC + port + p3a;
         const gross = retired ? (bvgMonthly + (m >= ahvMonth ? ahvToday * price : 0)) * 12 : grossNow;
         hardAtPurchase.push(hardAvail);
         grossAtPurchase.push(gross);
         p2AtPurchase.push(p2);
-        // Banks count the payments on other loans against the same third of income.
-        const otherDebtYear = debt ? debt.service[m] * 12 : 0;
-        if (debt) otherDebtAtPurchase.push(otherDebtYear);
+        // Banks count the payments on other loans (and leasing) against the same third of income.
+        const otherDebtYear = (debt ? debt.service[m] * 12 : 0) + (lifeService ? lifeService[m] * 12 : 0);
+        if (debt || lifeService) otherDebtAtPurchase.push(otherDebtYear);
         const plan = tragbarkeit({
           price: housePrice,
           grossIncomeYear: gross,
           hardEquityAvailable: hardAvail,
           pillar2Available: p2,
           closingRate,
-          ...(debt ? { otherDebtYear } : {}),
+          ...(debt || lifeService ? { otherDebtYear } : {}),
           // The imputed rate is the bank's 5%, or the market rate when that is higher.
           ...(mortRate[m] > STRESS_RATE ? { stressRate: mortRate[m] } : {}),
         });
@@ -682,6 +735,9 @@ export function simulate(input: SimInput): SimResult {
           const fromParked = Math.min(need, parked);
           parked -= fromParked;
           need -= fromParked;
+          const fromParkedC = Math.min(need, parkedC);
+          parkedC -= fromParkedC;
+          need -= fromParkedC;
           const fromPort = Math.min(need, port);
           port -= fromPort;
           need -= fromPort;
@@ -759,6 +815,9 @@ export function simulate(input: SimInput): SimResult {
         const a = Math.min(parked, need);
         parked -= a;
         need -= a;
+        const ac = Math.min(parkedC, need);
+        parkedC -= ac;
+        need -= ac;
         const b = Math.min(port, need);
         port -= b;
         need -= b;
@@ -781,15 +840,16 @@ export function simulate(input: SimInput): SimResult {
         trace.p3a.push(p3a);
       }
       if (cashAll) {
-        cashAll[path * months + m] = (cash + parked) / price;
-        liquidAll![path * months + m] = (cash + parked + port) / price;
+        cashAll[path * months + m] = (cash + parked + parkedC) / price;
+        liquidAll![path * months + m] = (cash + parked + parkedC + port) / price;
       }
 
       if (m % 12 === 11) {
         const y = (m + 1) / 12;
         const p2Value = retired ? p2AtRet * Math.max(0, 1 - (m + 1 - retireMonth) / (fullMonths - retireMonth)) : p2;
-        const assets = cash + port + parked + p3a + p2Value + (owner ? homeValue - mortgage : 0);
+        const assets = cash + port + parked + parkedC + p3a + p2Value + (owner ? homeValue - mortgage : 0);
         nw[row + y] = (debt ? assets - debt.balance[m] : assets) / price;
+        if (lifeDebt) nw[row + y] -= lifeDebt[m] / price;
         if (y === Math.min(years, goalYear)) goalWorth = valueOf(metric, nw[row + y], price);
         for (let g = 0; g < listed.length; g++) if (listed[g].year === y) goalVals[g][path] = valueOf(listed[g].g.metric ?? "netWorth", nw[row + y], price);
       }
@@ -838,7 +898,7 @@ export function simulate(input: SimInput): SimResult {
       closingRate,
       medianEquityAtPurchase: median(equityIn),
       medianLoan: median(loans),
-      ...(debt ? { medianOtherDebtYear: median(otherDebtAtPurchase) } : {}),
+      ...(debt || lifeService ? { medianOtherDebtYear: median(otherDebtAtPurchase) } : {}),
       ...(mortRate[house.month] !== ACTUAL_MORTGAGE_RATE ? { mortgageRate: mortRate[house.month] } : {}),
     };
   }
@@ -887,7 +947,7 @@ export function simulate(input: SimInput): SimResult {
       push({ id: "pension", kind: "pension", flow: "income", label: { key: "outlook.line.pension" }, monthly: pension });
     }
     push({ id: "rent", kind: "rent", flow: "expense", label: { key: "outlook.line.rent" }, monthly: dRent! });
-    push({ id: "health", kind: "health", flow: "expense", label: { key: "outlook.line.health" }, monthly: dHealth!, provenance: p.healthPremiumMonth === undefined ? "derived" : undefined });
+    push({ id: "health", kind: "health", flow: "expense", label: { key: "outlook.line.health" }, monthly: dHealth!, provenance: healthPremiumOf(p).provenance });
     push({ id: "living", kind: "living", flow: "expense", label: { key: "outlook.line.living" }, monthly: dLiving! });
     if (debt) {
       const d = new Float64Array(months);
@@ -936,7 +996,9 @@ export function simulate(input: SimInput): SimResult {
       for (const l of life.lines) {
         // A line of a drawn outcome is shown at its expected value (probability × amount).
         const prob = l.alt === undefined ? 1 : l.altWhen ? life.alternatives[l.alt].prob : 1 - life.alternatives[l.alt].prob;
-        const monthly = prob === 1 ? l.monthly : l.monthly.map((v) => v * prob);
+        // A line fixed in nominal CHF is shown in today's CHF: it shrinks as prices rise.
+        const fixed = l.fixedFrom !== undefined ? startPriceAt(l.fixedFrom) : 0;
+        const monthly = fixed ? l.monthly.map((v, m) => (v * fixed) / priceIdx[m]) : prob === 1 ? l.monthly : l.monthly.map((v) => v * prob);
         // The partner's salary is its own income line; the other structural lines repeat what "income" or "rent"
         // already contain and are marked `info` (shown, never added again).
         const partnerIncome = l.kind === "partner" && !!l.structural && l.flow === "income";

@@ -203,6 +203,7 @@ export const CAR = {
   leaseTermYears: p(4, "years", "2025–2026", "TCS: leasing terms of 3–5 years (midpoint)", "derived", TCS),
   leaseBudgetShare: p(0.5, "share", "2025–2026", "TCS rule of thumb: down payment + instalments ≤ 50% of the list price over the term", "doppel_default", TCS),
   untilAge: p(80, "years", "default", "REAL_WORLD_FACTORS §2.2 C: car costs stop at age 80", "doppel_default", undefined, true),
+  loanTermMonths: p(60, "months", "default", `${DOPPEL}: term of a consumer loan (the same default as debt.ts; Swiss consumer loans run 12–84 months)`, "doppel_default"),
   gaSecondYear: p(4095, "CHF/year", "from Dec 2026", "SBB / Alliance SwissPass: GA Travelcard adult, 2nd class (3,995 until Dec 2026)", "doppel_default", SBB_GA),
   gaFirstYear: p(6770, "CHF/year", "from Dec 2026", "SBB / Alliance SwissPass: GA Travelcard adult, 1st class (6,520 until Dec 2026)", "doppel_default", SBB_GA),
   halfFareYear: p(195, "CHF/year", "from Dec 2026", "SBB / Alliance SwissPass: Half-Fare Travelcard adult (190 until Dec 2026)", "doppel_default", SBB_HT),

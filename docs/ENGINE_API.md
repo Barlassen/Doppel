@@ -21,7 +21,9 @@ Verification: `npx tsx scripts/engine-regression.ts` (one check per item below) 
 | `src/lib/finance/life.ts` | `compileLife()`, `carVsTransit()`, `kitaDailyTariff()`, `REQUIRED_INPUTS`. |
 | `src/lib/finance/outlook.ts` | `outlook()` and its result types. |
 | `src/lib/finance/types.ts` | `Decision` and its seven payloads, `LifeEvent.decision`, `SimInput.economy`, `SimInput.detail`, `SimDetail`, `BudgetLine`. |
-| `src/lib/twin/actions.ts` | `Op.add.decision`, `set economy`, `validateDecision()`, `DECISION_BOUNDS`, `DECISION_CARRIER`, `minExpenseDelta()`. |
+| `src/lib/twin/actions.ts` | `Op.add.decision`, `set economy`, `validateDecision()`, `DECISION_BOUNDS`, `DECISION_CARRIER`, `minExpenseDelta()`, `applyScenarioOpsChecked()`, `updateDecision()`. |
+| `src/lib/twin/facts.ts` | `outlookFacts()`: the facts object for the `ask` task, built from an `outlook()` result. |
+| `src/app/api/twin/commandOps.ts` | The `command` prompt and the server-side check of the model's ops. |
 | `src/lib/twin/intents/life.ts` | The shared parser logic for decisions; each language file passes its vocabulary. |
 | `src/lib/i18n/*.ts` | New groups `economy`, `life`, `outlook` (all four languages). |
 
@@ -53,7 +55,7 @@ Every payload field is optional. A missing value uses the sourced default of `pa
 | Decision | Fields (all optional unless marked) | Sourced defaults | Asked from the user (`inputsNeeded`) |
 |---|---|---|---|
 | `child` | `ageYears`, `kitaDaysPerWeek`, `kitaDailyChf`, `tertiaryTrack` (`auto` \| `university` \| `apprenticeship`), `uniLivesAway`, `uniProb`, `directMonthly`, `parentWorkloadPct` + `parentWorkloadMonths` | direct cost 850 / 950 / 1'200 by age (BFS HABE), daycare 3 days at CHF 120 (City of Zürich income ramp 25–120 in ZH), family allowances of all 26 cantons (BSV), child deduction 6'800 + CHF 263 and childcare deduction up to 25'000 (ESTV), university 43% (BFS), tuition 1'460/yr (ETH), student living 1'500 / 700 | – (a parent's reduced workload is only applied when both fields are given) |
-| `car` | **`mode`** (`owned` \| `leased` \| `ga`), `price`, `annualKm`, `replaceYears`, `resaleShare`, `leaseMonthly`, `fixedMonthly`, `variablePerKm`, `replacesMonthly`, `gaClass`, `durationMonths` | price 45'000, 12'000 km, insurance + road tax + parking 310 (owned) / 280 (leased), CHF 0.276/km for fuel or electricity, tyres and maintenance (TCS 2026), replacement after 10 years at 20% resale, lease = 50% of the price over 4 years (TCS rule), GA 4'095 / 6'770 a year (SBB) | – |
+| `car` | **`mode`** (`owned` \| `leased` \| `ga`), `price`, `annualKm`, `replaceYears`, `resaleShare`, `leaseMonthly`, `fixedMonthly`, `variablePerKm`, `replacesMonthly`, `gaClass`, `durationMonths`, `financed`, `downPayment`, `loanRate`, `loanTermMonths` | price 45'000, 12'000 km, insurance + road tax + parking 310 (owned) / 280 (leased), CHF 0.276/km for fuel or electricity, tyres and maintenance (TCS 2026), replacement after 10 years at 20% resale, lease = 50% of the price over 4 years (TCS rule), GA 4'095 / 6'770 a year (SBB), loan term 60 months | the loan's interest rate, when `financed` |
 | `partner` | `married`, `netIncomeMonth`, `grossIncomeYear`, `expensesMonth`, `rentMonth`, `taxDeltaYear`, `savings` | gross derived from net; a married couple's AHV capped at 150% (AHVG Art. 35) | partner's income, added living costs, shared rent, tax change of the marriage |
 | `move` | `canton`, `city`, `rentMonth`, `movingCost` | income-tax index and mean health premiums of the cantons (`canton.ts`) | new rent, moving cost; the tax difference when a canton has no tax data |
 | `education` | `program` (`master` \| `bachelor` \| `other`), `tuitionYear`, `durationMonths`, `workloadPct`, `raiseAfterYear` | tuition 1'460/yr, 24 / 36 months | workload while studying, salary change afterwards; for `other` also tuition and length |
@@ -66,6 +68,8 @@ What the engine does with each decision, month by month:
 
 - **Child**: direct cost by age band (a second child costs less), daycare from age 0.5 to 4.5, child allowance until 16 and education allowance while in training (both after tax), the tax saved by the child and childcare deductions, then from 16 either an apprenticeship (cost falls by half the apprentice wage, independent at 19) or the way to university (school until 19, then tuition and living costs until 24). With `tertiaryTrack: "auto"` the track is drawn once per simulated future on its own random stream, so markets are unchanged.
 - **Car**: purchase one-off, replacement every `replaceYears` net of resale, sale at the end; monthly fixed and per-km costs until age 80. Leased: instalment instead of the purchase. `ga`: the travelcard's yearly price. A car is not counted as an asset in net worth.
+  - **Financed** (`financed: true`): the first purchase is paid with a down payment and a loan. The instalment is the annuity `P × r / (1 − (1 + r)^−n)` with `r = loanRate / 12`; it is fixed in the CHF of the purchase date (it shrinks in today's CHF), the outstanding balance is a liability in net worth until it is repaid, and `LifePlan.loans[]` holds payment, total interest and the balance by month. Replacements are paid from savings. Without `loanRate` the loan is costed at 0% and the rate is listed in `inputsNeeded`.
+  - Loan and leasing instalments are debt obligations: a later home purchase counts them in the bank's one-third test (`house.medianOtherDebtYear`).
 - **Partner**: the partner's salary until the user retires (same retirement date assumed), their own pension-fund credits, their AHV, the couple cap if married. Rent and living costs as given.
 - **Move**: new rent from the move on, the canton's tax and premium level, a one-off moving cost.
 - **Education**: tuition for the duration, the workload kept while studying, a salary change afterwards.
@@ -77,7 +81,7 @@ What the engine does with each decision, month by month:
 ```ts
 compileLife(profile: Profile, events: readonly LifeEvent[], months: number, retireMonth: number): LifePlan
 ```
-Pure. `simulate()` calls it itself; call it directly only to list lines, markers, `inputsNeeded` or `params` without simulating. `LifePlan.lines[]` are `{ id, eventId, kind, flow, label: Msg, monthly: Float64Array, provenance, source?, url?, estimate?, structural?, alt?, altWhen? }`. `LifePlan.params[]` lists every value used with `provenance` (`doppel_default` | `derived` | `user`), `source` and `asOf`.
+Pure. `simulate()` calls it itself; call it directly only to list lines, markers, `inputsNeeded` or `params` without simulating. `LifePlan.lines[]` are `{ id, eventId, kind, flow, label: Msg, monthly: Float64Array, provenance, source?, url?, estimate?, structural?, alt?, altWhen?, fixedFrom?, obligation? }` (`fixedFrom` = a contract fixed in the CHF of that month, i.e. a loan instalment; `obligation` = counted as debt service by the bank test). `LifePlan.params[]` lists every value used with `provenance` (`doppel_default` | `derived` | `user`), `source` and `asOf`.
 
 ```ts
 carVsTransit(d?: Partial<CarDecision>): { mode, carMonthly, fixed, running, capital, gaMonthly, halfFareMonthly, differenceMonthly }
@@ -101,6 +105,25 @@ type Op =
 
 `validateOps()` validates the payload, sets the carrier type and the shown amount. `applyOps()` copies `decision` onto the event; a new partner or self-employment replaces the old one. `applyScenarioOps(s, ops, source, { profile })` takes an optional profile: with it a spending cut is limited to what the engine can apply (`minExpenseDelta()`, not below the rent).
 
+### 2.3a Decisions that still need figures
+
+A decision whose effect depends on a figure without a sourced default (a partner's income, the rent after a move, a loan's interest rate, …) must not be shown as if it had no effect. Three functions make the state explicit:
+
+```ts
+inputsNeededFor(profile, events): LifeInputNeeded[]          // life.ts; no simulation. [] = complete
+applyScenarioOpsChecked(s, ops, profile, source?): {          // actions.ts
+  state: "applied" | "needsInput";
+  scenario: Scenario;        // the new scenario when applied, the UNCHANGED one when input is needed
+  pending?: Scenario;        // what it would be: complete it with updateDecision() and use it
+  needsInput: LifeInputNeeded[];   // { eventId, kind, field, label: Msg } of the new decisions
+}
+updateDecision(events, eventId, patch): LifeEvent[]           // merges fields into the decision, validated like an op
+```
+
+`outlook()` reports the same: `state: "ok" | "needsInput"`, `needsInput: { eventId, kind, label, isNew, fields }[]`, and `decisions[].inputsNeeded`. With `state: "needsInput"` the missing part counts as zero in the numbers, so block on it: ask for the fields, call `updateDecision()`, then simulate. Use `life.need.title` and `life.need.blocked` for the message. Zero is a valid answer (a user may enter 0 for the moving cost).
+
+`applyScenarioOps()` itself is unchanged and still applies such a decision; use the checked variant on user input.
+
 The four local parsers recognise the decisions (0 tokens). Examples for chips are in `life.examples.*`:
 
 | Key | EN | DE | FR | TR |
@@ -116,7 +139,7 @@ The four local parsers recognise the decisions (0 tokens). Examples for chips ar
 
 Also parsed: a GA travelcard, a leased car with its list price, a child's university or apprenticeship track and daycare days, a sabbatical with its length, a move with the rent, a partner's income, a full-time master's, self-employment with its income, an inheritance, a large purchase ("buy a boat for 50k in 2030"; not in Turkish), a heat-pump retrofit, and the economic scenario.
 
-The model route `/api/twin` (`src/app/api/twin/route.ts`) still validates only the old event types. Until its `EVENT_TYPES` and prompt are extended, decisions come from the local parsers or from UI controls.
+The model route `/api/twin` accepts the same decisions for what-ifs the local parsers miss (`task: "command"`, see `docs/ARCHITECTURE.md` §5). Its answer is `{ ops, dropped, unstated }`: `dropped` ops were invalid, `unstated` counts fields the model filled in although the user never gave them (they are removed, the engine's default applies). Pass `ops` through `validateOps()` as before.
 
 ### 2.4 Example
 
@@ -141,6 +164,19 @@ result.life?.inputsNeeded;       // number of inputs the model still needs
 ```
 
 ---
+
+### 2.5 The solver's mobility lever
+
+`solveGoal()` returns `carToGa?: CarToGaLever` when the plan holds a bought or leased car, the goal is below 80% and a GA travelcard instead of the car raises the odds. It is not in `recipes` (its patch replaces events, which `Recipe.apply` cannot express):
+
+```ts
+const sol = solveGoal(simInputFor(profile, scenario, behavior));
+if (sol.carToGa) {
+  sol.carToGa.title; sol.carToGa.detail;            // Msg: "GA travelcard instead of the car", monthly costs
+  sol.carToGa.newProb; sol.carToGa.reaches;         // scored like the headline
+  const next = applyCarToGa(scenario, sol.carToGa); // the scenario with the cars replaced
+}
+```
 
 ## 3. Economy
 
@@ -215,7 +251,7 @@ const s2 = applyScenarioOps(scenario, [{ op: "set", key: "economy", value: "rece
 const rows = economyTable("recession");   // baseline rows + what each phase changes, with sources
 ```
 
-Measured (`scripts/engine-check.ts`, real twin, headline seed): Barlas 91.1% in the baseline, 86.4% under high inflation; Meriç 8.7% → 0.5% (the flat is bought in 0.6% of futures instead of 12.1%).
+Measured (`scripts/engine-check.ts`, real twin, headline seed): Barlas 92.0% in the baseline, 88.2% under high inflation; Meriç 58.7% → 18.7% (the flat is bought in 28.9% of futures instead of 84.5%).
 
 ---
 
@@ -250,7 +286,9 @@ interface Outlook {
   retirement?: { age; incomeMonthly; incomeFromAhvAge; spendingMonthly; gapMonthly; lastsTo90Prob; depletionAgeP10; baseline? };
   decisions: DecisionOutlook[];
   markers: OutlookMarker[];       // { month, year, ym, age, kind, label, eventId?, amount? }
-  inputsNeeded: LifeInputNeeded[];// { eventId, kind, field, label: Msg }
+  state: "ok" | "needsInput";     // needsInput: a decision lacks a figure; its missing part counts as zero (§2.3a)
+  needsInput: OutlookNeed[];      // { eventId, kind, label, isNew, fields: LifeInputNeeded[] }
+  inputsNeeded: LifeInputNeeded[];// the same as a flat list: { eventId, kind, field, label: Msg }
   params: LifeParamUsed[];        // { eventId, kind, id, value, unit, provenance, source?, url?, asOf?, estimate? }
   sim: SimResult; baselineSim?: SimResult;
 }
@@ -263,7 +301,7 @@ interface Outlook {
   - `transfer: true`: a payment that builds an asset (mortgage amortisation, home equity); in the budget, not a cost.
 - `DecisionOutlook` = `{ eventId, kind, label, month, isNew, lines[], oneOffs[], byYear[], netMonthly: { year1, years5, years10 }, totalNet }`. `lines[].phases` are the constant stretches `{ fromMonth, toMonth, monthly }` of each line. `byYear` counts 12-month periods from the decision's start; its net cost includes the income the decision costs (also `info` lines) and excludes transfers.
 - `cashLow` is the lowest month-end bank cash during working life in the median future and in the weakest 10%; `liquidMedian` is cash plus portfolio.
-- Markers: decision markers (`childBirth`, `kitaStart`, `kitaEnd`, `childSchool`, `childTeen`, `childTrack`, `apprenticeStart`, `uniStart`, `childIndependent`, `carPurchase`, `carReplacement`, `carEnd`, `leaseStart`, `gaStart`, `partner`, `move`, `eduStart`, `eduEnd`, `workloadStart`, `workloadEnd`, `selfStart`, `selfEnd`), the old event types with `childEnd` / `joblossEnd`, and `debtFree`, `retirement`, `ahv`, `goal`.
+- Markers: decision markers (`childBirth`, `kitaStart`, `kitaEnd`, `childSchool`, `childTeen`, `childTrack`, `apprenticeStart`, `uniStart`, `childIndependent`, `carPurchase`, `carReplacement`, `carEnd`, `carLoanEnd`, `leaseStart`, `gaStart`, `partner`, `move`, `eduStart`, `eduEnd`, `workloadStart`, `workloadEnd`, `selfStart`, `selfEnd`), the old event types with `childEnd` / `joblossEnd`, and `debtFree`, `retirement`, `ahv`, `goal`.
 - `ym` is yyyymm; the i18n format `{x:ym}` prints it.
 
 The budget lines are the engine's own schedule: in accounting mode the sum of the lines equals the simulated month-on-month cash change (checked for 400 months in `engine-regression.ts`).
@@ -284,7 +322,7 @@ o.markers;                          // for chart markers, sorted by month
 o.inputsNeeded;                     // ask the user for these; until then the effect is zero
 ```
 
-Measured for Barlas, "Have a child in 2028" (`scripts/engine-check.ts`): goal odds 91.1% → 47.9%, the monthly surplus falls by CHF 543 at the birth, the child costs CHF 710/month net in the first year and CHF 726/month over ten years, median net worth in ten years is CHF 81'844 lower.
+Measured for Barlas, "Have a child in 2028" (`scripts/engine-check.ts`): goal odds 92.0% → 50.9%, the monthly surplus falls by CHF 543 at the birth, the child costs CHF 710/month net in the first year and CHF 726/month over ten years, median net worth in ten years is CHF 81'899 lower.
 
 ---
 
@@ -302,6 +340,9 @@ These fields changed meaning or are new. They matter for existing cards.
 | `RetirementStats` for a retiree | Now returned when the profile is already retired at the start. |
 | `SimResult.economy`, `SimResult.life` | Present only for a non-baseline economy / when a decision is in the scenario. |
 | `tragbarkeit()` | Pillar 2 may fund equity above 20% (the 10% hard-equity rule is unchanged). Optional `stressRate`. |
+| `SimResult.house.medianOtherDebtYear` | Also present when a decision adds a loan or leasing instalment (before: only with `profile.liabilities`). |
+| Crash events and scenario shocks with the behavioural twin | The ordinary panic episodes follow the drawn returns only; a crash has its own reaction (own coin, own parked money, back in the market when it has regained its pre-crash level). A crash therefore never raises the odds on the same futures. Runs without a crash or shock are bit-identical to before. |
+| `Profile.healthPremiumMonth` of the built-in accounts | Set from their statements (318 / 428 / 372, `provenance.healthPremiumMonth: "derived"`); the canton's mean is the fallback. The `health` budget line carries the provenance (`derived` / `user` / `doppel_default`). |
 | Goal scoring | A failed home purchase fails a goal only when the home was planned on or before that goal's date. |
 | One-off `expense` / `income` events, the pillar 3a ceiling | In today's CHF, paid in the CHF of their date. |
 
@@ -311,7 +352,29 @@ These fields changed meaning or are new. They matter for existing cards.
 
 - The marriage tax effect, a partner's living costs, rents by canton, moving costs, self-employed income and its volatility, and the income effect of further education have no source in `docs/REAL_WORLD_FACTORS.md`. They are user inputs.
 - Subsidised daycare tariffs outside the City of Zürich ramp; premium subsidies (IPV); a child's own health premium growing faster than prices.
-- A car loan (a purchase the cash cannot cover is a cash crunch), the car's value in net worth, a car's cost split into insurance, tax and parking (TCS publishes the group totals).
-- The rent rule tied to the reference interest rate; SARON mortgages; bond losses when rates rise.
-- Old-age care; the solver's "sell the car, buy a GA" lever.
-- `pocket/` (the Kotlin port) and `/api/twin` do not know decisions or economies yet.
+- A car loan's interest rate has no sourced default (user input). A car bought from savings that the cash cannot cover is a cash crunch. The car's value is not in net worth; a car's cost is not split into insurance, tax and parking (TCS publishes the group totals); replacements are not financed.
+- The rent rule tied to the reference interest rate; SARON mortgages; bond losses when rates rise; a regime lottery (scenarios are fixed paths).
+- Premium subsidies (IPV); old-age care.
+- `pocket/` (the Kotlin port) does not know decisions or economies yet.
+
+## 7. Facts for the assistant (`ask`)
+
+```ts
+import { outlookFacts } from "@/lib/twin/facts";
+import { askTwin, askErrorMsg } from "@/lib/llm";
+
+const o = outlook(profile, scenario, { behavior });
+const facts = outlookFacts(o, {
+  profile: effectiveProfile(profile, scenario),
+  locale,
+  scenario: "Have a child in 2028",          // optional: the what-if as typed
+  disciplined: simulate(simInputFor(profile, scenario)),   // optional: for the habit figures
+  topHabit, bestMove,                         // optional
+  extra: summaryAskFacts(statement),          // optional: further listed facts
+});
+const r = await askTwin(question, facts, locale);   // r.ok ? r.data : askErrorMsg(r)
+```
+
+Build the facts with this function only. Every key of `ASK_FACT_KEYS` names its unit and time basis, because the model reads the key to say what a number means: `_chf`, `_pct`, `_per_month`, `_total` / `_by_goal_date` (a sum over a period), `_today` / `_in_10_years` / `_at_goal_date` (a level), `_median` / `_weak_case` / `_strong_case` (which simulated futures). Examples: `habit_cost_by_goal_date_chf`, `surplus_change_per_month_from_decision_chf`, `decision_net_cost_first_12_months_total_chf`, `net_worth_in_10_years_median_chf`, `lowest_cash_month`, `decision_line_1…6` (the decision's own lines as text), `decision_inputs_missing`, `economy_scenario`.
+
+The gateway refuses an answer that contains a number not in the facts or the question (`UNGROUNDED_ANSWER`, also for numbers spelled out) or that quotes a figure on another basis than its key states, e.g. a total by the goal date as a yearly cost (`MISLABELED_ANSWER`). `askErrorMsg()` maps both to the same message.

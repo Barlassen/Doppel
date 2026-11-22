@@ -1,4 +1,5 @@
-import type { InvestmentTrade, Profile, Transaction } from "./types";
+import { defaultHealthPremium } from "./canton";
+import type { InvestmentTrade, Profile, Provenance, Transaction } from "./types";
 
 /**
  * ILLUSTRATIVE market index, NOT real market data: a made-up monthly close (CHF, start = 100 in Jan 2026) shaped
@@ -55,6 +56,40 @@ export function monthlySpend(transactions: Transaction[]): { months: number; ave
   const spend = transactions.filter((t) => t.category !== "investing").reduce((s, t) => s + t.amount, 0);
   const rent = transactions.filter((t) => t.category === "housing").reduce((s, t) => s + t.amount, 0);
   return { months, average: spend / months, rent: rent / months };
+}
+
+/** Names a mandatory health insurer is booked under (statement text in the four languages, and the large Swiss insurers). */
+const HEALTH_INSURER = /health insurance|krankenkasse|krankenversicherung|assurance[- ]maladie|caisse[- ]maladie|sa[gğ]l[iı]k sigortas[iı]|\bkvg\b|\blamal\b|\b(?:css|helsana|swica|sanitas|visana|concordia|assura|sympany|atupri|kpt|ökk|oekk|egk)\b|groupe mutuel/i;
+
+/**
+ * The person's own monthly health-insurance premium as their transactions show it: the average of the months in
+ * which a health insurer was paid. Undefined when the history has no such payment (the engine then uses the
+ * canton's mean premium, see canton.ts).
+ */
+export function observedHealthPremium(transactions: readonly Transaction[]): number | undefined {
+  const byMonth = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.category !== "insurance" || !HEALTH_INSURER.test(t.merchant)) continue;
+    byMonth.set(monthOf(t.date), (byMonth.get(monthOf(t.date)) ?? 0) + t.amount);
+  }
+  if (!byMonth.size) return undefined;
+  let total = 0;
+  for (const v of byMonth.values()) total += v;
+  return Math.round(total / byMonth.size);
+}
+
+/**
+ * The monthly health premium the twin uses for a profile, and whose figure it is:
+ *  1. `profile.healthPremiumMonth` when set (`provenance.healthPremiumMonth`, else `user`),
+ *  2. else the premium the transactions show (`derived`),
+ *  3. else the canton's mean premium for one person (`doppel_default`).
+ * The simulator and the budget lines use this one rule; show the same value wherever the premium is displayed.
+ */
+export function healthPremiumOf(p: Pick<Profile, "healthPremiumMonth" | "transactions" | "canton" | "age" | "provenance">): { value: number; provenance: Provenance | "user" } {
+  if (p.healthPremiumMonth !== undefined) return { value: p.healthPremiumMonth, provenance: p.provenance?.healthPremiumMonth ?? "user" };
+  const observed = observedHealthPremium(p.transactions ?? []);
+  if (observed !== undefined) return { value: observed, provenance: "derived" };
+  return { value: defaultHealthPremium(p), provenance: "doppel_default" };
 }
 
 export interface InvestBehavior {

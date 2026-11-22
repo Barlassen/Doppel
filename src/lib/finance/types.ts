@@ -90,6 +90,14 @@ export interface CarDecision {
   gaClass?: 1 | 2;
   /** Costs stop after this many months (default: until age 80, the GA until 90). */
   durationMonths?: number;
+  /** Owned: true = the first purchase is financed with a consumer loan instead of paid from savings. */
+  financed?: boolean;
+  /** Financed: paid at the purchase, today's CHF (default 0 = the whole price is borrowed). */
+  downPayment?: number;
+  /** Financed: nominal yearly interest of the loan, e.g. 0.049. No sourced default: the engine asks for it. */
+  loanRate?: number;
+  /** Financed: term of the loan in months (default 60). */
+  loanTermMonths?: number;
 }
 
 export interface PartnerDecision {

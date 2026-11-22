@@ -1863,6 +1863,7 @@ export const de = {
       eduTuition: "Studiengebühren",
       workloadIncome: "Einkommensänderung durch das Pensum",
       selfIncome: "Einkommensänderung durch die Selbstständigkeit",
+      carLoan: "Rate des Autokredits ({months} Monate)",
     },
     oneOff: {
       carPurchase: "Autokauf",
@@ -1870,6 +1871,7 @@ export const de = {
       carSale: "Verkauf des Autos",
       partnerSavings: "Ersparnisse der Partnerin oder des Partners",
       movingCost: "Umzugskosten",
+      carDownPayment: "Anzahlung für das Auto",
     },
     alt: {
       university: "Weg über die Hochschule",
@@ -1901,6 +1903,7 @@ export const de = {
       sabbaticalEnd: "Auszeit endet",
       selfStart: "Selbstständig",
       selfEnd: "Selbstständigkeit endet",
+      carLoanEnd: "Autokredit abbezahlt",
     },
     need: {
       partnerIncome: "Nettolohn der Partnerin oder des Partners pro Monat",
@@ -1916,6 +1919,13 @@ export const de = {
       eduRaise: "Lohnänderung nach dem Abschluss",
       selfIncome: "Nettoeinkommen aus dem Geschäft",
       selfVolatility: "Wie stark das Geschäftseinkommen von Jahr zu Jahr schwankt",
+      carLoanRate: "Zinssatz des Autokredits",
+      title: "Für diesen Entscheid fehlen deine Zahlen",
+      blocked: "Noch nicht übernommen. Es fehlt: {items}",
+    },
+    recipe: {
+      carToGaTitle: "GA statt Auto",
+      carToGaDetail: "Das Auto kostet rund {car:chf} pro Monat, ein GA {ga:chf}: {saving:chf} pro Monat bleiben im Budget.",
     },
     examples: {
       car: "2027 ein Auto für 35k kaufen",

@@ -9,7 +9,7 @@ import { ECONOMIES, ECONOMY_IDS } from "@/lib/finance/economy";
 import { outlook } from "@/lib/finance/outlook";
 import { baseScenario, costOfWaiting, effectiveProfile, habitCosts, simInputFor } from "@/lib/finance/scenario";
 import type { Profile, Scenario, SimResult } from "@/lib/finance/types";
-import { applyScenarioOps, extractionToUpdate, localParseCommand, validateOps } from "@/lib/twin/actions";
+import { applyScenarioOps, applyScenarioOpsChecked, extractionToUpdate, localParseCommand, validateOps } from "@/lib/twin/actions";
 
 import { translateText, type Text } from "@/lib/i18n";
 const english = (value: Text) => translateText("en", value);
@@ -251,6 +251,35 @@ console.log(
   for (const l of o.decisions.find((x) => x.isNew)!.lines)
     console.log(`  ${l.flow === "income" ? "+" : "−"} ${english(l.label)} [${l.provenance}${l.estimate ? ", estimate" : ""}${l.prob !== undefined ? `, in ${pc(l.prob)} of futures` : ""}]: ${l.phases.map((ph) => `m${ph.fromMonth}–${ph.toMonth} ${ph.monthly}`).join(" · ")}`);
   console.log(`  markers: ${o.markers.map((m) => `${m.ym} ${english(m.label)}`).join(" · ")}`);
+}
+
+// --- a financed car, the GA lever and a decision that still needs figures ---
+{
+  const asOf = new Date(2026, 10, 22);
+  const who = PROFILES[1];
+  const b = analyzeBehavior(who).params;
+  const s0 = baseScenario(who);
+  console.log(`\n=== Car: cash, loan, leasing, GA (${who.name}, real twin) ===`);
+  const variants: [string, Record<string, unknown>][] = [
+    ["bought from savings, CHF 30k", { kind: "car", mode: "owned", price: 30_000 }],
+    ["financed, CHF 30k, 20% down, 4.9% over 48 months", { kind: "car", mode: "owned", price: 30_000, financed: true, downPayment: 6000, loanRate: 0.049, loanTermMonths: 48 }],
+    ["leased at CHF 450 a month", { kind: "car", mode: "leased", leaseMonthly: 450 }],
+    ["GA travelcard", { kind: "car", mode: "ga" }],
+  ];
+  for (const [name, decision] of variants) {
+    const s1 = applyScenarioOps(s0, validateOps([{ op: "add", type: "expense", label: "Car", month: 8, decision }], s0.events));
+    const o = outlook(who, s1, { behavior: b, now: asOf });
+    const d = o.decisions.find((x) => x.isNew)!;
+    const loan = o.params.find((x) => x.id === "loanInterestTotal");
+    const sol = solveGoal(simInputFor(who, s1, b));
+    console.log(
+      `  ${name}: goal ${pc(o.goal.baselineProb!)} → ${pc(o.goal.prob)} · home bought ${pc(o.sim.house?.boughtProb ?? 0)} · net cost ${k(d.netMonthly.year1)}/mo in year 1, ${k(d.netMonthly.years10)}/mo over 10 years` +
+        (loan ? ` · loan interest ${k(loan.value)} · instalment ${k(o.params.find((x) => x.id === "loanPayment")!.value)}/mo` : "") +
+        (sol.carToGa ? ` · solver: ${english(sol.carToGa.title)} → ${pc(sol.carToGa.newProb)} (${english(sol.carToGa.detail)})` : ""),
+    );
+  }
+  const married = applyScenarioOpsChecked(s0, localParseCommand("Get married in 2027", s0.events, asOf, "en") ?? [], who);
+  console.log(`  “Get married in 2027” → ${married.state}: ${married.needsInput.map((n) => english(n.label)).join("; ")}`);
 }
 
 // --- economic scenarios: the same plan under each named economy ---

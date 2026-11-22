@@ -1869,6 +1869,7 @@ export const tr = {
       eduTuition: "Öğrenim ücreti",
       workloadIncome: "Çalışma oranından gelen gelir değişimi",
       selfIncome: "Serbest çalışmadan gelen gelir değişimi",
+      carLoan: "Araba kredisi taksidi ({months} ay)",
     },
     oneOff: {
       carPurchase: "Araba alımı",
@@ -1876,6 +1877,7 @@ export const tr = {
       carSale: "Arabanın satışı",
       partnerSavings: "Partnerin birikimi",
       movingCost: "Taşınma masrafı",
+      carDownPayment: "Araba için peşinat",
     },
     alt: {
       university: "Üniversite yolu",
@@ -1907,6 +1909,7 @@ export const tr = {
       sabbaticalEnd: "Ücretsiz izin bitiyor",
       selfStart: "Serbest çalışma başlıyor",
       selfEnd: "Serbest çalışma bitiyor",
+      carLoanEnd: "Araba kredisi bitti",
     },
     need: {
       partnerIncome: "Partnerin aylık net maaşı",
@@ -1922,6 +1925,13 @@ export const tr = {
       eduRaise: "Mezuniyetten sonraki maaş değişimi",
       selfIncome: "İşten elde edilen net gelir",
       selfVolatility: "İş gelirinin yıldan yıla ne kadar değiştiği",
+      carLoanRate: "Araba kredisinin faiz oranı",
+      title: "Bu karar için senin rakamların gerekli",
+      blocked: "Henüz uygulanmadı. Eksik olan: {items}",
+    },
+    recipe: {
+      carToGaTitle: "Araba yerine GA (genel abonman)",
+      carToGaDetail: "Araba ayda yaklaşık {car:chf} tutuyor, GA ise {ga:chf}: bütçede ayda {saving:chf} kalıyor.",
     },
     examples: {
       car: "2027'de 35 bine araba alsam",

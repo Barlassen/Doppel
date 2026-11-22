@@ -1,6 +1,7 @@
 import type { Decision, DecisionKind, EventType, LifeEvent, Profile, RecurringExpense, RiskProfile, Scenario, Transaction } from "@/lib/finance/types";
 import { DECISION_KINDS, RISK_PROFILES, TRANSACTION_CATEGORIES } from "@/lib/finance/types";
 import { ECONOMIES, isEconomyId } from "@/lib/finance/economy";
+import { inputsNeededFor, type LifeInputNeeded } from "@/lib/finance/life";
 import { CAR } from "@/lib/finance/params";
 import { payslipToIncome } from "@/lib/finance/pension";
 import { receiptMoney } from "@/lib/format";
@@ -47,7 +48,7 @@ type Bound = readonly [number, number];
 /** Bounds of every numeric field of a decision payload. A value outside drops the whole op. */
 export const DECISION_BOUNDS: { readonly [K in DecisionKind]: Readonly<Record<string, Bound>> } = {
   child: { ageYears: [0, 25], kitaDaysPerWeek: [0, 5], kitaDailyChf: [0, 400], uniProb: [0, 1], directMonthly: [0, 10_000], parentWorkloadPct: [0, 100], parentWorkloadMonths: [1, 300] },
-  car: { price: [1000, 500_000], annualKm: [0, 100_000], replaceYears: [1, 30], resaleShare: [0, 1], leaseMonthly: [50, 5000], fixedMonthly: [0, 5000], variablePerKm: [0, 5], replacesMonthly: [0, 5000], durationMonths: [1, 720] },
+  car: { price: [1000, 500_000], annualKm: [0, 100_000], replaceYears: [1, 30], resaleShare: [0, 1], leaseMonthly: [50, 5000], fixedMonthly: [0, 5000], variablePerKm: [0, 5], replacesMonthly: [0, 5000], durationMonths: [1, 720], downPayment: [0, 500_000], loanRate: [0, 0.2], loanTermMonths: [6, 120] },
   partner: { netIncomeMonth: [0, 100_000], grossIncomeYear: [0, 2_000_000], expensesMonth: [0, 50_000], rentMonth: [0, 20_000], taxDeltaYear: [-200_000, 200_000], savings: [0, 20_000_000] },
   move: { rentMonth: [0, 20_000], movingCost: [0, 200_000] },
   education: { tuitionYear: [0, 200_000], durationMonths: [1, 120], workloadPct: [0, 100], raiseAfterYear: [-200_000, 500_000] },
@@ -59,7 +60,7 @@ const DECISION_ENUMS: Partial<Record<DecisionKind, Record<string, readonly (stri
   car: { mode: ["owned", "leased", "ga"], gaClass: [1, 2] },
   education: { program: ["master", "bachelor", "other"] },
 };
-const DECISION_BOOLS: Partial<Record<DecisionKind, readonly string[]>> = { child: ["uniLivesAway"], partner: ["married"] };
+const DECISION_BOOLS: Partial<Record<DecisionKind, readonly string[]>> = { child: ["uniLivesAway"], partner: ["married"], car: ["financed"] };
 
 /** Validates an untrusted decision payload: known kind, known fields, every number inside its bound. */
 export function validateDecision(raw: unknown): Decision | null {
@@ -293,6 +294,43 @@ export function applyScenarioOps(s: Scenario, ops: Op[], source: LifeEvent["sour
 }
 
 const clamp = (v: number, [lo, hi]: readonly [number, number]) => Math.max(lo, Math.min(hi, v));
+
+export interface CheckedApply {
+  /** "needsInput" = a new decision lacks figures that have no sourced default; nothing was applied. */
+  state: "applied" | "needsInput";
+  /** The scenario to use: the new one when applied, the UNCHANGED one when input is needed. */
+  scenario: Scenario;
+  /** When input is needed: the scenario as it would be, to complete with `updateDecision()` and apply then. */
+  pending?: Scenario;
+  /** The missing figures of the new decisions (`{ eventId, kind, field, label }`). */
+  needsInput: LifeInputNeeded[];
+}
+
+/**
+ * `applyScenarioOps()` that refuses to apply a life decision whose effect would silently be zero. When a decision
+ * added by `ops` still needs figures from the user (a partner's income, the rent after a move, a loan's interest…),
+ * the scenario is returned unchanged with `state: "needsInput"`; ask for the fields, complete `pending` with
+ * `updateDecision()`, and use it. Decisions that were already in the scenario do not block.
+ */
+export function applyScenarioOpsChecked(s: Scenario, ops: Op[], profile: Profile, source: LifeEvent["source"] = "command"): CheckedApply {
+  const next = applyScenarioOps(s, ops, source, { profile });
+  const before = new Set(s.events.map((e) => e.id));
+  const needsInput = inputsNeededFor(profile, next.events).filter((n) => !before.has(n.eventId));
+  return needsInput.length ? { state: "needsInput", scenario: s, pending: next, needsInput } : { state: "applied", scenario: next, needsInput };
+}
+
+/**
+ * Sets fields of an event's decision (e.g. the figures listed in `needsInput`). The merged payload is validated
+ * like any op; an invalid value or an event without a decision leaves `events` unchanged. Pure.
+ */
+export function updateDecision(events: LifeEvent[], id: string, patch: Record<string, unknown>): LifeEvent[] {
+  const event = events.find((e) => e.id === id);
+  if (!event?.decision) return events;
+  const decision = validateDecision({ ...event.decision, ...patch, kind: event.decision.kind });
+  if (!decision) return events;
+  const amount = decision.kind === "car" && decision.mode === "owned" ? (decision.price ?? CAR.price.value) : event.amount;
+  return events.map((e) => (e.id === id ? { ...e, amount, decision } : e));
+}
 
 /** Compact event list for the LLM prompt: "ev-house:Flat in Winterthur@24". */
 export function compactEvents(events: LifeEvent[]): string {

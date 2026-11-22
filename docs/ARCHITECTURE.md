@@ -31,7 +31,8 @@ src/
                                ask | categorize | naive_compare; GET = connection status
     api/twin/guard.ts        → rate limit, daily budget, same-origin check
     api/twin/provider.ts     → endpoint config from env, usage normalisation, JSON-mode fallback
-    api/twin/grounding.ts    → `ask` post-check: no number that the facts do not contain
+    api/twin/grounding.ts    → `ask` post-check: no number that the facts do not contain, none on a wrong time basis
+    api/twin/commandOps.ts   → `command`: the prompt and the check of the model's ops (bounds, stated numbers, dates)
   components/
     DoppelApp.tsx            → state, wiring, ledger, one session per account
     AccountSwitcher.tsx      → header account menu (initials, name, net worth, reset)
@@ -116,6 +117,9 @@ The Node benchmark shares the OCR languages with the app. Its receipt gate (`can
 * Events: house (bought only if the bank test passes in that path; closing costs GE 3% / ZH 1.5%; mortgage cost
   recomputed monthly: interest on the current loan, amortisation down to ⅔, inflated upkeep), child (monthly cost),
   job loss (70% of insured salary, capped at CHF 148,200), raise, crash (−30% equity), one-off expense or income.
+  Amounts are in today's CHF and are indexed to their date (a home with the home-price drift).
+* Life decisions (`life.ts`), economic scenarios (`economy.ts`), the parameter table (`params.ts`) and `outlook()`
+  are described in [ENGINE_API.md](ENGINE_API.md).
 * Retirement: AHV (maximum × 13/12 × 90%, from 65), pension-fund annuity (5.5% conversion at 65, 0.15 pp lower per
   year earlier), 3a paid out from 60, savings bridge before 65, spending × 0.8 except housing.
 * A cash shortfall sells portfolio; if the portfolio is empty the path records a cash crunch.
@@ -169,7 +173,9 @@ The Node benchmark shares the OCR languages with the app. Its receipt gate (`can
   totals). No token counts at all: ~4 characters per token (`tokenBasis: "estimated"`, `usageKnown: false`, excluded
   from the measured savings).
 * Output caps are 160 for general text extraction, 2,200 for receipt text or image extraction, 900 / 700 for floor
-  plans / charts, 150 for commands, 160 for narration, 260 for `ask` and 400 for naive comparisons.
+  plans / charts, 220 for commands, 160 for narration, 260 for `ask` and 400 for naive comparisons. A command answer
+  that hits its cap (`finish_reason: "length"`) is refused as `MODEL_OUTPUT_TRUNCATED`, even when its first JSON
+  object is complete: half a what-if is never applied.
 * **Guards (`guard.ts`):** same-origin POSTs only (a request with a foreign `Origin` or `Sec-Fetch-Site` is refused);
   12 requests per minute per client and 60 in total, 6 in flight; the client address comes only from a header the
   client cannot write (`x-vercel-forwarded-for` on Vercel, the N-th address from the right of `x-forwarded-for` with
@@ -180,21 +186,39 @@ The Node benchmark shares the OCR languages with the app. Its receipt gate (`can
 * **Input caps:** body ≤ 3.5 MB; images are base64 JPEG / PNG whose container is walked (frame header, scan data and
   end marker; IHDR, IDAT, IEND), ≤ 512px and ≤ 1 MB (floor plans 768px; `naive_compare` JPEG only, ≤ 2048px, ≤ 2.6 MB);
   `narrate` and `ask` facts are key-whitelisted (`NARRATE_FACT_KEYS`, `ASK_FACT_KEYS` in `src/lib/llm.ts`), strings
-  ≤ 200 chars, JSON ≤ 2,000 bytes.
+  ≤ 200 chars, JSON ≤ 2,000 bytes (`ask`: 3,600 bytes, it also carries the outlook figures).
 * **Security headers (`next.config.ts`):** a Content-Security-Policy with everything same-origin (the browser never
   talks to a model endpoint; `'wasm-unsafe-eval'` for the Tesseract core, `blob:` / `data:` images),
   `frame-ancestors 'none'`, `nosniff`, a referrer and a permissions policy, HSTS, no `X-Powered-By`.
 * Tasks:
   * `extract_text` reads compact OCR text (≤ 800 chars) or receipt OCR text (≤ 2,800 chars, Tier 2).
   * `extract_image`: 512px grayscale JPEG → JSON (Tier 2). An amount in another currency is not passed on as CHF.
-  * `command`: free-form what-if → JSON ops, validated
+  * `command`: free-form what-if → JSON ops (`commandOps.ts`). Besides the old event types the model may return a
+    life decision (child, car owned / leased / GA with an optional loan, partner, move, education, workload,
+    self-employment) and the economy setting. Four rules, all deterministic and checked by `api-check`:
+    1. bounds: a decision passes `validateDecision()`, the same table as the browser's `validateOps()`; an unknown
+       kind or enum or an out-of-range number drops the op, nothing is clamped;
+    2. stated numbers: every amount, rate, percentage and duration must be a number the user wrote (digits or
+       words; "5.9%" also as 0.059, "4 years" as 48 months). A made-up field is removed so the engine's sourced
+       default applies; an op whose main figure is made up is dropped;
+    3. flags (`financed`, `married`, the track after school, `optimize`, `contributes3a`) and zeros need a word in
+       the sentence;
+    4. dates: the model returns `"date":"YYYY-MM"` or `"YYYY"` and the gateway counts the months from `now` (a bare
+       year is July, like the local parsers); the model does no date arithmetic.
+    The answer is `{ ops, dropped, unstated }`; the browser validates the ops again against the current events.
   * `narrate`: engine facts (client name, age and city, odds, habit cost, home test, retirement, best recipe) →
     ≤ 3 sentences, told to use only the given numbers
   * `ask`: a free-form question (≤ 400 chars) plus flat engine facts → plain text, ≤ 120 words, in the user's
-    language. The prompt forbids arithmetic and new numbers; `grounding.ts` then rejects any answer containing a
-    number that is in neither the facts nor the question (`UNGROUNDED_ANSWER`, the UI shows "could not answer from
-    the engine's figures"). Swiss terms such as "Säule 3a" and list markers are not figures; spelled-out numbers
-    ("twelve thousand") are not detected.
+    language. Every fact key names its unit and time basis (`habit_cost_by_goal_date_chf`,
+    `net_worth_in_10_years_median_chf`, `surplus_change_per_month_from_decision_chf`); `outlookFacts()` in
+    `src/lib/twin/facts.ts` builds the object from an `outlook()` result. The prompt explains the suffixes, forbids
+    arithmetic, new numbers and spelled-out numbers, and tells the model to say that something is not in its figures
+    rather than guess. `grounding.ts` then rejects an answer containing a number that is in neither the facts nor the
+    question (`UNGROUNDED_ANSWER`; printed or spelled out in EN / DE / FR / TR, small counts such as "two options"
+    excepted) and an answer that puts a figure on another time basis than its key, e.g. a total by the goal date
+    called a yearly cost (`MISLABELED_ANSWER`). The UI shows "could not answer from the engine's figures" for both.
+    Swiss terms such as "Säule 3a" and list markers are not figures. What these checks cannot see: a correct figure
+    attached to the wrong thing (a year taken from another fact).
   * `categorize`: unique unresolved merchant names → one category each
   * `naive_compare`: opt-in from the Inspector; sends the ≤ 2048px image to the frontier model with a prompt asking
     for every financial detail; the answer is bounded (depth, string length, 6 kB) before it is returned.

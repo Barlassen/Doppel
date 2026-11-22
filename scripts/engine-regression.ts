@@ -8,13 +8,14 @@ import { join } from "node:path";
 import { PROFILES } from "@/lib/data/profiles";
 import { analyzeBehavior } from "@/lib/finance/behavioralEngine";
 import { ECONOMIES, ECONOMY_IDS, economyTable } from "@/lib/finance/economy";
-import { carVsTransit, compileLife, type LifePlan } from "@/lib/finance/life";
+import { applyCarToGa, solveGoal } from "@/lib/finance/goalSolver";
+import { carVsTransit, compileLife, inputsNeededFor, type LifePlan } from "@/lib/finance/life";
 import { ASSUMPTIONS, simulate } from "@/lib/finance/monteCarlo";
 import { outlook } from "@/lib/finance/outlook";
 import { BASELINE, PENSION } from "@/lib/finance/params";
 import { ACTUAL_MORTGAGE_RATE, PILLAR_3A_MAX_NO_PENSION_FUND, tragbarkeit } from "@/lib/finance/swissRules";
-import type { Decision, LifeEvent, Profile } from "@/lib/finance/types";
-import { DECISION_CARRIER, applyOps, applyScenarioOps, localParseCommand, validateOps, type Op } from "@/lib/twin/actions";
+import type { Decision, LifeEvent, Profile, Scenario } from "@/lib/finance/types";
+import { DECISION_CARRIER, applyOps, applyScenarioOps, applyScenarioOpsChecked, localParseCommand, updateDecision, validateOps, type Op } from "@/lib/twin/actions";
 import { baseScenario, simInputFor } from "@/lib/finance/scenario";
 import { DICTIONARIES, LOCALES, translate } from "@/lib/i18n";
 import type { Locale, MessageKey, Msg } from "@/lib/i18n/types";
@@ -502,6 +503,109 @@ function part5() {
   });
 }
 
+function part6() {
+  section("Round 2 — personas, crash monotonicity, car loan, missing inputs, GA lever");
+  const p = TEST_PROFILE;
+  const [barlas, meric, oktay] = PROFILES;
+
+  guard(() => {
+    // A crash can only lower the outcome on the same futures: odds, median and the whole cone.
+    const bad: string[] = [];
+    for (const who of PROFILES) {
+      const s = baseScenario(who);
+      for (const behavior of [undefined, analyzeBehavior(who).params]) {
+        const base = simulate(simInputFor(who, s, behavior));
+        for (const month of [1, 12, 60]) {
+          const crashed = simulate(simInputFor(who, { ...s, events: [...s.events, ev({ type: "crash", month })] }, behavior));
+          const coneUp = crashed.bands.some((b, y) => y * 12 > month && b.p50 > base.bands[y].p50 + 1e-6);
+          if (crashed.successProb > base.successProb || crashed.medianAtGoal > base.medianAtGoal + 1e-6 || coneUp) bad.push(`${who.name} m${month} ${behavior ? "real" : "ideal"}: ${base.successProb} → ${crashed.successProb}`);
+        }
+      }
+    }
+    check("a market crash never raises the goal odds, the median or the cone (3 accounts × real/ideal × 3 dates)", bad.length === 0, bad.join(" | "));
+    const s0 = baseScenario(barlas);
+    const b = analyzeBehavior(barlas).params;
+    const s1 = applyScenarioOps(s0, localParseCommand("Market crash next year", s0.events, NOW, "en") ?? []);
+    const before = simulate(simInputFor(barlas, s0, b)).successProb;
+    const after = simulate(simInputFor(barlas, s1, b)).successProb;
+    check("“Market crash next year” does not raise Barlas's odds", s1.events.some((e) => e.type === "crash") && after <= before, `${before} → ${after}`);
+  });
+
+  guard(() => {
+    check("built-in accounts use their own health premium (318 / 428 / 372), labelled derived", barlas.healthPremiumMonth === 318 && meric.healthPremiumMonth === 428 && oktay.healthPremiumMonth === 372 && barlas.provenance?.healthPremiumMonth === "derived");
+    const own = simulate({ profile: barlas, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
+    const { healthPremiumMonth: _own, ...noPremium } = barlas;
+    void _own;
+    // Without the field the premium still comes from the statements; without statements, from the canton.
+    const fromTx = simulate({ profile: noPremium, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
+    const avg = simulate({ profile: { ...noPremium, transactions: [] }, events: [], paths: 20, detail: true }).detail!.lines.find((l) => l.id === "health")!;
+    check("the twin budgets the person's premium when the profile or its statements have one, the canton's mean otherwise", near(own.monthly[0], 318, 1) && own.provenance === "derived" && near(fromTx.monthly[0], 318, 1) && fromTx.provenance === "derived" && near(avg.monthly[0], 459, 1) && avg.provenance === "doppel_default", `${Math.round(own.monthly[0])} / ${Math.round(fromTx.monthly[0])} / ${Math.round(avg.monthly[0])}`);
+    const odds = PROFILES.map((who) => simulate(simInputFor(who, baseScenario(who), analyzeBehavior(who).params)).successProb);
+    check("the three accounts keep their roles: on track, borderline, off track", odds[0] >= 0.8 && odds[1] > 0.4 && odds[1] < 0.7 && odds[2] < 0.1, odds.join(" / "));
+  });
+
+  guard(() => {
+    const months = 720;
+    const car = decision("car", 12, { kind: "car", mode: "owned", price: 36_000, financed: true, downPayment: 6000, loanRate: 0.06, loanTermMonths: 48 });
+    const plan = compileLife(p, [car], months, 420);
+    const loan = plan.loans[0];
+    // Annuity: 30,000 × r / (1 − (1 + r)^−48), r = 0.005 → CHF 704.55.
+    check("car loan: down payment, 48 annuity instalments, interest = instalments − principal", plan.oneOffs[0].amount === -6000 && near(loan.payment, 704.55, 0.01) && near(loan.interest, 704.55 * 48 - 30_000, 0.5) && near(loan.balance[12 + 47], 0, 0.01) && loan.balance[12] < 30_000 && loan.balance[12] > 29_000, `payment ${loan.payment.toFixed(2)} · interest ${Math.round(loan.interest)}`);
+    const l = lineOf(plan, "car:loan");
+    check("car loan: the instalment is a nominal contract and a debt obligation", l.fixedFrom === 12 && l.obligation === true && near(l.monthly[12], 704.55, 0.01) && l.monthly[60] === 0 && lineOf(compileLife(p, [decision("c", 0, { kind: "car", mode: "leased" })], months, 420), "c:lease").obligation === true);
+    const cash = simulate({ profile: p, events: [decision("car", 12, { kind: "car", mode: "owned", price: 36_000 })], paths: 200, detail: true });
+    const fin = simulate({ profile: p, events: [car], paths: 200, detail: true });
+    const line = fin.detail!.lines.find((x) => x.id === "car:loan")!;
+    check("car loan: fixed in nominal CHF, so it shrinks in today's CHF", line.monthly[13] > line.monthly[58] && near(line.monthly[58] / line.monthly[13], 1 / Math.pow(1.012, 45 / 12), 1e-3));
+    check("car loan: net worth carries the balance (≈ cash purchase in year 2, lower after the interest is paid)", Math.abs(fin.bands[2].p50 - cash.bands[2].p50) < 2500 && fin.bands[6].p50 < cash.bands[6].p50, `year 2: ${Math.round(fin.bands[2].p50)} vs ${Math.round(cash.bands[2].p50)} · year 6: ${Math.round(fin.bands[6].p50)} vs ${Math.round(cash.bands[6].p50)}`);
+    const house = ev({ type: "house", month: 24, amount: 600_000 });
+    const rich: Profile = { ...p, cash: 300_000 };
+    const withLoan = simulate({ profile: rich, events: [house, car], paths: 100 }).house!;
+    const without = simulate({ profile: rich, events: [house], paths: 100 }).house!;
+    check("car loan and leasing count in the bank's affordability test", withLoan.medianOtherDebtYear! > 8000 && without.medianOtherDebtYear === undefined, `other debt CHF ${Math.round(withLoan.medianOtherDebtYear ?? 0)}/yr`);
+    const acct: Profile = { ...p, cash: 300_000, portfolio: 0, investShare: 0 };
+    const r = simulate({ profile: acct, events: [car], paths: 1, accounting: true, trace: true, detail: true });
+    let worst = 0;
+    for (let m = 1; m < 200; m++) {
+      let flow = 0;
+      for (const x of r.detail!.lines) if (!x.info) flow += (x.flow === "income" ? 1 : -1) * x.monthly[m];
+      for (const o of r.detail!.oneOffs) if (o.month === m) flow += o.amount;
+      worst = Math.max(worst, Math.abs(r.trace!.cash[m] - r.trace!.cash[m - 1] - flow));
+    }
+    check("car loan: the itemised budget still equals the simulated cash flow", worst < 0.01, `largest gap CHF ${worst.toFixed(4)}`);
+  });
+
+  guard(() => {
+    const s0 = baseScenario(p);
+    const marry: Op[] = validateOps([{ op: "add", type: "income", label: "Marriage", month: 12, decision: { kind: "partner", married: true } }], []);
+    const blocked = applyScenarioOpsChecked(s0, marry, p);
+    check("a decision with missing figures is not applied: state needsInput, scenario unchanged", blocked.state === "needsInput" && blocked.scenario === s0 && blocked.needsInput.length === 4 && blocked.pending!.events.length === 1);
+    const o = outlook(p, blocked.pending!, { now: NOW, paths: 100 });
+    check("outlook reports the state and which decision lacks which figures", o.state === "needsInput" && o.needsInput.length === 1 && o.needsInput[0].fields.length === 4 && o.decisions.find((d) => d.isNew)!.inputsNeeded.length === 4);
+    const id = blocked.pending!.events[0].id;
+    const filled = updateDecision(blocked.pending!.events, id, { netIncomeMonth: 5000, expensesMonth: 1500, rentMonth: 2400, taxDeltaYear: 0 });
+    check("updateDecision() completes the decision; then it applies", inputsNeededFor(p, filled).length === 0 && outlook(p, { ...blocked.pending!, events: filled }, { now: NOW, paths: 100 }).state === "ok" && updateDecision(filled, id, { netIncomeMonth: -5 }) === filled);
+    const car: Op[] = validateOps([{ op: "add", type: "expense", label: "Car", month: 6, decision: { kind: "car", mode: "owned", financed: true } }], []);
+    const loan = applyScenarioOpsChecked(s0, car, p);
+    check("a financed car without an interest rate asks for it; a complete decision applies", loan.state === "needsInput" && loan.needsInput[0].field === "loanRate" && applyScenarioOpsChecked(s0, validateOps([{ op: "add", type: "child", label: "Baby", month: 6, decision: { kind: "child" } }], []), p).state === "applied");
+  });
+
+  guard(() => {
+    const who: Profile = { ...p, portfolio: 20_000, goal: { ...p.goal, target: 320_000 } };
+    const s: Scenario = { ...baseScenario(who), events: [decision("car", 6, { kind: "car", mode: "leased", leaseMonthly: 600 })] };
+    const sol = solveGoal(simInputFor(who, s));
+    const lever = sol.carToGa;
+    const applied = lever ? simulate(simInputFor(who, applyCarToGa(s, lever))).successProb : NaN;
+    check("solver: “GA instead of the car” is offered when a car keeps the plan off track, and lands on its odds", sol.baseProb < 0.8 && !!lever && lever.newProb > sol.baseProb && applied === lever.newProb && lever.events[0].decision?.kind === "car" && (lever.events[0].decision as { mode: string }).mode === "ga" && near(lever.gaMonthly, 341.25, 0.01), lever ? `${sol.baseProb} → ${lever.newProb} · car CHF ${Math.round(lever.carMonthly)}/mo vs GA ${Math.round(lever.gaMonthly)}` : `base ${sol.baseProb}`);
+    check("solver: no car, no lever", solveGoal(simInputFor(who, baseScenario(who))).carToGa === undefined);
+  });
+
+  guard(() => {
+    check("Turkish: a large purchase with a price in the dative", has(parse("2030'da 50 bine tekne alsam", "tr", []), { type: "expense", amount: 50_000, month: 44 }) && has(parse("Mutfağı 30.000'e yenilemek için satın alsam", "tr", []), { type: "expense", amount: 30_000 }));
+    check("Turkish: a sentence without a price is not a purchase", parse("kredi alsam", "tr", []) === null);
+  });
+}
+
 const decisionOf = (ops: Op[] | null): Decision | undefined => (ops?.find((o) => o.op === "add" && o.decision) as Extract<Op, { op: "add" }> | undefined)?.decision;
 
 function main() {
@@ -512,6 +616,7 @@ function main() {
   part3();
   part4();
   part5();
+  part6();
   if (failed) {
     console.error(`\n${failed} regression check(s) failed`);
     process.exit(1);
