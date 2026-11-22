@@ -15,6 +15,7 @@
 import type { Msg } from "@/lib/i18n/types";
 import { cantonTaxIndex, hasCantonPremium, hasCantonTax, healthPremiumMonth, singleHousehold } from "./canton";
 import { BASELINE, CAR, CHILD, EDUCATION, FAMILY_ALLOWANCE_PARAM, type Param, type ParamProvenance } from "./params";
+import { annuityPayment } from "./debt";
 import { SOCIAL_DEDUCTIONS, effectiveTaxRate } from "./pension";
 import type { CarDecision, ChildDecision, DecisionKind, EducationDecision, LifeEvent, MoveDecision, PartnerDecision, Profile, SelfEmployedDecision, WorkloadDecision } from "./types";
 
@@ -36,6 +37,27 @@ export interface LifeLine {
   /** Index into `LifePlan.alternatives`: the line applies only in futures where that draw equals `altWhen`. */
   alt?: number;
   altWhen?: boolean;
+  /**
+   * A contract fixed in nominal CHF (a loan instalment): `monthly` is in the CHF of the start of this month and is
+   * NOT indexed afterwards. Absent = today's CHF, indexed with prices every month.
+   */
+  fixedFrom?: number;
+  /** True = a debt obligation (loan or leasing instalment): banks count it in the mortgage affordability test. */
+  obligation?: boolean;
+}
+
+/** A loan taken out by a decision (a financed car). Amounts are in the CHF of the start of `fromMonth`. */
+export interface LifeLoan {
+  eventId: string;
+  fromMonth: number;
+  termMonths: number;
+  principal: number;
+  annualRate: number;
+  payment: number;
+  /** Total interest over the term. */
+  interest: number;
+  /** Outstanding balance after each simulated month's payment (0 before the loan and after its end). */
+  balance: Float64Array;
 }
 
 export interface LifeOneOff {
@@ -96,6 +118,8 @@ export interface LifePlan {
   inputsNeeded: LifeInputNeeded[];
   params: LifeParamUsed[];
   alternatives: LifeAlternative[];
+  /** Loans taken out by decisions: a liability in net worth until repaid. */
+  loans: LifeLoan[];
   /** Multiplier on the user's own salary (1 = today's workload). */
   workFactor: Float64Array;
   /** Multiplier on the partner's salary. */
@@ -122,7 +146,8 @@ export interface LifePlan {
 /** Inputs without a sourced default: the model asks for them and stays neutral until they are given. */
 export const REQUIRED_INPUTS: Readonly<Record<DecisionKind, readonly string[]>> = {
   child: [],
-  car: [],
+  // Only for a financed purchase.
+  car: ["loanRate"],
   partner: ["netIncomeMonth", "expensesMonth", "rentMonth", "taxDeltaYear"],
   move: ["rentMonth", "movingCost"],
   education: ["workloadPct", "raiseAfterYear"],
@@ -354,12 +379,13 @@ function car(ctx: Ctx, e: LifeEvent, d: CarDecision) {
     const lease = userLease ?? Math.round(derived);
     if (userLease !== undefined) userValue(ctx, e, "car", "leaseMonthly", userLease, "CHF/month");
     else plan.params.push({ eventId: e.id, kind: "car", id: "leaseMonthly", value: lease, unit: "CHF/month", provenance: "derived", source: CAR.leaseBudgetShare.source, asOf: CAR.leaseBudgetShare.asOf, url: CAR.leaseBudgetShare.url });
-    add(line(ctx, e, "car", "lease", "expense", { key: "life.line.carLease" }, userLease !== undefined ? USER : { ...DERIVED, source: CAR.leaseBudgetShare.source, url: CAR.leaseBudgetShare.url }), e.month, end, lease);
+    add(line(ctx, e, "car", "lease", "expense", { key: "life.line.carLease" }, userLease !== undefined ? USER : { ...DERIVED, source: CAR.leaseBudgetShare.source, url: CAR.leaseBudgetShare.url }, { obligation: true }), e.month, end, lease);
     marker(ctx, e, e.month, "leaseStart", { key: "life.marker.leaseStart" });
   } else {
     const every = Math.max(1, Math.round(pick(ctx, e, "car", "replaceYears", num(d.replaceYears), CAR.replaceYears).value)) * 12;
     const resale = clamp(pick(ctx, e, "car", "resaleShare", num(d.resaleShare), CAR.resaleShare).value, 0, 1);
-    plan.oneOffs.push({ month: e.month, amount: -price.value, label: { key: "life.oneOff.carPurchase" }, eventId: e.id, kind: "car", provenance: price.meta.provenance });
+    if (d.financed) carLoan(ctx, e, d, price.value);
+    else plan.oneOffs.push({ month: e.month, amount: -price.value, label: { key: "life.oneOff.carPurchase" }, eventId: e.id, kind: "car", provenance: price.meta.provenance });
     marker(ctx, e, e.month, "carPurchase", { key: "life.marker.carPurchase" }, price.value);
     for (let m = e.month + every; m < end; m += every) {
       const net = price.value * (1 - resale);
@@ -370,6 +396,44 @@ function car(ctx: Ctx, e: LifeEvent, d: CarDecision) {
     if (end < ctx.months) plan.oneOffs.push({ month: end, amount: price.value * resale, label: { key: "life.oneOff.carSale" }, eventId: e.id, kind: "car", provenance: "derived" });
   }
   if (end < ctx.months) marker(ctx, e, end, "carEnd", { key: "life.marker.carEnd" });
+}
+
+/**
+ * A financed first purchase: a down payment, then a fixed annuity (interest_m = balance × rate / 12, as in debt.ts).
+ * The instalment is fixed in the CHF of the purchase date; the balance is a liability until the loan is repaid.
+ * The interest rate has no sourced default: without it the loan is costed at 0% and the rate is asked for.
+ */
+function carLoan(ctx: Ctx, e: LifeEvent, d: CarDecision, price: number) {
+  const { plan } = ctx;
+  const down = clamp(num(d.downPayment) ?? 0, 0, price);
+  if (d.downPayment !== undefined) userValue(ctx, e, "car", "downPayment", down, "CHF");
+  const term = clamp(Math.round(pick(ctx, e, "car", "loanTermMonths", num(d.loanTermMonths), CAR.loanTermMonths).value), 1, 240);
+  const userRate = num(d.loanRate);
+  const rate = clamp(userRate ?? 0, 0, 1);
+  if (userRate !== undefined) userValue(ctx, e, "car", "loanRate", rate, "share/yr");
+  else need(ctx, e, "car", "loanRate", { key: "life.need.carLoanRate" });
+  const principal = price - down;
+  const payment = annuityPayment(principal, rate, term);
+  if (down > 0) plan.oneOffs.push({ month: e.month, amount: -down, label: { key: "life.oneOff.carDownPayment" }, eventId: e.id, kind: "car", provenance: "user" });
+  if (principal <= 0) return;
+  const l = line(ctx, e, "car", "loan", "expense", { key: "life.line.carLoan", params: { months: term } }, userRate !== undefined ? USER : { ...DERIVED, source: "annuity at 0% until the interest rate is given" }, { fixedFrom: e.month, obligation: true });
+  const balance = new Float64Array(ctx.months);
+  let left = principal;
+  for (let k = 0; k < term; k++) {
+    const m = e.month + k;
+    const due = Math.min(payment, left * (1 + rate / 12));
+    left = Math.max(0, left * (1 + rate / 12) - due);
+    if (left < 1e-6) left = 0;
+    if (m >= 0 && m < ctx.months) {
+      l[m] = due;
+      balance[m] = left;
+    }
+  }
+  const interest = payment * term - principal;
+  plan.loans.push({ eventId: e.id, fromMonth: e.month, termMonths: term, principal, annualRate: rate, payment, interest, balance });
+  plan.params.push({ eventId: e.id, kind: "car", id: "loanPayment", value: payment, unit: "CHF/month", provenance: "derived", source: "annuity: principal × r / (1 − (1 + r)^−n), r = rate / 12" });
+  plan.params.push({ eventId: e.id, kind: "car", id: "loanInterestTotal", value: interest, unit: "CHF", provenance: "derived", source: "sum of the instalments minus the amount borrowed" });
+  marker(ctx, e, e.month + term, "carLoanEnd", { key: "life.marker.carLoanEnd" });
 }
 
 /** Out-of-pocket daycare tariff: the user's, the City of Zürich income ramp in ZH, else the unsubsidised rate. */
@@ -540,6 +604,7 @@ export function compileLife(profile: Profile, events: readonly LifeEvent[], mont
     inputsNeeded: [],
     params: [],
     alternatives: [],
+    loans: [],
     workFactor: new Float64Array(decided.length ? months : 0).fill(1),
     partnerWorkFactor: new Float64Array(decided.length ? months : 0).fill(1),
     self: new Uint8Array(decided.length ? months : 0),
@@ -615,6 +680,18 @@ function structuralLines(ctx: Ctx, decided: LifeEvent[], events: readonly LifeEv
     const l = line(ctx, selfEvent, "selfEmployed", "income", "income", { key: "life.line.selfIncome" }, USER, { structural: true });
     for (let m = 0; m < ctx.retireMonth; m++) if (plan.selfNet[m] > 0) l[m] = plan.selfNet[m] - p.netIncomeMonth;
   }
+}
+
+/**
+ * The inputs the decisions among `events` still need from the user (no sourced default exists). Empty = every
+ * decision is fully specified. Pure; no simulation. Use it before applying a what-if, to ask instead of applying
+ * a decision whose effect would silently be zero.
+ */
+export function inputsNeededFor(profile: Profile, events: readonly LifeEvent[]): LifeInputNeeded[] {
+  if (!events.some((e) => e.decision)) return [];
+  const retireMonth = Math.max(0, (profile.retirementAge - profile.age) * 12);
+  const months = Math.max(12, (Math.max(90, profile.retirementAge + 1) - profile.age) * 12);
+  return compileLife(profile, events, months, retireMonth).inputsNeeded;
 }
 
 /** Monthly cost of a car decision vs a GA travelcard, today's CHF (no simulation needed). */

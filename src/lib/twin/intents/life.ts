@@ -22,6 +22,11 @@ export interface LifeVocab {
   perMonth: string;
   /** "for <amount>" in the language: a regex source that ends right before the amount. */
   forAmount: string;
+  /**
+   * Languages that mark a price with a case suffix instead of a preposition (Turkish "50 bine"): run on the ORIGINAL
+   * text; when it matches, the largest amount of the sentence is the price of a generic purchase.
+   */
+  pricedBySuffix?: RegExp;
   car: RegExp;
   lease: RegExp;
   buy: RegExp;
@@ -270,7 +275,8 @@ export function lifeOps(v: LifeVocab, t: string, ctx: IntentContext, month: numb
     ops.push({ op: "add", type: "expense", ...eventLabel({ key: "life.event.heatPump" }), month: when ?? 24, amount });
   } else if (!ops.length && !homeTalk && !carTalk && !selfTalk && v.buy.test(t) && !hasAdd("house") && !hasAdd("raise")) {
     // --- a large purchase: "buy a boat for 50k in 2030" ---
-    const priced = amountAfter(t, v.forAmount, v.perMonth);
+    const bySuffix = v.pricedBySuffix?.test(ctx.text) ? lump.reduce((best, a) => Math.max(best, a.value), 0) : 0;
+    const priced = amountAfter(t, v.forAmount, v.perMonth) ?? (bySuffix ? { value: bySuffix, monthly: false } : undefined);
     if (priced && !priced.monthly && priced.value >= 1000) {
       ops.push({ op: "add", type: "expense", ...eventLabel({ key: "life.event.purchase" }), month: when ?? 12, amount: priced.value });
     }

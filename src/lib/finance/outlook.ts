@@ -101,6 +101,18 @@ export interface DecisionOutlook {
   netMonthly: { year1: number; years5: number; years10: number };
   /** Sum of `byYear` over the simulated horizon. */
   totalNet: number;
+  /** Figures this decision still needs from the user. Non-empty = its numbers above are incomplete. */
+  inputsNeeded: LifeInputNeeded[];
+}
+
+/** A decision that cannot be costed yet: the UI should ask for `fields` before it shows the decision's effect. */
+export interface OutlookNeed {
+  eventId: string;
+  kind: DecisionKind;
+  label: Text;
+  /** True when the baseline scenario does not contain the decision. */
+  isNew: boolean;
+  fields: LifeInputNeeded[];
 }
 
 export interface Outlook {
@@ -137,7 +149,14 @@ export interface Outlook {
   };
   decisions: DecisionOutlook[];
   markers: OutlookMarker[];
-  /** Inputs the life-decision model needs from the user (no sourced default exists). */
+  /**
+   * "ok" = every decision is fully specified. "needsInput" = at least one decision lacks a figure that has no
+   * sourced default; the missing part is NOT in the numbers of this outlook (it counts as zero), so do not present
+   * them as the decision's effect: ask for `needsInput[].fields` first (see `updateDecision()` in twin/actions).
+   */
+  state: "ok" | "needsInput";
+  needsInput: OutlookNeed[];
+  /** The same inputs as a flat list. */
   inputsNeeded: LifeInputNeeded[];
   /** Every parameter the decisions used, with value, unit and provenance. */
   params: LifeParamUsed[];
@@ -238,7 +257,7 @@ function phasesOf(monthly: Float64Array): { fromMonth: number; toMonth: number; 
   return out;
 }
 
-function decisionsOf(sim: SimResult, events: readonly LifeEvent[], baselineIds: Set<string> | null, at: At): DecisionOutlook[] {
+function decisionsOf(sim: SimResult, events: readonly LifeEvent[], baselineIds: Set<string> | null, at: At, needs: readonly LifeInputNeeded[]): DecisionOutlook[] {
   const d = sim.detail!;
   const out: DecisionOutlook[] = [];
   for (const e of events) {
@@ -288,6 +307,7 @@ function decisionsOf(sim: SimResult, events: readonly LifeEvent[], baselineIds: 
       byYear: Array.from({ length: last + 1 }, (_, i) => ({ year: at(start + i * 12).year, age: at(start + i * 12).age, net: net[i] })),
       netMonthly: { year1: avg(1), years5: avg(5), years10: avg(10) },
       totalNet: net.reduce((s, v) => s + v, 0),
+      inputsNeeded: needs.filter((n) => n.eventId === e.id),
     });
   }
   return out;
@@ -424,8 +444,12 @@ export function outlook(profile: Profile, scenario: Scenario, opts: OutlookOptio
       ...(baseSim ? { baselineProb: baseSim.successProb, deltaProb: sim.successProb - baseSim.successProb } : {}),
     },
     ...(retirement ? { retirement } : {}),
-    decisions: decisionsOf(sim, scenario.events, baselineIds, at),
+    decisions: decisionsOf(sim, scenario.events, baselineIds, at, life.inputsNeeded),
     markers,
+    state: life.inputsNeeded.length ? "needsInput" : "ok",
+    needsInput: scenario.events
+      .filter((e) => e.decision && life.inputsNeeded.some((n) => n.eventId === e.id))
+      .map((e) => ({ eventId: e.id, kind: e.decision!.kind, label: e.labelMsg ?? e.label, isNew: baselineIds ? !baselineIds.has(e.id) : false, fields: life.inputsNeeded.filter((n) => n.eventId === e.id) })),
     inputsNeeded: life.inputsNeeded,
     params: life.params,
     sim,

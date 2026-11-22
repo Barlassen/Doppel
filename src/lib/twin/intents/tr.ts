@@ -188,6 +188,8 @@ const LIFE: LifeVocab = {
   perMonth: PER_MONTH,
   // Turkish marks the price with a case suffix, not a preposition: the largest amount of the sentence is used.
   forAmount: String.raw`(?!)`,
+  // "50 bine", "50.000'e", "50 bin franga": a number (with its unit) in the dative is a price.
+  pricedBySuffix: /\d[\d.'’ ]*\s*(?:(?:bin|milyon|mio)(?:e|a)|k?['’](?:y?[ea])|(?:bin\s+|milyon\s+)?(?:fran[gk]|chf)\p{L}*['’]?(?:y?[ae]))(?![\p{L}])/iu,
   car: /(?<![\p{L}])(?:araba\p{L}*|otomobil\p{L}*|tesla|motosiklet\p{L}*|arac(?:i|imi|im)?(?![\p{L}]))/u,
   lease: /leasing|kirala\p{L}*/u,
   buy: /(?<![\p{L}])(?:satin\s+)?al(?:sam|sak|irsam|irsak|mak|ayim|alim|acag\p{L}*|in|ir|im|iyorum|iyoruz)?(?![\p{L}])|edin\p{L}*/u,
