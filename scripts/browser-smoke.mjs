@@ -206,7 +206,8 @@ try {
   context.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname.startsWith("/tesseract/")) ocrAssets.add(url.pathname);
-    if (url.pathname === "/api/twin") gatewayCalls.push(request.postDataJSON());
+    // Model calls only: the dashboard also asks `GET /api/twin` once after mount whether an assistant is connected.
+    if (url.pathname === "/api/twin" && request.method() === "POST") gatewayCalls.push(request.postDataJSON());
   });
   page.on("pageerror", (error) => errors.push(error.message));
   trackHydration(page, errors);
@@ -727,7 +728,8 @@ try {
     await statement.getByRole("button", { name: U("data.chooseFile") }).waitFor();
     assert.equal(await statement.getByTestId("other-docs").evaluate((el) => el.open), false);
     const learned = statement.getByTestId("learned");
-    assert.ok((await learned.locator("[data-learned]").count()) >= 4);
+    assert.ok((await learned.getByTestId("learned-headline").locator("li").count()) >= 3);
+    assert.match(await statement.locator('input[type="file"]').first().getAttribute("accept"), /\.sta,\.mt940,\.940/);
     await statement.getByTestId("statement-samples").locator("summary").click();
     await statement.getByRole("button", { name: U("data.sampleAria", { account: "Meriç", provider: "PostFinance", format: "camt.053" }) }).click();
     const review = statement.getByRole("form", { name: U("data.reviewAria") });
@@ -736,7 +738,11 @@ try {
     assert.ok(merchantWidth > 60, `merchant column is ${merchantWidth}px wide`);
     await assertNoOverflow(uxPage);
     await review.getByRole("button", { name: U("data.confirm", { count: 220 }) }).click();
-    await learned.getByText(U("ux.learned.basisTrades", { transactions: 336, trades: 12, months: 5 })).waitFor();
+    await statement.getByText(U("data.imported", { transactions: 220, trades: 0, file: "meric-postfinance.camt053.xml" })).waitFor();
+    // The summary now knows the salary of that statement and proposes life facts with a confirm / reject control.
+    await learned.locator("[data-fact=salary]").waitFor();
+    await learned.locator("[data-fact=salary]").getByRole("button", { name: U("statement.reject") }).click();
+    assert.equal(await learned.locator("[data-fact=salary]").count(), 0);
     await assertNoOverflow(uxPage);
 
     // Chart: a text alternative, a plain-language reading, and the before line once a what-if is applied.
@@ -784,6 +790,85 @@ try {
     assert.equal(await uxPage.evaluate(() => document.activeElement?.getAttribute("aria-haspopup")), "menu");
     await ux.close();
     console.log("Dashboard UX: 320px header in four languages, statement-first card and review, chart reading, wizard validation + statement step, and confirmed delete passed");
+  }
+
+
+  // Decisions, outlook, economy and the assistant state (the gateway is offline in this run).
+  {
+    const twin = await browser.newContext({ locale: "en-US", viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+    const twinPage = await twin.newPage();
+    twinPage.on("pageerror", (error) => errors.push(error.message));
+    trackHydration(twinPage, errors);
+    await visit(twinPage);
+    const W = (key, params) => translate("en", key, params);
+    const outlookCard = twinPage.getByTestId("outlook-card");
+    await outlookCard.getByTestId("outlook-goal").waitFor({ timeout: 30_000 });
+
+    // Economy: the headline is never shown without its economy, and another scenario changes it.
+    assert.equal(await twinPage.getByTestId("hero-economy").textContent(), W("ux.econ.chip", { name: { key: "economy.name.baseline" } }));
+    const baselineHeadline = await twinPage.locator("h1").textContent();
+    await twinPage.getByTestId("economy-select").selectOption("high_inflation");
+    await twinPage.waitForFunction((before) => document.querySelector("h1")?.textContent !== before, baselineHeadline, { timeout: 30_000 });
+    assert.equal(await twinPage.getByTestId("hero-economy").textContent(), W("ux.econ.chip", { name: { key: "economy.name.high_inflation" } }));
+    await twinPage.getByTestId("economy-summary").waitFor();
+    await twinPage.getByTestId("economy-table").locator("summary").click();
+    assert.ok((await twinPage.getByTestId("economy-table").locator("li").count()) > 20);
+    await assertNoOverflow(twinPage);
+    await twinPage.getByTestId("economy-select").selectOption("baseline");
+    await twinPage.waitForFunction((before) => document.querySelector("h1")?.textContent === before, baselineHeadline, { timeout: 30_000 });
+
+    // A car (leased, the engine's sourced defaults) and a child from the picker: itemised monthly costs and chart markers.
+    const addDecision = async (kind, fill) => {
+      await twinPage.getByTestId("add-decision").click();
+      await twinPage.getByTestId("decision-picker").locator(`[data-kind=${kind}]`).click();
+      const form = twinPage.getByTestId("decision-form");
+      await form.waitFor();
+      if (fill) await fill(form);
+      return form;
+    };
+    const car = await addDecision("car", (form) => form.getByLabel(W("ux.dec.f.carMode")).selectOption("leased"));
+    await car.getByTestId("decision-apply").click();
+    const carCost = outlookCard.locator("[data-testid=outlook-decisions] > li[data-kind=car]");
+    await carCost.waitFor({ timeout: 30_000 });
+    assert.ok((await carCost.getByTestId("decision-lines").locator("li").count()) >= 3);
+    assert.match(await carCost.getByTestId("decision-lines").textContent(), new RegExp(escapeRegExp(W("life.line.carLease"))));
+    assert.match(await carCost.getByTestId("decision-net").textContent(), /CHF \d/);
+    const child = await addDecision("child");
+    await child.getByTestId("decision-apply").click();
+    const childCost = outlookCard.locator("[data-testid=outlook-decisions] > li[data-kind=child]");
+    await childCost.waitFor({ timeout: 30_000 });
+    assert.ok((await childCost.getByTestId("decision-lines").locator("li").count()) >= 3);
+    assert.match(await childCost.getByTestId("decision-lines").textContent(), new RegExp(escapeRegExp(W("life.line.childDirect"))));
+    assert.equal(await twinPage.getByTestId("decision-list").locator("li[data-kind=car], li[data-kind=child]").count(), 2);
+    assert.match(await outlookCard.getByTestId("outlook-goal").textContent(), /→/);
+    assert.match(await outlookCard.getByTestId("outlook-surplus").textContent(), /→/);
+    await twinPage.waitForFunction(
+      (labels) => labels.every((label) => [...document.querySelectorAll("[data-testid=cone-chart] title")].some((title) => title.textContent === label)),
+      [W("life.marker.leaseStart"), W("life.marker.childBirth")],
+      { timeout: 30_000 },
+    );
+    await twinPage.getByTestId("chart-before").waitFor();
+    await assertNoOverflow(twinPage);
+
+    // A move has no sourced rent: Apply is refused until the required inputs are given.
+    const move = await addDecision("move", (form) => form.getByLabel(W("ux.dec.f.canton")).selectOption("ZG"));
+    await move.getByTestId("decision-apply").click();
+    await move.getByTestId("decision-missing").waitFor();
+    assert.equal(await twinPage.getByTestId("decision-list").locator("li[data-kind=move]").count(), 0);
+    await move.getByRole("spinbutton", { name: new RegExp(escapeRegExp(W("life.need.moveRent"))) }).fill("2400");
+    await move.getByRole("spinbutton", { name: new RegExp(escapeRegExp(W("life.need.movingCost"))) }).fill("3000");
+    await move.getByTestId("decision-apply").click();
+    await twinPage.getByTestId("decision-list").locator("li[data-kind=move]").waitFor();
+    await assertNoOverflow(twinPage);
+
+    // The assistant: no endpoint in this run, so the box says so and the local summary still works.
+    await twinPage.waitForFunction(() => document.querySelector("[data-testid=assistant-state]")?.getAttribute("data-state") === "off");
+    assert.equal(await twinPage.getByTestId("assistant-offline").textContent(), W("llm.notConnected"));
+    assert.equal(await twinPage.getByTestId("ask-card").getByRole("textbox", { name: W("llm.askLabel") }).isDisabled(), true);
+    await twinPage.getByTestId("ask-card").getByRole("button", { name: W("banker.explain") }).click();
+    await twinPage.getByTestId("banker-source").getByText(W("ux.bankerTemplate")).waitFor();
+    await twin.close();
+    console.log("Twin: economy switch changes the headline, car and child decisions show itemised costs and chart markers, a move waits for its rent, the assistant reports not connected");
   }
 
   assert.deepEqual(errors, []);
