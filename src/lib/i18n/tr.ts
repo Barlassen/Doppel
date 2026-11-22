@@ -402,9 +402,9 @@ export const tr = {
     replacement: "Gelir ikame oranı",
     replacementNote: "(önerilen %60–80)",
     bridge_one:
-      "{age} yaşında emekli olmak, {count} yıl AHV almadan geçirmek demek — bu köprü birikiminden ödenir ve emeklilik sandığı sermayeni daha düşük oranla aylığa çevirir.",
+      "{age} yaşında emeklilik: AHV olmadan {count} yıl, birikimden ödenir; emeklilik sandığı oranı düşer.",
     bridge_other:
-      "{age} yaşında emekli olmak, {count} yıl AHV almadan geçirmek demek — bu köprü birikiminden ödenir ve emeklilik sandığı sermayeni daha düşük oranla aylığa çevirir.",
+      "{age} yaşında emeklilik: AHV olmadan {count} yıl, birikimden ödenir; emeklilik sandığı oranı düşer.",
     footnote:
       "Bugünkü CHF ile, vergi öncesi. AHV azami ×13/12 × %90 (prim boşlukları); emeklilik sandığı = sermaye × karma dönüşüm oranı (65 yaşında %5,5, daha erken ise daha düşük); harcama, konut hariç ×0,8.",
   },
@@ -1148,7 +1148,7 @@ export const tr = {
     loanPayment: "{amount:chf}/ay",
     loanDerived: "taksit {months} aylık vadeyle türetildi",
     debtInterest: "Borç bitene kadar faiz",
-    debtFootnote: "Taksitler her ay hesaptan çıkar (faiz + anapara). Net varlık borcu düşer, banka da taksitleri konut kredisi testinde (gelirin ⅓'ü) hesaba katar.",
+    debtFootnote: "Taksitler her ay hesaptan çıkar (faiz + anapara). Net varlık borcu düşer; konut kredisi testi taksitleri sayar (gelirin ⅓’ü).",
     debtDerivedNote: "UBS verisinde bu krediler için taksit yok, bu yüzden Doppel vadesi {months} ay olan bir anüite varsayar.",
     heroDebt: "Net varlık, kredi borcu düşüldükten sonraki tutardır (borç: {debt:chf}).",
     affordOtherDebt: "Diğer kredi taksitleri (yıllık)",
@@ -1995,7 +1995,7 @@ export const tr = {
     cmdNoHome: "Zaman çizelgende ertelenecek bir ev alımı yok.",
     cmdRetireRange: "Emeklilik yaşı en az {min}, en çok {max} olabilir.",
     recipeMax3a: "3a (bireysel emeklilik) hesabını tavana kadar doldur",
-    bankerTemplate: "Motorun rakamlarıyla doldurulan çevrimdışı şablon. Dil modeli kullanılmadı.",
+    bankerTemplate: "Motor rakamlarıyla çevrimdışı şablon. Dil modeli kullanılmadı.",
     bankerModel: "Motorun rakamlarından şu model yazdı: {model}.",
     confirmDelete: "{name} hesabı kalıcı olarak silinsin mi?",
     confirmClose: "{name} profili kapatılsın mı?",

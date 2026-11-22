@@ -396,9 +396,9 @@ export const de = {
     replacement: "Ersatzquote",
     replacementNote: "des letzten Lohns (Faustregel 60–80%)",
     bridge_one:
-      "Gehst du mit {age} in Pension, überbrückst du {count} Jahr ohne AHV mit deinen Ersparnissen. Der Umwandlungssatz der Pensionskasse fällt tiefer aus.",
+      "Pensionierung mit {age}: {count} Jahr ohne AHV, aus dem Ersparten bezahlt, mit tieferem Umwandlungssatz.",
     bridge_other:
-      "Gehst du mit {age} in Pension, überbrückst du {count} Jahre ohne AHV mit deinen Ersparnissen. Der Umwandlungssatz der Pensionskasse fällt tiefer aus.",
+      "Pensionierung mit {age}: {count} Jahre ohne AHV, aus dem Ersparten bezahlt, mit tieferem Umwandlungssatz.",
     footnote:
       "In heutigen CHF vor Steuern. AHV-Maximalrente × 13/12 × 90% (Beitragslücken). Die BVG-Rente ergibt sich aus dem Pensionskassenkapital mal gemischtem Umwandlungssatz (5.5% mit 65, bei früherer Pensionierung tiefer). Die Ausgaben sinken auf 80%, die Wohnkosten bleiben gleich.",
   },
@@ -1142,7 +1142,7 @@ export const de = {
     loanPayment: "{amount:chf}/Mt.",
     loanDerived: "Rate über {months} Monate abgeleitet",
     debtInterest: "Zinsen bis schuldenfrei",
-    debtFootnote: "Die Raten gehen jeden Monat vom Konto ab (Zins + Amortisation). Das Vermögen zählt die Schulden ab, und die Bank rechnet die Raten in die Tragbarkeit (⅓ des Einkommens) ein.",
+    debtFootnote: "Die Raten gehen monatlich vom Konto ab (Zins + Amortisation). Das Vermögen zählt die Schulden ab; die Tragbarkeit rechnet die Raten ein (⅓ des Einkommens).",
     debtDerivedNote: "Die UBS-Daten enthalten für diese Kredite keine Rate, darum nimmt Doppel eine Annuität über {months} Monate an.",
     heroDebt: "Das Vermögen ist nach Abzug von {debt:chf} Krediten.",
     affordOtherDebt: "Andere Kreditraten pro Jahr",
@@ -1989,7 +1989,7 @@ export const de = {
     cmdNoHome: "Auf deiner Zeitachse steht kein Hauskauf, der sich verschieben liesse.",
     cmdRetireRange: "Das Pensionsalter lässt sich von {min} bis {max} einstellen.",
     recipeMax3a: "Säule 3a voll einzahlen",
-    bankerTemplate: "Offline-Vorlage, gefüllt mit den Zahlen der Berechnung. Es wurde kein Sprachmodell verwendet.",
+    bankerTemplate: "Offline-Vorlage mit berechneten Zahlen. Kein Sprachmodell verwendet.",
     bankerModel: "Formuliert von {model} aus den Zahlen der Berechnung.",
     confirmDelete: "{name} endgültig löschen?",
     confirmClose: "{name} schliessen?",

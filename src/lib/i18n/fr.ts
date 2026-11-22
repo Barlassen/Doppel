@@ -405,9 +405,9 @@ export const fr = {
     replacement: "Taux de remplacement",
     replacementNote: "du dernier salaire (repère de 60 à 80 %)",
     bridge_one:
-      "Si vous partez à {age} ans, vous aurez {count} an sans rente AVS. Vous utiliserez votre épargne pendant cette période et votre caisse de pension appliquera un taux de conversion réduit.",
+      "Retraite à {age} ans : {count} an sans AVS, payé par l’épargne, avec un taux de conversion plus bas.",
     bridge_other:
-      "Si vous partez à {age} ans, vous aurez {count} ans sans rente AVS. Vous utiliserez votre épargne pendant cette période et votre caisse de pension appliquera un taux de conversion réduit.",
+      "Retraite à {age} ans : {count} ans sans AVS, payés par l’épargne, avec un taux de conversion plus bas.",
     footnote:
       "En CHF actuels, avant impôts. AVS max. ×13/12 × 90 % (lacunes de cotisation) ; LPP = capital × taux de conversion mixte (5,5 % à 65 ans, réduit avant) ; dépenses ×0,8 hors logement.",
   },
@@ -1151,7 +1151,7 @@ export const fr = {
     loanPayment: "{amount:chf}/mois",
     loanDerived: "mensualité dérivée sur {months} mois",
     debtInterest: "Intérêts jusqu’au remboursement complet",
-    debtFootnote: "Les mensualités quittent le compte chaque mois (intérêts + amortissement). La fortune nette déduit la dette, et la banque compte les mensualités dans le calcul de capacité financière (⅓ du revenu).",
+    debtFootnote: "Les mensualités quittent le compte chaque mois (intérêts + amortissement). La fortune déduit la dette ; le test hypothécaire compte les mensualités (⅓ du revenu).",
     debtDerivedNote: "Les données UBS n’indiquent pas de mensualité pour ces crédits : Doppel suppose une annuité sur {months} mois.",
     heroDebt: "La fortune nette s’entend après {debt:chf} de crédits.",
     affordOtherDebt: "Autres mensualités de crédit par an",
@@ -1998,7 +1998,7 @@ export const fr = {
     cmdNoHome: "Aucun achat immobilier à reporter dans votre calendrier.",
     cmdRetireRange: "L’âge de la retraite se règle entre {min} et {max} ans.",
     recipeMax3a: "Verser le maximum au pilier 3a",
-    bankerTemplate: "Texte type hors ligne, rempli avec les chiffres du moteur. Aucun modèle de langage n’a été utilisé.",
+    bankerTemplate: "Gabarit hors ligne avec les chiffres du moteur. Aucun modèle de langage utilisé.",
     bankerModel: "Rédigé par {model} à partir des chiffres du moteur.",
     confirmDelete: "Supprimer définitivement {name} ?",
     confirmClose: "Fermer {name} ?",

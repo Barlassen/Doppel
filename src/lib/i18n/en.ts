@@ -401,9 +401,9 @@ export const en = {
     replacement: "Replacement ratio",
     replacementNote: "of last salary (rule of thumb 60–80%)",
     bridge_one:
-      "Retiring at {age} means {count} year without AHV — the bridge is paid from your savings, and the pension fund converts at a lower rate.",
+      "Retiring at {age}: {count} year without AHV, paid from savings, at a lower pension-fund rate.",
     bridge_other:
-      "Retiring at {age} means {count} years without AHV — the bridge is paid from your savings, and the pension fund converts at a lower rate.",
+      "Retiring at {age}: {count} years without AHV, paid from savings, at a lower pension-fund rate.",
     footnote:
       "Today's CHF, before tax. AHV max ×13/12 × 90% (contribution gaps); pension fund = capital × blended conversion rate (5.5% at 65, lower if earlier); spending ×0.8 except housing.",
   },
@@ -1140,7 +1140,7 @@ export const en = {
     loanPayment: "{amount:chf}/mo",
     loanDerived: "payment derived over {months} months",
     debtInterest: "Interest until debt-free",
-    debtFootnote: "Payments leave the account every month (interest + principal). Net worth counts the debt, and the bank counts the payments in the mortgage test (⅓ of income).",
+    debtFootnote: "Payments leave the account monthly (interest + principal). Net worth counts the debt; the mortgage test counts the payments (⅓ of income).",
     debtDerivedNote: "The UBS data has no payment for these loans, so Doppel assumes an annuity over {months} months.",
     heroDebt: "Net worth is after {debt:chf} of loans.",
     affordOtherDebt: "Other loan payments per year",
@@ -1987,7 +1987,7 @@ export const en = {
     cmdNoHome: "There is no home purchase on your timeline to delay.",
     cmdRetireRange: "The retirement age can be set from {min} to {max}.",
     recipeMax3a: "Max out pillar 3a",
-    bankerTemplate: "Offline template filled with the engine’s numbers. No language model was used.",
+    bankerTemplate: "Offline template with the engine’s numbers. No language model used.",
     bankerModel: "Worded by {model} from the engine’s numbers.",
     confirmDelete: "Delete {name} for good?",
     confirmClose: "Close {name}?",
