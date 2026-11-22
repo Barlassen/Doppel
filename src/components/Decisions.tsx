@@ -12,6 +12,7 @@ import type { LifeInputNeeded } from "@/lib/finance/life";
 import { BOUNDS, DECISION_CARRIER, validateOps, type Op } from "@/lib/twin/actions";
 import { eventLabel } from "@/lib/twin/intents/shared";
 import { CANTON_CODES } from "./cantons";
+import { decisionCost } from "./OutlookCard";
 import { CardHeader, EVENT_ICON } from "./ui";
 
 /** What the picker offers: the engine's seven decision kinds plus the events that need no payload. */
@@ -446,6 +447,7 @@ placeholder={def ? String(def.value) : undefined}
           {sorted.map((e) => {
             const label = e.labelMsg ?? e.label;
             const result = outlooks?.find((d) => d.eventId === e.id);
+            const cost = result ? decisionCost(result) : null;
             const lacking = needs?.filter((n) => n.eventId === e.id) ?? [];
             const editable = pickKindOf(e) !== null;
             const action = (name: string) => t("timeline.eventAction", { label, action: name });
@@ -456,8 +458,9 @@ placeholder={def ? String(def.value) : undefined}
                   <div className="font-medium break-words">{tm(label)}</div>
                   <div className="num text-xs text-ink-2">
                     {mounted && t("timeline.when", { date: fmt.monthYear(e.month, start), age: profile.age + Math.floor(e.month / 12) })}
-                    {result && Math.round(result.netMonthly.year1) !== 0
-                      ? <> · {t(result.netMonthly.year1 > 0 ? "ux.dec.costs" : "ux.dec.saves", { amount: Math.abs(result.netMonthly.year1) })}</>
+                    {/* A modelled decision shows what it costs per month; a one-off event shows its amount. */}
+                    {e.decision && cost && Math.round(cost.amount) !== 0
+                      ? <> · {t(cost.key, { amount: Math.abs(cost.amount) })}</>
                       : !e.decision && e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
                   </div>
                   {lacking.length > 0 && <div className="mt-0.5 text-xs text-warn" data-testid="decision-needs">{t("ux.dec.errMissing", { fields: lacking.map((n) => n.label) })}</div>}

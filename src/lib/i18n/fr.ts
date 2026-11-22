@@ -2109,6 +2109,8 @@ export const fr = {
       default: "Vide = {value} ({provenance})",
       costs: "coûte {amount:chf}/mois la 1re année",
       saves: "économise {amount:chf}/mois la 1re année",
+      costs5: "coûte {amount:chf}/mois sur 5 ans",
+      saves5: "économise {amount:chf}/mois sur 5 ans",
       errDate: "Choisissez un mois à partir d’aujourd’hui.",
       errRange: "Une valeur sort de la plage que le jumeau sait modéliser.",
       errRequired: "Le jumeau n’a pas de valeur sourcée ici. Saisissez la vôtre.",

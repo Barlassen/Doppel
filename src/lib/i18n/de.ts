@@ -2100,6 +2100,8 @@ export const de = {
       default: "Leer = {value} ({provenance})",
       costs: "kostet im 1. Jahr {amount:chf}/Mt.",
       saves: "spart im 1. Jahr {amount:chf}/Mt.",
+      costs5: "kostet über 5 Jahre {amount:chf}/Mt.",
+      saves5: "spart über 5 Jahre {amount:chf}/Mt.",
       errDate: "Wähle einen Monat ab heute.",
       errRange: "Ein Wert liegt ausserhalb des Bereichs, den der Zwilling rechnen kann.",
       errRequired: "Dafür hat der Zwilling keinen belegten Wert. Gib deinen ein.",

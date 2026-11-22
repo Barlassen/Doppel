@@ -2106,6 +2106,8 @@ export const tr = {
       default: "Boş = {value} ({provenance})",
       costs: "ilk yıl maliyeti: ayda {amount:chf}",
       saves: "ilk yıl tasarrufu: ayda {amount:chf}",
+      costs5: "5 yıllık maliyeti: ayda {amount:chf}",
+      saves5: "5 yıllık tasarrufu: ayda {amount:chf}",
       errDate: "Bugünden sonraki bir ay seç.",
       errRange: "Değerlerden biri ikizin modelleyebildiği aralığın dışında.",
       errRequired: "İkizin bunun için kaynaklı bir değeri yok. Kendi değerini gir.",

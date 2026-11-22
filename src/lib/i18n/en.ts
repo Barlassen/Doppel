@@ -2098,6 +2098,8 @@ export const en = {
       default: "Empty = {value} ({provenance})",
       costs: "costs {amount:chf}/mo in year 1",
       saves: "saves {amount:chf}/mo in year 1",
+      costs5: "costs {amount:chf}/mo over 5 years",
+      saves5: "saves {amount:chf}/mo over 5 years",
       errDate: "Choose a month from now on.",
       errRange: "One of the values is outside the range the twin can model.",
       errRequired: "The twin has no sourced value for this. Enter yours.",

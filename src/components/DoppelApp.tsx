@@ -696,7 +696,8 @@ export default function DoppelApp() {
 
   /** Decisions from the picker (and edits): the same ops as a what-if, applied through the same path. */
   function applyDecision(ops: Op[], label: Text) {
-    mutate((s) => applyScenarioOps(s, validateOps(ops, s.events), "command", { profile: base }), { label });
+    // Ops built by the picker are local and trusted: `validateLocalOps` keeps their translatable label.
+    mutate((s) => applyScenarioOps(s, validateLocalOps(ops, s.events), "command", { profile: base }), { label });
   }
 
   /** A life fact read from the statement was confirmed: what it means for the profile or the plan. */
@@ -1175,7 +1176,7 @@ export default function DoppelApp() {
                   set([{ op: "remove", id }], msg("change.removeItem", { label: e?.labelMsg ?? e?.label ?? msg("change.removeEventFallback") }));
                 }}
               />
-              <OutlookCard outlook={outlookShown} loading={!outlookFresh} start={start} />
+              <OutlookCard outlook={outlookShown} loading={!outlookFresh} start={start} labels={new Map(scenario.events.map((e) => [e.id, e.labelMsg ?? e.label]))} />
               {account.id === ALEXIA_ID && (
                 <AlexiaPaths base={base} scenario={accountStart} activePath={scenario.path?.id} onApply={applyAlexiaPath} onPin={pinAlexiaPath} />
               )}

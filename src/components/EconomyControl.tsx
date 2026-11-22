@@ -2,7 +2,8 @@
 
 import { ECONOMIES, ECONOMY_IDS, economyTable, isEconomyId, type EconomyId, type EconomyScenario } from "@/lib/finance/economy";
 import { PARAMS_AS_OF } from "@/lib/finance/params";
-import { dateCh } from "@/lib/format";
+import { dateCh, MINUS } from "@/lib/format";
+import type { Fmt } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { MessageKey } from "@/lib/i18n/types";
 import { Disclosure } from "./ui";
@@ -11,15 +12,15 @@ import { Disclosure } from "./ui";
 export const economyIdOf = (e: EconomyId | EconomyScenario | undefined): EconomyId => (isEconomyId(e) ? e : "baseline");
 
 /** One decimal, or two when the value has them (1.25%). */
-function percent(fmt: ReturnType<typeof useI18n>["fmt"], value: number): string {
-  return fmt.pct(value, Math.abs(value * 100 - Math.round(value * 1000) / 10) < 1e-9 ? 1 : 2);
+function percent(fmt: Fmt, value: number): string {
+  return fmt.pct(value, Math.abs(value * 100 - Math.round(value * 1000) / 10) < 1e-9 ? 1 : 2).replace("-", MINUS);
 }
 
-/** How a table value is printed, by the parameter's unit. */
-function paramValue(fmt: ReturnType<typeof useI18n>["fmt"], value: number, unit: string): string {
+/** A parameter of the engine's tables as text, by its unit ("share/yr", "CHF/month", "km/year", …). */
+export function paramValue(fmt: Fmt, value: number, unit: string): string {
   if (unit.startsWith("share")) return percent(fmt, value);
-  if (unit.startsWith("CHF")) return fmt.chf(value);
-  return fmt.num(value);
+  if (unit.startsWith("CHF")) return `${Number.isInteger(value) ? fmt.chf(value) : `CHF ${fmt.num(value)}`}${unit.slice(3)}`;
+  return `${Number.isInteger(value) ? fmt.int(value) : fmt.num(value)} ${unit}`;
 }
 
 /** The picker in the hero's settings row: which economy the futures are drawn from. */

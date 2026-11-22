@@ -3,7 +3,8 @@
 import type { BudgetItem, DecisionOutlook, Outlook } from "@/lib/finance/outlook";
 import { dateCh } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
-import type { MessageKey } from "@/lib/i18n/types";
+import type { MessageKey, Text } from "@/lib/i18n/types";
+import { paramValue } from "./EconomyControl";
 import { CardHeader, Disclosure, oddsTone } from "./ui";
 
 /** Lines of a decision that start within this many months of it are shown on the card; later ones are in the details. */
@@ -15,7 +16,13 @@ const EARLY_LINE_MONTHS = 12;
  * what each new decision costs per month, line by line. Horizons, the full budget and every parameter with its
  * source sit behind one disclosure.
  */
-export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | null; loading: boolean; start?: Date }) {
+export function OutlookCard({ outlook, loading, start, labels }: {
+  outlook: Outlook | null;
+  loading: boolean;
+  start?: Date;
+  /** Translatable label per event id (the outlook carries the plain label). */
+  labels?: ReadonlyMap<string, Text>;
+}) {
   const { t, tm, fmt, mounted } = useI18n();
   if (!outlook) {
     return (
@@ -31,21 +38,25 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
   const when = (month: number) => (mounted || start ? fmt.monthYear(month, start) : "");
   const fresh = o.decisions.filter((d) => d.isNew);
   const low = o.cashLow.median;
+  // Without a comparison the budget shown is today's (month 0); with one, the first month every new decision runs.
+  const budget = compared ? o.budget.after : o.budget.now;
   const signed = (item: Pick<BudgetItem, "flow">, amount: number) => (item.flow === "income" ? amount : -amount);
 
   return (
     <section className={`card p-5 sm:p-6 lg:col-span-2 ${loading ? "opacity-60" : ""}`} data-testid="outlook-card" aria-busy={loading}>
       <CardHeader
         title={t("ux.out.title")}
-        aside={<span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] text-ink-2" data-testid="outlook-economy">{t("ux.econ.chip", { name: o.economy.label })}</span>}
+        aside={o.economy.id === "baseline" ? undefined : (
+          <span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] text-ink-2" data-testid="outlook-economy">{t("ux.econ.chip", { name: o.economy.label })}</span>
+        )}
       />
 
       <dl className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
         <Figure label={tm(o.goal.label)} tone={oddsTone(o.goal.prob)} testId="outlook-goal"
           value={arrow(o.goal.baselineProb !== undefined ? fmt.pct(o.goal.baselineProb) : undefined, fmt.pct(o.goal.prob))} sub={t("ux.out.goalSub")} />
-        <Figure label={t("ux.out.surplus")} tone={o.budget.after.surplus < 0 ? "text-bad" : ""} testId="outlook-surplus"
-          value={arrow(fmt.chf(o.budget.now.surplus), fmt.chf(o.budget.after.surplus))}
-          sub={compared && fresh.length ? t("ux.out.from", { when: when(o.budget.after.month) }) : t("ux.out.perMonth")} />
+        <Figure label={t("ux.out.surplus")} tone={budget.surplus < 0 ? "text-bad" : ""} testId="outlook-surplus"
+          value={arrow(fmt.chf(o.budget.now.surplus), fmt.chf(budget.surplus))}
+          sub={compared && fresh.length ? t("ux.out.from", { when: when(budget.month) }) : t("ux.out.perMonth")} />
         <Figure label={t("ux.out.cashLow")} tone={low.amount < 0 ? "text-bad" : ""} testId="outlook-cashlow"
           value={fmt.chf(low.amount)} sub={t("ux.out.cashLowAt", { when: when(low.month), age: low.age })} />
         <Figure label={t("ux.out.crunch")} tone={o.crunch.beforeGoal > 0.05 ? "text-bad" : ""} testId="outlook-crunch"
@@ -61,7 +72,7 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
       {fresh.length > 0 && (
         <ul className="mt-4 grid gap-3 lg:grid-cols-2" data-testid="outlook-decisions">
           {fresh.map((d) => (
-            <DecisionCost key={d.eventId} decision={d} when={when} />
+            <DecisionCost key={d.eventId} decision={d} label={labels?.get(d.eventId) ?? d.label} when={when} />
           ))}
         </ul>
       )}
@@ -93,9 +104,9 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
           </div>
 
           <div>
-            <div className="label mb-1">{t("ux.out.budget", { when: when(o.budget.after.month) })}</div>
+            <div className="label mb-1">{t("ux.out.budget", { when: when(budget.month) })}</div>
             <ul className="num space-y-0.5">
-              {o.budget.after.items.filter((i) => !i.info).map((i) => (
+              {budget.items.filter((i) => !i.info).map((i) => (
                 <li key={i.id} className="flex justify-between gap-2">
                   <span className="min-w-0 font-sans break-words text-ink-2">{tm(i.label)}</span>
                   <span className="shrink-0">{fmt.chfSigned(signed(i, i.amount))}</span>
@@ -103,7 +114,7 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
               ))}
               <li className="flex justify-between gap-2 border-t border-line pt-1 font-medium">
                 <span className="font-sans">{t("ux.out.surplus")}</span>
-                <span>{fmt.chfSigned(o.budget.after.surplus)}</span>
+                <span>{fmt.chfSigned(budget.surplus)}</span>
               </li>
             </ul>
           </div>
@@ -138,7 +149,7 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
                       <span className="text-ink">{p.id}</span>{p.source ? ` · ${p.source}` : ""}{p.asOf ? ` · ${t("ux.econ.asOf", { date: dateCh(p.asOf) })}` : ""}
                     </span>
                     <span className="num shrink-0">
-                      {fmt.num(p.value)} {p.unit} · {t((p.provenance === "user" ? "ux.out.yours" : `ubs.prov.${p.provenance}`) as MessageKey)}
+                      {paramValue(fmt, p.value, p.unit)} · {t((p.provenance === "user" ? "ux.out.yours" : `ubs.prov.${p.provenance}`) as MessageKey)}
                     </span>
                   </li>
                 ))}
@@ -149,6 +160,16 @@ export function OutlookCard({ outlook, loading, start }: { outlook: Outlook | nu
       </Disclosure>
     </section>
   );
+}
+
+/**
+ * The one cost figure of a decision: its net cost per month in the first year, or over five years when a one-off
+ * payment (a car purchase) falls into that first year and would make a monthly figure of it.
+ */
+export function decisionCost(d: DecisionOutlook): { amount: number; key: MessageKey } {
+  const lumpy = d.oneOffs.some((x) => !x.transfer && x.month - d.month < 12);
+  const amount = lumpy ? d.netMonthly.years5 : d.netMonthly.year1;
+  return { amount, key: `ux.dec.${amount >= 0 ? "costs" : "saves"}${lumpy ? "5" : ""}` as MessageKey };
 }
 
 function Figure({ label, value, sub, tone = "", testId }: { label: string; value: string; sub: string; tone?: string; testId: string }) {
@@ -162,16 +183,16 @@ function Figure({ label, value, sub, tone = "", testId }: { label: string; value
 }
 
 /** One new decision: its net cost per month in the first year, then its own cost and income lines and one-off payments. */
-function DecisionCost({ decision: d, when }: { decision: DecisionOutlook; when: (month: number) => string }) {
+function DecisionCost({ decision: d, label, when }: { decision: DecisionOutlook; label: Text; when: (month: number) => string }) {
   const { t, tm, fmt } = useI18n();
   const early = d.lines.filter((l) => !l.info && l.phases.length > 0 && l.phases[0].fromMonth - d.month <= EARLY_LINE_MONTHS);
-  const net = d.netMonthly.year1;
+  const { amount: net, key } = decisionCost(d);
   return (
     <li className="rounded-xl border border-line p-3 text-xs" data-decision={d.eventId} data-kind={d.kind}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <span className="text-sm font-medium break-words">{tm(d.label)}</span>
+        <span className="text-sm font-medium break-words">{tm(label)}</span>
         <span className={`num font-semibold ${net > 0 ? "text-bad" : net < 0 ? "text-good" : ""}`} data-testid="decision-net">
-          {t(net >= 0 ? "ux.dec.costs" : "ux.dec.saves", { amount: Math.abs(net) })}
+          {t(key, { amount: Math.abs(net) })}
         </span>
       </div>
       <ul className="num mt-1.5 space-y-0.5" data-testid="decision-lines">
