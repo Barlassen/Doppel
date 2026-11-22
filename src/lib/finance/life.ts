@@ -14,7 +14,7 @@
  */
 import type { Msg } from "@/lib/i18n/types";
 import { cantonTaxIndex, hasCantonPremium, hasCantonTax, healthPremiumMonth, singleHousehold } from "./canton";
-import { CAR, CHILD, EDUCATION, FAMILY_ALLOWANCE_PARAM, type Param, type ParamProvenance } from "./params";
+import { BASELINE, CAR, CHILD, EDUCATION, FAMILY_ALLOWANCE_PARAM, type Param, type ParamProvenance } from "./params";
 import { SOCIAL_DEDUCTIONS, effectiveTaxRate } from "./pension";
 import type { CarDecision, ChildDecision, DecisionKind, EducationDecision, LifeEvent, MoveDecision, PartnerDecision, Profile, SelfEmployedDecision, WorkloadDecision } from "./types";
 
@@ -578,13 +578,22 @@ export function compileLife(profile: Profile, events: readonly LifeEvent[], mont
   children.forEach(({ e }, i) => child(ctx, e, e.decision as ChildDecision, i));
 
   // Structural effects as budget lines (information only: the salary arrays already carry them).
-  structuralLines(ctx, decided);
+  structuralLines(ctx, decided, events);
   plan.markers.sort((a, b) => a.month - b.month);
   return plan;
 }
 
-function structuralLines(ctx: Ctx, decided: LifeEvent[]) {
+function structuralLines(ctx: Ctx, decided: LifeEvent[], events: readonly LifeEvent[]) {
   const { p, plan, months } = ctx;
+  // The user's own take-home pay at full workload in today's CHF, incl. raises (the engine's rule for a raise).
+  const share = BASELINE.raiseNetShare.value / 12;
+  const raises = events.filter((e) => e.type === "raise" && !e.decision);
+  const ownNet = (m: number) => {
+    let net = plan.selfNet[m] > 0 ? plan.selfNet[m] : p.netIncomeMonth;
+    net += plan.raise[m] * share;
+    for (const e of raises) if (m >= e.month) net += e.amount * share;
+    return Math.max(0, net);
+  };
   const first = (kind: DecisionKind) => decided.find((e) => e.decision!.kind === kind);
   const partnerEvent = first("partner");
   if (partnerEvent && plan.partnerNet.some((v) => v > 0)) {
@@ -599,7 +608,7 @@ function structuralLines(ctx: Ctx, decided: LifeEvent[]) {
   const workEvent = decided.find((e) => e.decision!.kind === "workload" || e.decision!.kind === "education" || (e.decision!.kind === "child" && num((e.decision as ChildDecision).parentWorkloadPct) !== undefined));
   if (workEvent && plan.workFactor.some((v) => v !== 1)) {
     const l = line(ctx, workEvent, workEvent.decision!.kind, "workIncome", "income", { key: "life.line.workloadIncome" }, { ...DERIVED, source: "take-home pay scales with the workload" }, { structural: true });
-    for (let m = 0; m < ctx.retireMonth; m++) l[m] = (plan.selfNet[m] > 0 ? plan.selfNet[m] : p.netIncomeMonth) * (plan.workFactor[m] - 1);
+    for (let m = 0; m < ctx.retireMonth; m++) l[m] = ownNet(m) * (plan.workFactor[m] - 1);
   }
   const selfEvent = first("selfEmployed");
   if (selfEvent && plan.selfNet.some((v) => v > 0)) {

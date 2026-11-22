@@ -93,7 +93,7 @@ export interface DecisionOutlook {
   lines: (Omit<BudgetItem, "amount"> & { phases: { fromMonth: number; toMonth: number; monthly: number }[]; total: number })[];
   oneOffs: { month: number; amount: number; label: Text; transfer?: boolean }[];
   /**
-   * Net cost per year from the decision's first year (costs − incomes + one-offs paid), today's CHF. Payments that
+   * Net cost per 12 months counted from the decision's start (costs − incomes + one-offs paid), today's CHF. Payments that
    * build an asset (`transfer`: home equity, amortisation) are not costs and are left out.
    */
   byYear: { year: number; age: number; net: number }[];
@@ -240,28 +240,29 @@ function phasesOf(monthly: Float64Array): { fromMonth: number; toMonth: number; 
 
 function decisionsOf(sim: SimResult, events: readonly LifeEvent[], baselineIds: Set<string> | null, at: At): DecisionOutlook[] {
   const d = sim.detail!;
-  const years = d.months / 12;
   const out: DecisionOutlook[] = [];
   for (const e of events) {
     const lines = d.lines.filter((l) => l.eventId === e.id);
     const oneOffs = d.oneOffs.filter((o) => o.eventId === e.id);
     if (!lines.length && !oneOffs.length && !e.decision) continue;
+    // Years are counted from the decision's own start: year 1 = its first 12 months.
+    const start = Math.max(0, Math.min(d.months - 1, e.month));
+    const years = Math.ceil((d.months - start) / 12);
     const net = new Float64Array(years);
     // Every line of the decision counts here, also the `info` ones: a lower salary is the cost of working less.
     for (const l of lines) {
       if (l.transfer) continue;
       const sign = l.flow === "expense" ? 1 : -1;
-      for (let m = 0; m < d.months; m++) net[Math.floor(m / 12)] += sign * l.monthly[m];
+      for (let m = start; m < d.months; m++) net[Math.floor((m - start) / 12)] += sign * l.monthly[m];
     }
-    for (const o of oneOffs) if (!o.transfer) net[Math.floor(o.month / 12)] -= o.amount;
-    const y0 = Math.min(years - 1, Math.max(0, Math.floor(e.month / 12)));
+    for (const o of oneOffs) if (!o.transfer && o.month >= start) net[Math.floor((o.month - start) / 12)] -= o.amount;
     const avg = (n: number) => {
       let s = 0;
-      for (let y = y0; y < Math.min(years, y0 + n); y++) s += net[y];
-      return s / (Math.min(years - y0, n) * 12);
+      for (let y = 0; y < Math.min(years, n); y++) s += net[y];
+      return s / Math.min(d.months - start, n * 12);
     };
     let last = years - 1;
-    while (last > y0 && net[last] === 0) last--;
+    while (last > 0 && net[last] === 0) last--;
     out.push({
       eventId: e.id,
       kind: e.decision?.kind ?? e.type,
@@ -284,7 +285,7 @@ function decisionsOf(sim: SimResult, events: readonly LifeEvent[], baselineIds: 
         total: l.monthly.reduce((s, v) => s + v, 0),
       })),
       oneOffs: oneOffs.map((o) => ({ month: o.month, amount: o.amount, label: o.label, ...(o.transfer ? { transfer: true } : {}) })),
-      byYear: Array.from({ length: last - y0 + 1 }, (_, i) => ({ year: at((y0 + i) * 12).year, age: at((y0 + i) * 12).age, net: net[y0 + i] })),
+      byYear: Array.from({ length: last + 1 }, (_, i) => ({ year: at(start + i * 12).year, age: at(start + i * 12).age, net: net[i] })),
       netMonthly: { year1: avg(1), years5: avg(5), years10: avg(10) },
       totalNet: net.reduce((s, v) => s + v, 0),
     });
