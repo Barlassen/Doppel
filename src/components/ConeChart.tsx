@@ -14,29 +14,35 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { LifeEvent, SimResult, YearBand } from "@/lib/finance/types";
+import type { CashPoint } from "@/lib/finance/outlook";
+import type { SimResult, YearBand } from "@/lib/finance/types";
 import { MINUS } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Text } from "@/lib/i18n/types";
-import { EVENT_ICON, ON_TRACK, POSSIBLE } from "./ui";
+import { ON_TRACK, POSSIBLE } from "./ui";
 
-export interface ChartEvent {
+/** A dated point on the chart: a life event or one of the engine's outlook markers (birth, daycare, car bought, …). */
+export interface ChartMarker {
   id: string;
   age: number;
-  type: LifeEvent["type"];
+  icon: string;
   label: Text;
+  /** Lower = kept first when there are more markers than the chart can show. */
+  rank?: number;
 }
 
 interface Props {
   real: SimResult;
   ideal: SimResult;
   goal: { target: number; age: number; label: Text };
-  /** Life events on the timeline: each gets a marker above the plot at its age. */
-  events: ChartEvent[];
-  /** The plan before the last decision (or the pinned Plan A), simulated with the same seed: the "before" line. */
+  /** Dated markers above the plot (the outlook's markers, or the plan's events while it is computed). */
+  markers: ChartMarker[];
+  /** The plan without the changes (or the pinned Plan A), simulated with the same seed: the "before" line. */
   before?: SimResult | null;
-  /** What the before line stands for, e.g. `before “Baby in 2028”`. */
-  beforeLabel?: Text;
+  /** What the before line stands for, e.g. "Before your changes" or "Plan A: pinned plan". */
+  beforeLabel?: string;
+  /** Lowest month-end bank cash of the outlook (median future and weakest tenth): the reading names the month. */
+  cashLow?: { median: CashPoint; p10: CashPoint };
   /** Shades the retirement phase from this age. */
   retirementAge?: number;
   /** Draw the target as a net-worth line and dot (off when the goal measures cash, not net worth). Default true. */
@@ -49,8 +55,10 @@ interface Props {
 
 /** The reading looks this many years ahead before it jumps to the goal date. */
 const READ_AHEAD_YEARS = 5;
-/** Marker rows above the plot; events closer than a fifth of the axis go to the next row. */
+/** Marker rows above the plot. */
 const MARKER_ROWS = 3;
+/** At most this many markers are drawn (by `rank`, then by date): more would cover each other. */
+const MARKER_MAX = 12;
 const MARKER_ROW_PX = 17;
 /** The default view ends this share of the way-to-the-goal after the goal (at least MIN years): the decision window. */
 const GOAL_VIEW_PAD = 0.25;
@@ -67,7 +75,7 @@ function niceTicks(min: number, max: number): { ticks: number[]; step: number } 
   return { ticks, step };
 }
 
-export function ConeChart({ real, ideal, goal, events, before, beforeLabel, retirementAge, targetLine = true, netWorthToday, footnote }: Props) {
+export function ConeChart({ real, ideal, goal, markers: given, before, beforeLabel, cashLow, retirementAge, targetLine = true, netWorthToday, footnote }: Props) {
   const { t, tm, fmt } = useI18n();
   const [wholeLife, setWholeLife] = useState(false);
   const byAgeA = new Map(before?.bands.map((b) => [b.age, b]) ?? []);
@@ -90,7 +98,7 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
   // Default view: from today to a little past the goal date and the last life event, so the years the decisions are
   // about fill the chart. The whole life (to the end age) is one click away.
   const toGoal = goal.age - firstAge;
-  const focusEnd = Math.max(goal.age, ...events.map((e) => e.age)) + Math.max(GOAL_VIEW_MIN_YEARS, Math.round(toGoal * GOAL_VIEW_PAD));
+  const focusEnd = goal.age + Math.max(GOAL_VIEW_MIN_YEARS, Math.round(toGoal * GOAL_VIEW_PAD));
   const canFocus = toGoal >= GOAL_VIEW_MIN_YEARS && focusEnd < endAge - GOAL_VIEW_MIN_YEARS;
   const data = canFocus && !wholeLife ? all.filter((d) => d.age <= focusEnd) : all;
   const lastAge = data[data.length - 1]?.age ?? goal.age;
@@ -109,18 +117,33 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
 
   // Markers above the plot: the goal date and every life event, in rows so close ones do not overlap.
   const goalInRange = goal.age >= firstAge && goal.age <= lastAge;
-  const markers = [
-    ...(goalInRange ? [{ id: "goal", age: goal.age, icon: "⚑", label: t("ux.chart.goalMark") }] : []),
-    ...events.filter((e) => e.age >= firstAge && e.age <= lastAge).map((e) => ({ id: e.id, age: e.age, icon: EVENT_ICON[e.type], label: tm(e.label) })),
-  ].sort((a, b) => a.age - b.age);
-  const minGap = Math.max(1, (lastAge - firstAge) / 5);
-  const rowEnd: number[] = [];
-  const placed = markers.map((m) => {
-    let row = rowEnd.findIndex((end) => m.age - end >= minGap);
-    if (row < 0) row = rowEnd.length < MARKER_ROWS ? rowEnd.length : rowEnd.indexOf(Math.min(...rowEnd));
-    rowEnd[row] = m.age;
-    return { ...m, row };
-  });
+  // Placement: the goal flag and the first marker of each event carry a label and need a fifth of the axis to
+  // themselves; the others are icons (label on hover) and need a twentieth. What finds no free row is left out:
+  // every marker is also in the decisions list and in the outlook.
+  const span = Math.max(1, lastAge - firstAge);
+  const candidates = [
+    ...(goalInRange ? [{ id: "goal", age: goal.age, icon: "⚑", label: t("ux.chart.goalMark"), rank: -1 }] : []),
+    ...given.filter((m) => m.age >= firstAge && m.age <= lastAge).map((m) => ({ id: m.id, age: m.age, icon: m.icon, label: tm(m.label), rank: m.rank ?? 1 })),
+  ].sort((a, b) => a.rank - b.rank || a.age - b.age).slice(0, MARKER_MAX);
+  const taken: { from: number; to: number }[][] = Array.from({ length: MARKER_ROWS }, () => []);
+  const placed: { id: string; age: number; icon: string; label: string; row: number; named: boolean; flip: boolean }[] = [];
+  for (const m of candidates) {
+    const flip = m.age - firstAge > span * 0.7;
+    const wide = span / 5;
+    const narrow = span / 20;
+    const fits = (row: number, from: number, to: number) => taken[row].every((x) => to <= x.from || from >= x.to);
+    const tryPlace = (named: boolean) => {
+      const from = named && flip ? m.age - wide : m.age - narrow / 2;
+      const to = named && !flip ? m.age + wide : m.age + narrow / 2;
+      const row = taken.findIndex((_, r) => fits(r, from, to));
+      if (row < 0) return false;
+      taken[row].push({ from, to });
+      placed.push({ id: m.id, age: m.age, icon: m.icon, label: m.label, row, named, flip });
+      return true;
+    };
+    if (!(m.rank <= 0 && tryPlace(true))) tryPlace(false);
+  }
+  const rowEnd = taken.filter((r) => r.length > 0);
   const rows = Math.max(1, rowEnd.length);
 
   const reading = readChart({ real, before, goal, targetLine, netWorthToday });
@@ -138,12 +161,18 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
       t(`ux.chart.status.${reading.status}`, { odds: real.successProb }),
       reading.gap > 0 ? t("ux.chart.readGap", { gap: reading.gap }) : "",
     ].filter(Boolean).join(" "),
-    [
-      // "No cash crunch" is only said when the weakest futures also stay above zero until the goal date.
-      real.crunchProb > 0 ? t("ux.chart.readCrunch", { p: real.crunchProb }) : sinks && reading.underwaterAge! <= goal.age ? "" : t("ux.chart.readNoCrunch"),
-      sinks ? t("ux.chart.readUnderwater", { age: reading.underwaterAge! }) : "",
-    ].filter(Boolean).join(" "),
-    ...(reading.beforeAtGoal && before
+    cashLow
+      ? // The outlook's lowest month-end cash, with its month; the weakest tenth is added when it goes below zero.
+        [
+          t(cashLow.median.amount < 0 ? "ux.chart.readCashOut" : "ux.chart.readCashLow", { amount: cashLow.median.amount, when: cashLow.median.ym, age: cashLow.median.age }),
+          cashLow.median.amount >= 0 && cashLow.p10.amount < 0 ? t("ux.chart.readCashWeak", { when: cashLow.p10.ym }) : "",
+        ].filter(Boolean).join(" ")
+      : [
+          // While the outlook is computed: "no cash crunch" is only said when the weakest futures stay above zero until the goal date.
+          real.crunchProb > 0 ? t("ux.chart.readCrunch", { p: real.crunchProb }) : sinks && reading.underwaterAge! <= goal.age ? "" : t("ux.chart.readNoCrunch"),
+          sinks ? t("ux.chart.readUnderwater", { age: reading.underwaterAge! }) : "",
+        ].filter(Boolean).join(" "),
+    ...(before && reading.beforeAtGoal
       ? [t("ux.chart.readBefore", { label: beforeLabel ?? t("plan.pinned"), before: before.successProb, after: real.successProb, beforeMid: reading.beforeAtGoal.p50, afterMid: reading.atGoal?.p50 ?? real.medianAtGoal })]
       : before
         ? [t("ux.chart.readBeforeOdds", { label: beforeLabel ?? t("plan.pinned"), before: before.successProb, after: real.successProb })]
@@ -168,7 +197,7 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
         {before && (
           <span className="flex min-w-0 items-center gap-2" data-testid="chart-before">
             <span className="inline-block h-0 w-5 shrink-0 border-t-2 border-dotted" style={{ borderColor: "var(--ink-2)" }} />
-            <span className="min-w-0 break-words">{t("plan.label", { marker: "", label: beforeLabel ?? t("plan.pinned") })}</span>
+            <span className="min-w-0 break-words">{beforeLabel ?? t("plan.pinned")}</span>
           </span>
         )}
         {retire !== undefined && (
@@ -240,7 +269,7 @@ export function ConeChart({ real, ideal, goal, events, before, beforeLabel, reti
                 x={m.age}
                 stroke={m.id === "goal" ? "var(--accent)" : "var(--ink-3)"}
                 strokeDasharray="2 4"
-                label={<Marker icon={m.icon} text={m.label} lift={(rows - m.row) * MARKER_ROW_PX - 5} flip={m.age - firstAge > (lastAge - firstAge) * 0.7} accent={m.id === "goal"} />}
+                label={<Marker icon={m.icon} text={m.label} named={m.named} lift={(rows - m.row) * MARKER_ROW_PX - 5} flip={m.flip} accent={m.id === "goal"} />}
               />
             ))}
             {before && (
@@ -309,7 +338,7 @@ export function readChart({ real, before, goal, targetLine, netWorthToday }: Pic
 }
 
 /** Icon (and, from the `sm` breakpoint, its label) in the margin above the plot, on the event's vertical line. */
-function Marker({ viewBox, icon, text, lift, flip, accent }: { viewBox?: { x?: number; y?: number }; icon: string; text: string; lift: number; flip: boolean; accent?: boolean }) {
+function Marker({ viewBox, icon, text, named, lift, flip, accent }: { viewBox?: { x?: number; y?: number }; icon: string; text: string; named: boolean; lift: number; flip: boolean; accent?: boolean }) {
   const x = viewBox?.x ?? 0;
   const y = (viewBox?.y ?? 0) - lift;
   const short = text.length > 22 ? `${text.slice(0, 21)}…` : text;
@@ -319,9 +348,11 @@ function Marker({ viewBox, icon, text, lift, flip, accent }: { viewBox?: { x?: n
       <text x={x} y={y} textAnchor="middle" fontSize={12} fill={accent ? "var(--accent)" : "var(--ink)"}>
         {icon}
       </text>
-      <text x={flip ? x - 10 : x + 10} y={y} textAnchor={flip ? "end" : "start"} fontSize={11} fill={accent ? "var(--accent)" : "var(--ink-2)"} className="hidden sm:inline">
-        {short}
-      </text>
+      {named && (
+        <text x={flip ? x - 10 : x + 10} y={y} textAnchor={flip ? "end" : "start"} fontSize={11} fill={accent ? "var(--accent)" : "var(--ink-2)"} className="hidden sm:inline">
+          {short}
+        </text>
+      )}
     </g>
   );
 }

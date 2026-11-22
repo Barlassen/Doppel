@@ -12,7 +12,6 @@ import {
   type Account,
 } from "@/lib/accounts";
 import { categoryMsg } from "@/lib/data/merchants";
-import type { BehaviorProfile } from "@/lib/finance/behavioralEngine";
 import { dateCh, receiptMoney } from "@/lib/format";
 import { TRANSACTION_CATEGORIES, type TransactionCategory } from "@/lib/finance/types";
 import type { LedgerEntry } from "@/lib/frugal/ledger";
@@ -30,11 +29,13 @@ import {
   type CsvTable,
   type ParsedStatement,
   type ReviewRow,
+  type InferredFact,
   type TradeMapping,
 } from "@/lib/import";
 import { categorizeWithModel } from "@/lib/import/categorizeClient";
 import { buildReview, finalizeReview, isAdded, reviewCounts, reviewOverrides, setRowCategory, type Review } from "@/lib/import/review";
 import { LearnedPanel, learnedFrom } from "./Learned";
+import { answerFact, forgetImport, rememberIncome, resetFacts, useStatementMemory, type FactAnswer } from "./statementMemory";
 import { CardHeader, Disclosure } from "./ui";
 
 /** Sample files generated from the built-in accounts (scripts/make-import-samples.ts). */
@@ -59,6 +60,8 @@ const PROFILE_NAMES: Record<string, string> = Object.fromEntries([
 const field = "w-full min-w-0 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 const pill = "rounded-full border border-line px-3 py-1.5 text-xs font-medium enabled:hover:border-ink-3 disabled:opacity-45";
 const primary = "rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-bg disabled:opacity-45";
+/** File types the statement picker offers: bank CSV, ISO 20022 camt XML, SWIFT MT940. */
+export const STATEMENT_ACCEPT = ".csv,.txt,.xml,.sta,.mt940,.940,text/csv,application/xml,text/xml";
 
 /** A statement file handed over from elsewhere (the new-account wizard) to be reviewed in this panel. */
 export interface IncomingStatement {
@@ -94,15 +97,15 @@ interface Mapping {
  */
 export function ImportPanel({
   account,
-  behavior,
   onLedger,
   onDataChange,
+  onFact,
   incoming,
   children,
 }: {
   account: Account;
-  /** The behaviour analysis of the account's data, for "What the twin learned". */
-  behavior: BehaviorProfile;
+  /** A life fact inferred from the statement was confirmed: the parent applies it to the profile or the plan. */
+  onFact?: (fact: InferredFact) => void;
   onLedger: (entry: LedgerEntry) => void;
   /** Called right before the store changes, with the label for the hero's impact line. */
   onDataChange: (label: Text) => void;
@@ -210,7 +213,7 @@ export function ImportPanel({
     const out = finalizeReview(pending.review);
     if (!out.transactions.length && !out.trades.length) return;
     onDataChange(msg("data.impactImport", { file: pending.fileName }));
-    addImport(accountId, {
+    const record = addImport(accountId, {
       fileName: pending.fileName,
       format: pending.parsed.format,
       profile: pending.parsed.profile,
@@ -220,6 +223,8 @@ export function ImportPanel({
       trades: out.trades,
       overrides: reviewOverrides(pending.review),
     });
+    // The accounts store keeps spending and trades; the salary and other credits are remembered for the summary.
+    rememberIncome(accountId, pending.review.rows.filter((r) => r.kind === "income" && r.amount < 0).map((r) => ({ importId: record.id, date: r.date, merchant: r.merchant, amount: -r.amount })));
     setDone(msg("data.imported", { transactions: counts.transactions, trades: counts.trades, file: pending.fileName }));
     setPending(null);
   }
@@ -227,11 +232,17 @@ export function ImportPanel({
   function undo(id: string, fileName: string) {
     onDataChange(msg("data.impactUndo", { file: fileName }));
     undoImport(accountId, id);
+    forgetImport(accountId, id);
     setDone(msg("data.undone", { file: fileName }));
   }
 
   const disabled = busy || !!pending?.categorizing;
-  const learned = useMemo(() => learnedFrom(account.profile, behavior), [account.profile, behavior]);
+  const memory = useStatementMemory(accountId);
+  const learned = useMemo(() => learnedFrom(account, memory.income, imports.map((r) => r.id)), [account, memory.income, imports]);
+  function answer(fact: InferredFact, value: FactAnswer) {
+    answerFact(accountId, fact.id, value);
+    if (value === "confirmed") onFact?.(fact);
+  }
   return (
     <section ref={root} className="card min-w-0 scroll-mt-24 p-5 sm:p-6" aria-labelledby="import-title" data-testid="statement-card">
       <CardHeader title={<span id="import-title">{t("data.importTitle")}</span>} />
@@ -242,7 +253,7 @@ export function ImportPanel({
         </button>
         <span className="text-xs text-ink-2">{t("data.formats")}</span>
       </div>
-      <input ref={input} type="file" accept=".csv,.txt,.xml,text/csv,application/xml,text/xml" className="hidden"
+      <input ref={input} type="file" accept={STATEMENT_ACCEPT} className="hidden"
         aria-label={t("data.chooseFile")} onChange={pick} />
 
       <div role="status" className="text-sm">
@@ -269,7 +280,7 @@ export function ImportPanel({
 
       {!pending && !mapping && (
         <div className="mt-4">
-          <LearnedPanel learned={learned} fresh={!!done} />
+          <LearnedPanel learned={learned} memory={memory} fresh={!!done} onAnswer={answer} onForget={() => resetFacts(accountId)} />
         </div>
       )}
 
@@ -350,6 +361,7 @@ function ReviewTable({ pending, headingRef, onCategory, onCancel, onConfirm }: {
         <h3 ref={headingRef} tabIndex={-1} className="break-words text-sm font-semibold">{t("data.reviewHeading", { file: fileName })}</h3>
         <p className="mt-0.5 text-xs text-ink-2">
           {parsed.profile === "manual" ? t("data.manualLayout")
+            : parsed.format === "mt940" ? t("statement.mt940Layout")
             : parsed.format.startsWith("camt") ? t("data.camtLayout", { format: parsed.format })
               : t("data.profileLayout", { name: profileName })}
         </p>

@@ -9,6 +9,7 @@ import { useI18n } from "@/lib/i18n/I18nProvider";
 const MAX_COMMAND_LENGTH = 300;
 /** Example chips shown before "More examples". */
 const VISIBLE_EXAMPLES = 3;
+const LIFE_EXAMPLES = ["car", "lease", "child", "workload", "move", "marry", "master", "economy"] as const;
 interface SpeechRec {
   lang: string;
   interimResults: boolean;
@@ -141,7 +142,11 @@ export function CommandBar({ onSubmit, busy, message, hasHome = true }: {
         </button>
       </form>
       <div id={examplesId} className="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t("cmd.examplesAria")}>
-        {commandExamples(locale).filter(({ id }) => hasHome || id !== "delay").slice(0, allExamples ? undefined : VISIBLE_EXAMPLES).map(({ id, text: example }) => (
+        {[
+          ...commandExamples(locale).filter(({ id }) => hasHome || id !== "delay"),
+          // Life decisions and the economy, parsed by the same local parsers (shown under "More examples").
+          ...LIFE_EXAMPLES.map((id) => ({ id: `life-${id}`, text: t(`life.examples.${id}`) })),
+        ].slice(0, allExamples ? undefined : VISIBLE_EXAMPLES).map(({ id, text: example }) => (
           <button
             type="button"
             key={id}

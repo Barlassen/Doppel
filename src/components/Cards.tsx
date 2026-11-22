@@ -5,64 +5,11 @@ import { MAX_COST_TO_INCOME } from "@/lib/finance/swissRules";
 import type { BehaviorProfile } from "@/lib/finance/behavioralEngine";
 import type { Recipe } from "@/lib/finance/goalSolver";
 import type { HabitCosts } from "@/lib/finance/scenario";
-import type { LifeEvent } from "@/lib/finance/types";
 import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { Text } from "@/lib/i18n/types";
 import type { FloorPlanVerification } from "@/lib/snap/vision";
 import { FloorPlanAffordabilitySummary } from "./VisionReview";
-import { CardHeader, Disclosure, EVENT_ICON, ON_TRACK } from "./ui";
-
-export function Timeline({
-  events,
-  age,
-  onShift,
-  onRemove,
-  start,
-}: {
-  events: LifeEvent[];
-  age: number;
-  onShift: (id: string, m: number) => void;
-  onRemove: (id: string) => void;
-  /** Month 0 of the profile (a dataset's as-of date); default today. */
-  start?: Date;
-}) {
-  const { t, fmt, tm, mounted } = useI18n();
-  const sorted = [...events].sort((a, b) => a.month - b.month);
-  return (
-    <div>
-      <h3 className="label mb-2">{t("timeline.title")}</h3>
-      {sorted.length === 0 && <p className="text-sm text-ink-2">{t("timeline.empty")}</p>}
-      <ul className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {sorted.map((e) => (
-          <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
-            <span aria-hidden="true">{EVENT_ICON[e.type]}</span>
-            <div className="min-w-0 flex-1 basis-32">
-              <div className="font-medium break-words">{tm(e.labelMsg ?? e.label)}</div>
-              <div className="num text-xs text-ink-2">
-                {(mounted || start) && t("timeline.when", { date: fmt.monthYear(e.month, start), age: age + Math.floor(e.month / 12) })}
-                {e.amount !== 0 && t(e.type === "child" ? "timeline.amountMonthly" : "timeline.amount", { amount: e.amount })}
-                {e.durationMonths && e.type === "jobloss" ? t("timeline.duration", { months: e.durationMonths }) : ""}
-              </div>
-            </div>
-            <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
-              <IconBtn onClick={() => onShift(e.id, -6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.earlier") })}>{t("timeline.earlierShort")}</IconBtn>
-              <IconBtn onClick={() => onShift(e.id, 6)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("timeline.later") })}>{t("timeline.laterShort")}</IconBtn>
-              <IconBtn onClick={() => onRemove(e.id)} title={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })} aria-label={t("timeline.eventAction", { label: e.labelMsg ?? e.label, action: t("common.remove") })}>✕</IconBtn>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function IconBtn({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button type="button" {...p} className="num grid min-h-7 min-w-7 place-items-center rounded-md px-1.5 text-[11px] text-ink-2 transition hover:bg-surface hover:text-ink">
-      {children}
-    </button>
-  );
-}
+import { CardHeader, Disclosure, ON_TRACK } from "./ui";
 
 /**
  * Bank test for the planned home. `result` must be computed from the simulator's median future at the purchase
@@ -304,51 +251,4 @@ export function RecipesCard({
 /** "Invest CHF 0k idle cash + max out 3a" has nothing idle to invest: what is left of that lever is the 3a part. */
 function recipeTitle(r: Recipe): Recipe["title"] {
   return r.id === "invest" && r.title.params?.k === 0 ? { key: "ux.recipeMax3a" } : r.title;
-}
-
-/** "Your private banker": one button, then the narration (cloud text in the current locale, else the local template). */
-export function BankerCard({
-  text,
-  loading,
-  started,
-  source,
-  onExplain,
-}: {
-  text?: string;
-  loading: boolean;
-  started: boolean;
-  /** Who worded `text`: a language model (its name) or the built-in offline template. */
-  source?: { model: string } | "template";
-  onExplain: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <section className="card p-5 sm:p-6">
-      <CardHeader
-        title={t("banker.title")}
-        aside={
-          <button
-            type="button"
-            onClick={onExplain}
-            disabled={loading}
-            className="rounded-full border border-line px-3 py-1 text-xs font-medium transition hover:border-ink-3 disabled:opacity-50"
-          >
-            {t(started ? "banker.refresh" : "banker.explain")}
-          </button>
-        }
-      />
-      {loading && <p className="pulse-soft text-sm text-ink-2">{t("banker.loading")}</p>}
-      {!loading && text !== undefined && (
-        <>
-          <p className="font-serif text-xl leading-snug">{t("common.quote", { text })}</p>
-          {source && (
-            <p className="mt-2 text-xs text-ink-2" data-testid="banker-source">
-              {source === "template" ? t("ux.bankerTemplate") : t("ux.bankerModel", { model: source.model })}
-            </p>
-          )}
-        </>
-      )}
-      {!started && <p className="text-sm text-ink-2">{t("banker.hint")}</p>}
-    </section>
-  );
 }

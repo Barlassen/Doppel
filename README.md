@@ -2,9 +2,18 @@
 
 # Doppel
 
-A Swiss personal-finance twin you feed with photos. Built at LauzHack 2026 for the UBS "AI Financial Twin" track and the AXA "Frugal use of Multimodal AI" track.
+A Swiss personal-finance twin you feed with a bank statement. Built at LauzHack 2026 for the UBS "AI Financial Twin" track and the AXA "Frugal use of Multimodal AI" track.
 
-You can upload a photo of a shop receipt, review the total and items, and add the purchase as one transaction. Doppel also scans QR-bills, payslips, property listings and handwritten notes. Confirmed scans feed a simulation of your finances with 1,000 Monte Carlo paths run in the browser.
+The dashboard, top to bottom:
+
+- **Headline and economy.** The odds of your goal, always next to the economic scenario they were simulated in (baseline, high inflation, recession, low rates, climate transition). The dated, sourced assumptions are one click away.
+- **Chart.** Net worth over the years to the goal (or to the end age): the middle future, the band 8 of 10 futures land in, the goal, the dated markers of your decisions, and your plan before the changes as a dotted line. Three lines under the chart read it in plain words, including the month of the lowest cash point.
+- **Bank statement.** Upload a CSV, camt.053/054 or MT940 file (or a broker / 3a export). "What the twin learned" shows income, fixed costs with their recurring payees, variable spending, the saving and investing rate, and the life facts the statement implies (a car, a child, rent, a loan), each with its evidence and a confirm / reject control. Receipts, QR-bills, payslips, listings and notes are under "Other documents".
+- **Decisions and what happens next.** "Add a decision" opens a picker (child, car or GA, home, partner or marriage, move, education, workload or sabbatical, self-employment, job loss, inheritance, large purchase). Each form shows the engine's sourced defaults; inputs without a source are required. The outlook then shows goal odds, monthly surplus, lowest cash point and cash-crunch risk before and after, and each decision's own cost lines. The what-if bar feeds the same list.
+- **Ask your twin.** Shows whether an assistant is connected. A question is answered only from the engine's figures; without an assistant the summary is a local template.
+- **Token badge.** Opens the Inspector: calls, tokens, bytes sent, and the saving against a naive baseline (labelled estimated unless measured live).
+
+All of it runs on a simulation with 1,000 Monte Carlo paths in the browser.
 
 Two rules shaped the code:
 
