@@ -281,7 +281,7 @@ function ReviewCard({ review, onConfirm, onDiscard }: {
         </label>
         <label className="min-w-0">
           {receipt ? t("receipt.total", { currency }) : t("review.amount")}
-          <input className={editField} lang="de-CH" type="number" inputMode="decimal" min={0.01} max={MAX_AMOUNT} step="0.01" required
+          <input className={editField} type="number" inputMode="decimal" min={0.01} max={MAX_AMOUNT} step="0.01" required
             value={draft.amount ?? ""} onChange={(e) => update("amount", isAmount(e.currentTarget.valueAsNumber) ? e.currentTarget.valueAsNumber : undefined)} />
         </label>
         {receipt && (
@@ -343,7 +343,7 @@ function ReviewCard({ review, onConfirm, onDiscard }: {
                 <li key={item.id} className="grid grid-cols-[minmax(0,1fr)_4.25rem_auto] items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_5.5rem_auto]">
                   <input className={editField} aria-label={t("receipt.itemName", { count: index + 1 })} maxLength={RECEIPT_ITEM_NAME_LIMIT}
                     required value={item.name} onChange={(e) => editRow(item.id, { name: e.currentTarget.value, category: undefined })} />
-                  <input className={editField} aria-label={t("receipt.itemAmount", { count: index + 1, currency })} lang="de-CH" type="number"
+                  <input className={editField} aria-label={t("receipt.itemAmount", { count: index + 1, currency })} type="number"
                     inputMode="decimal" min={-MAX_AMOUNT} max={MAX_AMOUNT} step="0.01" required value={item.amount ?? ""}
                     onChange={(e) => editRow(item.id, { amount: Number.isFinite(e.currentTarget.valueAsNumber) ? e.currentTarget.valueAsNumber : undefined })} />
                   <button type="button" aria-label={t("receipt.remove", { count: index + 1 })}

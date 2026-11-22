@@ -495,7 +495,7 @@ export function AccountWizard({
       </label>
     );
   };
-  const amount = { type: "number", inputMode: "numeric", min: 0, step: "any", lang: "de-CH" } as const;
+  const amount = { type: "number", inputMode: "numeric", min: 0, step: "any" } as const;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={requestClose}>
@@ -663,7 +663,7 @@ export function AccountWizard({
               {input("tax", t("data.wizardTaxRate"), taxRate, (v) => {
                 setTaxTouched(true);
                 setTaxRate(v);
-              }, { type: "number", inputMode: "decimal", min: LIMITS.tax[0], max: LIMITS.tax[1], step: "any", lang: "de-CH" })}
+              }, { type: "number", inputMode: "decimal", min: LIMITS.tax[0], max: LIMITS.tax[1], step: "any" })}
               <p className="num rounded-lg bg-surface-2 px-3 py-2 text-xs font-normal text-ink-2">
                 {t("data.wizardIncomeSummary", { gross: computedGross, net: computedNet })}
                 {facts?.income != null && <> · {t("ux.wiz.fromStatement")}</>}
