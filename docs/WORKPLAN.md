@@ -78,3 +78,35 @@ npx tsx --env-file=.env.local scripts/vision-benchmark.ts --live     # → docs/
 ```
 
 Check that both reports say "live" in their measurement-basis line and that the misses are listed. Commit the two reports. If a new open model scores worse on a route, set that route's model back in `.env.example` / `route.ts` defaults before committing.
+
+## 7. Team split (2026-11-22)
+
+| Who | Works through | Tasks |
+|---|---|---|
+| **Coordinator thread** ("Swiss Financial Digital Twin", Claude) | its own agents | Finish and merge the in-flight UBS data layer and `/play` phase 1 (§1); the anti-slop leftovers (§2, plus the open copy fixes below); a "which assumptions matter most" sensitivity panel (judge question 1) after the merges; real-world factors phase 1 once the owner decides (§5); `/play` phase 2 side boards after the owner reviews phase 1 |
+| **Oktay** | his own agents, no API key | Tasks A–E in `docs/tasks/` (A, B, C now; D, E after the in-flight merges) |
+| **Barlas** | the "AI Slop ve JetBrains Entegrasyonu" thread and its agents | The JetBrains track (J1–J7 below); live measurements after A/B (§6); owner decisions (§5); confirming submission rules and deadlines with the organisers |
+
+### JetBrains track (Barlas)
+
+Requirement, as recorded in the other thread: a Kotlin Multiplatform app on at least two platforms. Doppel Pocket (`pocket/`, Android + Desktop JVM, Compose Multiplatform) is merged on `main` and meets it. Check the track's exact judging criteria with the organisers.
+
+| # | Task | State / notes |
+|---|---|---|
+| J1 | Merge the Pocket continuation branch `t3/b586bd62` | 8 commits: ports + versioned contract, engine-parity cards, gateway, snap pipeline, ledger + Inspector, and the UI pass `c28c301` (WIP, **unverified**). Run `.\gradlew.bat :shared:jvmTest :composeApp:assembleDebug`, check desktop + Android emulator screenshots, then merge. Outside `pocket/` it only adds `scripts/pocket-*-golden.ts`. |
+| J2 | Write `docs/INTEGRATION.md` | The TKT bridge and accounts/sync seam proposal (Pocket step 7). Use the **same** event contract as Oktay's task E. |
+| J3 | Pocket ← new web features | Replace Lukas/Elena with Barlas/Meriç/Oktay and regenerate the golden files on purpose (`npx tsx scripts/pocket-engine-golden.ts`); add receipt line items. After the UBS layer merges: UBS profiles, liabilities, multiple goals. Pocket README still mentions Lukas/Elena. |
+| J4 | Fresh-clone check in IntelliJ IDEA | Gradle sync with JDK 17 from a clean clone. Not done yet. Judges will open the project in the IDE. |
+| J5 | JetBrains Air bonus | A human team member uses Air for a real, small change (idea: add a golden parity case with a CHF 500 standing order). Keep screenshots as evidence. |
+| J6 | Demo assets | A short GIF or video of Android + Desktop; update the Pocket README. |
+| J7 | Optional third target | Compose for Web (wasm). Only if time remains. |
+
+Barlas's agents also read [AGENTS.md](../AGENTS.md) and keep to the ownership rules in §3. Pocket work stays inside `pocket/` and `scripts/pocket-*`.
+
+### Open copy fixes found by the anti-slop review (coordinator)
+
+Apply in all four dictionaries:
+- remove the leftover emoji prefixes;
+- `inspector.title` → "Token usage and cost";
+- reword `invest.taxLeft` and `invest.growthWarning`;
+- accuracy fixes: `banker.hint` (overstates "~150 tokens, numbers only"), `inspector.liveCheckText` (it sends a ≤2048 px JPEG, not the original image), `inspector.tier2Text` (omits the OCR-failure route).
