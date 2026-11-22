@@ -53,6 +53,19 @@ Without a model, QR-bills, local OCR, regex extraction, statement import (bank C
 
 The OpenRouter defaults are Qwen3 30B A3B Instruct 2507 for text and Qwen3-VL 30B A3B Instruct for vision. To use the previous Gemini setup, set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` in `.env.local` and restart the app. The opt-in naive comparison defaults to `openai/gpt-4o`. See the [model selection and dated rates](docs/DECISIONS.md#16-open-weight-defaults-for-text-and-vision).
 
+## Mobile app
+
+`mobile/` is an Expo app for Android that runs in Expo Go: a native shell (server address by QR code or by hand, Dashboard / Play bar, loading and failure states in four languages) around this web app in a WebView. It has no finance code of its own, so the phone always shows the current twin.
+
+```bash
+npm run build && npm start         # Doppel on http://localhost:3000 and on the computer's LAN address
+cd mobile && npm install
+npx expo start                     # scan the QR code with Expo Go (phone and computer on the same Wi-Fi)
+npm run qr                         # second terminal: the server address as a QR code for the app's scanner
+```
+
+It has not been run on a phone yet. [mobile/README.md](mobile/README.md) has the full steps, including networks that isolate clients; [docs/MOBILE.md](docs/MOBILE.md) explains the choice, compares it with a PWA, an EAS build and `pocket/`, and lists what is not verified.
+
 ## How it works
 
 ```

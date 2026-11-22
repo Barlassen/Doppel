@@ -95,6 +95,8 @@ tkt/                            Hand control (Python, MediaPipe): a camera as a 
                                 hand. Its own rules are in tkt/AGENTS.md. See docs/TKT.md.
 pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android + Desktop) with an engine
                                 parity test against the TS engine. Owned by a separate workstream.
+mobile/                         Doppel for Expo Go (Android): a native shell around this web app in a WebView.
+                                No finance code. Its own rules are in mobile/AGENTS.md. See docs/MOBILE.md.
 ```
 
 Further reading:
@@ -106,6 +108,7 @@ Further reading:
 - [docs/I18N.md](docs/I18N.md): translation rules.
 - [docs/BENCHMARK.md](docs/BENCHMARK.md) and [docs/VISION_BENCHMARK.md](docs/VISION_BENCHMARK.md): measured results.
 - [docs/PLAY.md](docs/PLAY.md): the life game.
+- [docs/MOBILE.md](docs/MOBILE.md): the Expo Go app, the options compared, and what was not verified on a device.
 - [docs/REAL_WORLD_FACTORS.md](docs/REAL_WORLD_FACTORS.md): sourced Swiss factors to add next.
 - [docs/WORKPLAN.md](docs/WORKPLAN.md): what is in flight and the merge order.
 - `docs/tasks/`: self-contained task briefs.
