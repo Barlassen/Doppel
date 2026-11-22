@@ -53,6 +53,18 @@ Without a model, QR-bills, local OCR, regex extraction, statement import (bank C
 
 The OpenRouter defaults are Qwen3 30B A3B Instruct 2507 for text and Qwen3-VL 30B A3B Instruct for vision. To use the previous Gemini setup, set `DOPPEL_TEXT_MODEL` and `DOPPEL_VISION_MODEL` to `google/gemini-2.5-flash-lite` in `.env.local` and restart the app. The opt-in naive comparison defaults to `openai/gpt-4o`. See the [model selection and dated rates](docs/DECISIONS.md#16-open-weight-defaults-for-text-and-vision).
 
+## Desktop app
+
+Doppel also runs as a desktop app that starts with a double-click, with no terminal and no Node installed. It is an Electron shell (`desktop/`) around the same web app: it starts the production server inside the app on a local port, opens one window on it, and keeps your data between launches. A key is optional and set under **Assistant settings…** in the app's menu; none is bundled.
+
+```bash
+npm ci && npm run desktop:install
+npm run desktop:dev      # run it unpackaged
+npm run desktop:build    # macOS: desktop/dist/mac/Doppel.app and .dmg files (x64, arm64)
+```
+
+The builds are unsigned, so a downloaded copy needs one extra step on first launch. That step, the Windows installer, where the data lives and what was and was not verified are in [docs/DESKTOP.md](docs/DESKTOP.md).
+
 ## How it works
 
 ```

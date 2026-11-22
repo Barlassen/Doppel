@@ -95,6 +95,8 @@ tkt/                            Hand control (Python, MediaPipe): a camera as a 
                                 hand. Its own rules are in tkt/AGENTS.md. See docs/TKT.md.
 pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android + Desktop) with an engine
                                 parity test against the TS engine. Owned by a separate workstream.
+desktop/                        Doppel as a desktop app: an Electron shell that runs the production server inside the
+                                app and opens one window on it. Changes nothing under src/. See docs/DESKTOP.md.
 ```
 
 Further reading:
