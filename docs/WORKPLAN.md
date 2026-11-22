@@ -13,7 +13,7 @@ State on 2026-11-22 04:30 (Europe/Zurich): `main` = `43446e8`. Contents:
 
 | Branch | What | Touches | Merge order |
 |---|---|---|---|
-| `t3/integrate-ubs-synthetic-data` | UBS data layer `src/lib/ubs/`, liabilities in the engine, multiple goals, "Open a UBS profile" picker, Alexia's three paths on the dashboard | `src/lib/finance/*`, `src/lib/accounts/*`, `DoppelApp`, `AccountSwitcher`, `Hero`, `Cards`, `ConeChart`, dictionaries (`ubs` group) | **1st** |
+| ~~`t3/integrate-ubs-synthetic-data`~~ **merged 2026-11-22** | UBS data layer `src/lib/ubs/` (API in `docs/UBS.md`), liabilities with annuity amortisation, multiple goals, "Open a UBS profile" picker, Alexia's three paths, provenance panel | — | done |
 | `t3/playable-financial-simulator` | `/play` life game, phase 1 of `docs/PLAY.md` (MCTS review, move labels, impact donuts, branching) | `src/lib/game/*`, `src/app/play/*`, `src/components/play/*`, `monteCarlo.ts`, `types.ts`, dictionaries (`play` group), a stub `src/lib/ubs/` | **2nd**. Its UBS stub is replaced by the real layer from step 1; conflicts are expected in `types.ts` and `monteCarlo.ts`. |
 
 ## 2. Work from the other thread ("AI Slop ve JetBrains Entegrasyonu")
