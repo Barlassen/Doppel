@@ -14,7 +14,7 @@ State on 2026-11-22 04:30 (Europe/Zurich): `main` = `43446e8`. Contents:
 | Branch | What | Touches | Merge order |
 |---|---|---|---|
 | ~~`t3/integrate-ubs-synthetic-data`~~ **merged 2026-11-22** | UBS data layer `src/lib/ubs/` (API in `docs/UBS.md`), liabilities with annuity amortisation, multiple goals, "Open a UBS profile" picker, Alexia's three paths, provenance panel | — | done |
-| `t3/playable-financial-simulator` | `/play` life game, phase 1 of `docs/PLAY.md` (MCTS review, move labels, impact donuts, branching) | `src/lib/game/*`, `src/app/play/*`, `src/components/play/*`, `monteCarlo.ts`, `types.ts`, dictionaries (`play` group), a stub `src/lib/ubs/` | **2nd**. Its UBS stub is replaced by the real layer from step 1; conflicts are expected in `types.ts` and `monteCarlo.ts`. |
+| ~~`t3/playable-financial-simulator`~~ **merged 2026-11-22** | `/play` phase 1 (MCTS review, move labels, impact donuts, branching, game review). Uses the real UBS layer; the game runs its own simulator copy `src/lib/game/sim.ts` (see follow-ups) | — | done |
 
 ## 2. Work from the other thread ("AI Slop ve JetBrains Entegrasyonu")
 
@@ -110,3 +110,10 @@ Apply in all four dictionaries:
 - `inspector.title` → "Token usage and cost";
 - reword `invest.taxLeft` and `invest.growthWarning`;
 - accuracy fixes: `banker.hint` (overstates "~150 tokens, numbers only"), `inspector.liveCheckText` (it sends a ≤2048 px JPEG, not the original image), `inspector.tier2Text` (omits the OCR-failure route).
+
+
+## 8. Follow-ups after the /play merge (coordinator)
+
+- **One simulator.** `src/lib/finance/monteCarlo.ts` (dashboard: liabilities, multiple goals, nominal cash-flow phases, accounting mode) and `src/lib/game/sim.ts` (play: regimes, indexed income phases, starting home, loans, shocks) were extended in parallel and are both validated (`ubs-check` / `engine-check` vs `play-check`). Merge them into one engine with both feature sets, keeping all three checks green.
+- **The /play picker** now lists every non-retired UBS profile under 61 (~980) in a native select. Replace it with the dashboard's searchable picker.
+- **Spec changes the /play agent proposed** (`docs/PLAY.md` §13): a stretch goal (UBS goals are often reached within 2–3 years, which flattens the goal term), defined dealing rules under check, the luck definition's small replanning bias, an ungraded "life choice" category, retirement out of scope for now, and Alexia's tuition source (S001 CHF 8'000/yr replaces the config's 2 × CHF 2'500).
