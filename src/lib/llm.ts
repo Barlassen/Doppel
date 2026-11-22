@@ -71,7 +71,7 @@ export const ASK_FACT_KEYS = [
   // the scenario the figures belong to
   "scenario", "economy_scenario", "economy_assumptions",
   // odds = share of the simulated futures
-  "goal_odds_pct", "goal_odds_before_decision_pct", "goal_odds_disciplined_pct", "cash_crunch_risk_before_goal_date_pct",
+  "goal_odds_pct", "goal_odds_with_decision_pct", "goal_odds_before_decision_pct", "goal_odds_disciplined_pct", "cash_crunch_risk_before_goal_date_pct",
   "habit_cost_by_goal_date_chf", "top_habit", "best_move", "best_move_goal_odds_pct",
   // monthly budget
   "take_home_income_per_month_today_chf", "spending_per_month_today_chf", "surplus_per_month_today_chf",
@@ -86,6 +86,7 @@ export const ASK_FACT_KEYS = [
   "net_worth_today_chf", "net_worth_in_1_year_median_chf", "net_worth_in_5_years_median_chf", "net_worth_in_10_years_median_chf",
   "date_in_1_year", "date_in_5_years", "date_in_10_years",
   "net_worth_in_10_years_weak_case_chf", "net_worth_in_10_years_strong_case_chf", "net_worth_in_10_years_change_from_decision_chf",
+  "net_worth_in_10_years_without_decision_median_chf", "net_worth_at_goal_date_without_decision_median_chf",
   "net_worth_at_goal_date_median_chf", "net_worth_at_retirement_median_chf",
   // cash
   "lowest_cash_median_chf", "lowest_cash_month", "lowest_cash_weak_case_chf",

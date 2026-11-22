@@ -55,8 +55,10 @@ export function outlookFacts(o: Outlook, ctx: OutlookFactsContext): AskFacts {
     scenario: ctx.scenario ? cut(text(ctx.scenario)) : undefined,
     economy_scenario: text(o.economy.label),
     economy_assumptions: cut(text(o.economy.summary)),
-    goal_odds_pct: pct(o.goal.prob),
-    goal_odds_before_decision_pct: fresh.length && o.goal.baselineProb !== undefined ? pct(o.goal.baselineProb) : undefined,
+    // With a new decision the two odds are named apart, so "before" cannot be read as "now".
+    ...(fresh.length && o.goal.baselineProb !== undefined
+      ? { goal_odds_with_decision_pct: pct(o.goal.prob), goal_odds_before_decision_pct: pct(o.goal.baselineProb) }
+      : { goal_odds_pct: pct(o.goal.prob) }),
     goal_odds_disciplined_pct: ctx.disciplined ? pct(ctx.disciplined.successProb) : undefined,
     cash_crunch_risk_before_goal_date_pct: pct(o.crunch.beforeGoal),
     habit_cost_by_goal_date_chf: ctx.disciplined ? chf(Math.max(0, ctx.disciplined.medianAtGoal - o.goal.median)) : undefined,
@@ -114,6 +116,8 @@ export function outlookFacts(o: Outlook, ctx: OutlookFactsContext): AskFacts {
     net_worth_in_10_years_weak_case_chf: y10 ? chf(y10.p10) : undefined,
     net_worth_in_10_years_strong_case_chf: y10 ? chf(y10.p90) : undefined,
     net_worth_in_10_years_change_from_decision_chf: fresh.length && y10?.deltaP50 !== undefined ? chf(y10.deltaP50) : undefined,
+    net_worth_in_10_years_without_decision_median_chf: fresh.length && y10?.baseline ? chf(y10.baseline.p50) : undefined,
+    net_worth_at_goal_date_without_decision_median_chf: fresh.length && point("goal")?.baseline ? chf(point("goal")!.baseline!.p50) : undefined,
     net_worth_at_goal_date_median_chf: point("goal") ? chf(point("goal")!.p50) : undefined,
     net_worth_at_retirement_median_chf: point("retirement") ? chf(point("retirement")!.p50) : undefined,
     lowest_cash_median_chf: chf(o.cashLow.median.amount),

@@ -869,7 +869,8 @@ export default function DoppelApp() {
    * that names its unit and time basis; before the first outlook is computed only the plain profile facts are sent.
    */
   function askFactsNow(): AskFacts {
-    const top = recipes[0];
+    // The same rule as the recipe cards: a move that does not raise the odds is not a "best move".
+    const top = recipes.find((r) => r.reaches || Math.round(r.newProb * 100) > Math.round(real.successProb * 100));
     const extra = learned.summary ? summaryAskFacts(learned.summary) : undefined;
     if (outlookFresh) {
       const decisions = scenario.events.map((e) => translateText(locale, e.labelMsg ?? e.label)).join(", ");

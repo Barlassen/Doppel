@@ -629,6 +629,15 @@ async function main() {
     assert.equal((await ask("Why?")).json.error, "INVALID_MODEL_OUTPUT");
   });
 
+  await check("ask: the time basis written in a fact's key is not an invented figure (seen live: \"ilk 10 yıl\")", async () => {
+    assert.ok(grounding);
+    const keyed = { decision_net_cost_per_month_first_10_years_chf: 1687, net_worth_in_5_years_median_chf: 159000, savings_last_to_age_90_pct: 100 };
+    const allowed = grounding.allowedNumbers(keyed, "What does it cost?");
+    assert.deepEqual(grounding.ungroundedNumbers("İlk 10 yıl boyunca ayda CHF 1.687; 5 yıl sonra CHF 159'000; 90 yaşına kadar %100.", allowed), []);
+    // A number that is neither a value nor a key's basis is still refused.
+    assert.deepEqual(grounding.ungroundedNumbers("Over 7 years that is CHF 20244.", allowed), ["7", "20244"]);
+  });
+
   await check("ask: Swiss terms, list markers and number formats are not mistaken for new figures", async () => {
     assert.ok(grounding);
     const allowed = grounding.allowedNumbers(facts, "Can I retire at 60?");
@@ -735,7 +744,11 @@ async function main() {
     for (const [k, v] of Object.entries(f)) if (typeof v === "number") assert.match(k, /_chf$|_pct$|_pct_of_futures$|_years$|_year$|^years_to_goal$/, k);
     // No money figure without a time basis in its name.
     for (const k of Object.keys(f).filter((x) => x.endsWith("_chf"))) assert.match(k, /today|per_month|by_goal_date|in_\d+_years?|at_goal_date|at_retirement|at_purchase|total|lowest_cash|goal_target/, k);
-    assert.equal(f.goal_odds_pct, Math.round(o.goal.prob * 1000) / 10);
+    // With a new decision the odds after and before it carry their own names.
+    assert.equal(f.goal_odds_with_decision_pct, Math.round(o.goal.prob * 1000) / 10);
+    assert.equal(f.goal_odds_before_decision_pct, Math.round(o.goal.baselineProb! * 1000) / 10);
+    assert.equal("goal_odds_pct" in f, false);
+    assert.equal(f.net_worth_in_10_years_without_decision_median_chf, Math.round(o.netWorth.find((n) => n.key === "y10")!.baseline!.p50));
     assert.equal(f.habit_cost_by_goal_date_chf, Math.round(Math.max(0, disciplined.medianAtGoal - o.goal.median)));
     assert.equal(f.net_worth_in_10_years_median_chf, Math.round(o.netWorth.find((n) => n.key === "y10")!.p50));
     assert.equal(f.surplus_change_per_month_from_decision_chf, Math.round(o.budget.surplusDelta!));
@@ -755,7 +768,7 @@ async function main() {
     assert.equal(tr.economy_scenario, "Temel senaryo");
     // The gateway takes the object as it is.
     fresh();
-    provider.reply = "Your goal odds are " + f.goal_odds_pct + "%.";
+    provider.reply = "With the decision your goal odds are " + f.goal_odds_with_decision_pct + "%.";
     assert.equal((await post({ task: "ask", question: "What are my odds?", facts: f, lang: "en" })).status, 200);
   });
 

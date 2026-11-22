@@ -144,13 +144,25 @@ export function spelledNumbers(text: string, includeSmall = false): FoundNumber[
 
 const near = (a: number, b: number) => Math.abs(a - b) <= 0.005 + Math.abs(b) * 1e-9;
 
-/** Numbers a fact value carries: the number itself, or every number printed in a string. */
+/** A time basis inside a fact key: "_10_years", "_12_months", "_age_90". Not "pillar3a" or a line number. */
+const KEY_BASIS = /(?:^|_)(\d+)_(?:years?|months?)(?=_|$)|(?:^|_)age_(\d+)(?=_|$)/g;
+
+/**
+ * Numbers a fact carries: the value itself, every number printed in a string value, and the time basis written in
+ * the fact's key ("…_first_10_years_…", "…_in_5_years_…", "…_to_age_90_…"): the answer has to name that basis, so
+ * "over the first 10 years" must not count as an invented figure.
+ */
 export function allowedNumbers(...sources: unknown[]): number[] {
   const out: number[] = [];
   const visit = (value: unknown) => {
     if (typeof value === "number" && Number.isFinite(value)) out.push(value);
     else if (typeof value === "string") for (const found of numbersIn(value)) out.push(...found.values);
-    else if (value && typeof value === "object") for (const nested of Object.values(value)) visit(nested);
+    else if (value && typeof value === "object") {
+      for (const [key, nested] of Object.entries(value)) {
+        if (!Array.isArray(value)) for (const m of key.matchAll(KEY_BASIS)) out.push(Number(m[1] ?? m[2]));
+        visit(nested);
+      }
+    }
   };
   sources.forEach(visit);
   return out;
