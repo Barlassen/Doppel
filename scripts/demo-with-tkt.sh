@@ -4,10 +4,13 @@
 # Stops only the Doppel server it started (by PID). TKT runs in the foreground; quit it with its own keys or Ctrl+C.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-tkt="${1:-${TKT_DIR:-$(dirname "$root")/TKT}}"
+# Default: the submodule in this repository (git submodule update --init), else a sibling checkout ../TKT.
+default_tkt="$root/tkt"
+[ -f "$default_tkt/pyproject.toml" ] || default_tkt="$(dirname "$root")/TKT"
+tkt="${1:-${TKT_DIR:-$default_tkt}}"
 port="${PORT:-3000}"
 backend="${TKT_BACKEND:-$([ "$(uname)" = "Darwin" ] && echo native || echo pynput)}"
-[ -f "$tkt/pyproject.toml" ] || { echo "TKT not found at '$tkt'. Pass it as the first argument or set TKT_DIR." >&2; exit 1; }
+[ -f "$tkt/pyproject.toml" ] || { echo "TKT not found at '$tkt'. Run 'git submodule update --init', pass it as the first argument or set TKT_DIR." >&2; exit 1; }
 
 cd "$root"
 [ -f .next/BUILD_ID ] || npm run build
@@ -19,5 +22,11 @@ echo "Doppel: http://localhost:$port/play (PID $doppel)"
 (command -v open >/dev/null && open "http://localhost:$port/play") || (command -v xdg-open >/dev/null && xdg-open "http://localhost:$port/play") || true
 
 cd "$tkt"
-echo "TKT: live touchpad ($backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
-uv run python -m tkt.app.main --source live --backend "$backend"
+if [ "$(uname)" = "Darwin" ] && [ "${TKT_MODE:-auto}" = "auto" ]; then
+  # macOS: TKT's auto mode switches between the desk camera (A) and the pinch setup (C).
+  echo "TKT: auto mode (A/C). Esc quits."
+  uv run python -m tkt.app.auto_mode
+else
+  echo "TKT: version A, live touchpad ($backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
+  uv run python -m tkt.app.main --source live --backend "$backend" --hud
+fi

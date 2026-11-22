@@ -8,8 +8,12 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $TktDir) { $TktDir = Join-Path (Split-Path -Parent $root) "TKT" }
-if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { throw "TKT not found at '$TktDir'. Pass -TktDir or set TKT_DIR." }
+# Default: the submodule in this repository (git submodule update --init), else a sibling checkout ../TKT.
+if (-not $TktDir) {
+  $TktDir = Join-Path $root "tkt"
+  if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { $TktDir = Join-Path (Split-Path -Parent $root) "TKT" }
+}
+if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { throw "TKT not found at '$TktDir'. Run 'git submodule update --init', pass -TktDir or set TKT_DIR." }
 
 Push-Location $root
 try {
@@ -26,8 +30,9 @@ try {
 
 Push-Location $TktDir
 try {
-  Write-Host "TKT: live touchpad ($Backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
-  uv run python -m tkt.app.main --source live --backend $Backend
+  # Version A (desk camera) with TKT's HUD; the auto mode (A/C) is macOS only, see tkt/README.md.
+  Write-Host "TKT: version A, live touchpad ($Backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
+  uv run python -m tkt.app.main --source live --backend $Backend --hud
 } finally {
   Pop-Location
   if ($doppel -and -not $doppel.HasExited) { Stop-Process -Id $doppel.Id }

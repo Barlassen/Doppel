@@ -83,6 +83,9 @@ data/ubs/                       UBS LauzHack 2026 starter data (fictional): prof
                                 goals, scenario catalog, Alexia's paths
 public/samples/                 sample documents, import files (imports/), vision samples (vision/), bench photos
 scripts/                        checks, benchmarks, sample generators (see §5)
+tkt/                            TKT (git submodule → D0ktay/TKT, Oktay's hand-tracking touchpad, Python). Do NOT edit
+                                here: change TKT in its own repository (its AGENTS.md rules apply), then bump the
+                                submodule pointer here. See docs/TKT.md.
 pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android + Desktop) with an engine
                                 parity test against the TS engine. Owned by a separate workstream.
 ```
