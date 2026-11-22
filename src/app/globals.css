@@ -15,6 +15,13 @@
   --warn: #a86500;
   --bad: #c42b1c;
   --frugal: #0a7a3d;
+  /* Doppel Play impact channels: categorical slots 1–6 of the validated palette (fixed order). */
+  --ch-1: #2a78d6;
+  --ch-2: #eb6834;
+  --ch-3: #1baf7a;
+  --ch-4: #eda100;
+  --ch-5: #e87ba4;
+  --ch-6: #008300;
   color-scheme: light;
 }
 
@@ -34,6 +41,12 @@
     --warn: #e0a030;
     --bad: #ef5b4c;
     --frugal: #3fb871;
+    --ch-1: #3987e5;
+    --ch-2: #d95926;
+    --ch-3: #199e70;
+    --ch-4: #c98500;
+    --ch-5: #d55181;
+    --ch-6: #0ca30c;
     color-scheme: dark;
   }
 }
@@ -52,6 +65,12 @@
   --warn: #e0a030;
   --bad: #ef5b4c;
   --frugal: #3fb871;
+  --ch-1: #3987e5;
+  --ch-2: #d95926;
+  --ch-3: #199e70;
+  --ch-4: #c98500;
+  --ch-5: #d55181;
+  --ch-6: #0ca30c;
   color-scheme: dark;
 }
 

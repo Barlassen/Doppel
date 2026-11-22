@@ -638,6 +638,43 @@ try {
   await preferenceContext.close();
   console.log("Locale switching, persistence, browser preference, speech, offline narration, and English SSR passed at 320px");
 
+  // Doppel Play: open /play, play two moves, the engine review appears, branch once, and the nav links back.
+  {
+    const play = await browser.newContext({ locale: "en-US", viewport: { width: 320, height: 800 }, reducedMotion: "reduce" });
+    const playPage = await play.newPage();
+    playPage.on("pageerror", (error) => errors.push(error.message));
+    trackHydration(playPage, errors);
+    const P = (key, params) => translate("en", key, params);
+    await playPage.goto(baseURL + "/play");
+    const review = playPage.getByTestId("play-review");
+    const playable = playPage.locator("#play-move").locator("xpath=ancestor::section").getByTestId("play-card");
+    await playPage.locator("[data-card=pathWork][data-testid=play-card]").click();
+    await playPage.waitForFunction(() => document.querySelector("[data-testid=play-review]")?.getAttribute("data-label"), null, { timeout: 30_000 });
+    const first = await review.getAttribute("data-label");
+    assert.ok(["brilliant", "best", "good", "inaccuracy", "mistake", "blunder", "lifeChoice"].includes(first), first);
+    await review.getByText(P("play.review.lineEngine"), { exact: true }).waitFor();
+    assert.ok((await review.getByTestId("play-explain").textContent()).length > 20);
+    await playable.first().waitFor();
+    await playable.first().click();
+    await playPage.getByTestId("play-move").nth(1).waitFor();
+    await playPage.waitForFunction(() => document.querySelectorAll("[data-testid=play-move]").length === 2 && document.querySelector("[data-testid=play-review]")?.getAttribute("data-label"), null, { timeout: 30_000 });
+    // Branch: open the first move, play another card instead.
+    await playPage.getByTestId("play-move").first().click();
+    await playPage.getByText(P("play.moves.whatIf"), { exact: true }).waitFor();
+    const alternative = playPage.getByTestId("play-whatif").first();
+    await alternative.waitFor({ timeout: 30_000 });
+    await alternative.click();
+    await playPage.getByTestId("play-branch").waitFor();
+    assert.equal(await playPage.getByTestId("play-move").count(), 1);
+    await playPage.getByRole("button", { name: P("play.moves.main") }).click();
+    assert.equal(await playPage.getByTestId("play-move").count(), 2);
+    await assertNoOverflow(playPage);
+    await playPage.getByRole("navigation", { name: P("play.nav.aria") }).getByRole("link", { name: P("play.nav.dashboard") }).click();
+    await playPage.getByRole("button", { name: "Dictate your what-if" }).waitFor();
+    await play.close();
+    console.log("Doppel Play: two moves reviewed (" + first + "), branch and return to the main line, nav back to the dashboard passed at 320px");
+  }
+
   assert.deepEqual(errors, []);
   assert.deepEqual(externalRequests, []);
   console.log("Chromium scanner smoke passed at 320px with no remote OCR assets or scanner errors");

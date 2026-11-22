@@ -1,6 +1,6 @@
 # Doppel Play: the life game
 
-Status: design, not implemented. Owner decisions: 2026-11-22.
+Status: phase 1 implemented (`/play`, `src/lib/game`, `npm run play:check`); phases 2 and 3 open. Owner decisions: 2026-11-22. Implementation notes: §13.
 
 Doppel gets a second face. The existing dashboard stays as it is. A separate page, `/play`, turns the same twin into a game. The game is chess-themed in the way a chess engine is: positions are financial states, moves are decisions, and the engine **searches the space of possible futures** to judge each move. Situations are not mapped onto pieces. What gets labelled is the **move** (`!!`, `!`, `?!`, `?`, `??`, sacrifice, drain), as in chess game review.
 
@@ -173,3 +173,13 @@ Rules:
 1. **Core game:** turn loop, cards from the catalog, Life events by regime, engine review (labels, best move, evaluation bar), impact donut, check and mate, end-of-game review with accuracy, seeded replay.
 2. **Side boards:** investing, saving, debt, with trigger puzzles.
 3. **Polish:** TKT gestures; commentator narration on an open-source model (Qwen, Llama, Mistral); the "apply to my twin" bridge to the dashboard.
+
+## 13. Phase 1 as built
+
+- **Code:** `src/lib/game/` (`state`, `cards`, `regime`, `evaluate`, `engine`, `game`, `notation`, `start`), UI in `src/app/play/` and `src/components/play/`, engine in a Web Worker. UBS data only through `src/lib/ubs` (a stub with the agreed API until the shared loader lands).
+- **Simulator:** `simulate()` gained optional inputs (regime assumptions, income phases, a starting home, loans, regime shocks on a separate random stream). Without them it behaves exactly as before (`scripts/engine-check.ts` output unchanged).
+- **Turn:** Life's card (seeded by game seed and turn) → check test (buffer < 3 months, or P(cash crunch in 12 months) > 20% on 200 paths) → one card from a dealt hand of four (responses only in check) or hold → one market bucket (quintile of the regime's returns) → `stepYear`, twelve monthly steps that mirror `simulate()` and write a ledger. Mate = cash below the CHF 2'000 credit line after selling investments. Win = goal at the goal age with a 3-month buffer.
+- **E:** as in §3, with W = clamp(0.5 + 0.25·log2(median/target), 0, 1.5) and S = clamp((target − p10)/target, 0, 1); presets Balanced 0.4/0.3/0.2/0.1, Safety first 0.25/0.45/0.1/0.2, Growth 0.35/0.15/0.4/0.1. A mated line scores −w_down.
+- **Search:** open-loop MCTS. 40 pre-drawn futures (market bucket + Life's card per year, common random numbers), every root candidate on every future, UCT (c = 0.04) below the root, at most 2 realised years in the tree, then a 96-path simulator rollout to the horizon. Afterwards each candidate is re-scored with its own principal variation on all 40 futures. About 0.3–0.9 s per review in Node.
+- **Labels (loss in points):** best ≤ 0.05 (brilliant if also a sacrifice), good < 0.5, inaccuracy < 2, mistake < 6, blunder ≥ 6. Life choices (child, partner, sabbatical) are scored and shown but never graded and never named as the best move. Accuracy uses the Lichess formula on the loss.
+- **Checks:** `npm run play:check` (determinism and replay, best-move loss 0, sacrifice at goal depth only, mate, MCTS = brute force on a tiny tree, no model or network code, ledger identity for every card and year, stepper vs simulator within 3%, budget).
