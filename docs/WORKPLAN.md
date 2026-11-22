@@ -35,7 +35,7 @@ Each task has a self-contained brief that an agent can run directly: [A](tasks/A
 | B | **Donut charts measured from pixels.** The model only maps legend colours to asset classes; TypeScript measures the slice angles. Also find out why `plan-cad-areas` maps only 7/10 rooms. A partial `src/lib/snap/vision/donut.ts` exists in worktree `t3-4b1c439c` (uncommitted). | Low: `src/lib/snap/vision/*`, `scripts/vision-benchmark.ts` | Now |
 | C | **Judge evidence and demo script.** Write `docs/JUDGING.md`, mapping the six rubric criteria and the five judge questions to evidence in the app. Add a 3-minute Alexia demo flow and an assumptions-and-limitations list. Inputs: the starter-kit files `judge-scorecard.md`, `demo-and-submission.md`, `responsible-ai-and-data.md`. | None (docs) | Draft now, update after steps 1–2 |
 | D | **Smoke steps for the wizard and the imports.** Create an account, import a sample CSV and a camt.053 file, edit a category, undo, delete. | Medium: `scripts/browser-smoke.mjs` is edited by both in-flight branches | After steps 1–2 |
-| E | **TKT bridge.** Level 1: Doppel keyboard shortcuts already planned for `/play`; TKT gestures map to them. Level 2: a local event and document-capture bridge in TKT's `app` layer, standard library only, via PR per TKT's `AGENTS.md`. | TKT repo only | After `/play` lands |
+| E | **Hand control (`tkt/`).** Level 1: gestures as `/play` shortcuts. Level 2: a local event and document-capture bridge in the `app` layer, standard library only (rules in `tkt/AGENTS.md`). | `tkt/` only | After `/play` lands |
 
 ### Rules
 - Branch from `main` and open a PR. Don't push to `main` directly.
@@ -94,7 +94,7 @@ Requirement, as recorded in the other thread: a Kotlin Multiplatform app on at l
 | # | Task | State / notes |
 |---|---|---|
 | J1 | Merge the Pocket continuation branch `t3/b586bd62` | 8 commits: ports + versioned contract, engine-parity cards, gateway, snap pipeline, ledger + Inspector, and the UI pass `c28c301` (WIP, **unverified**). Run `.\gradlew.bat :shared:jvmTest :composeApp:assembleDebug`, check desktop + Android emulator screenshots, then merge. Outside `pocket/` it only adds `scripts/pocket-*-golden.ts`. |
-| J2 | Write `docs/INTEGRATION.md` | The TKT bridge and accounts/sync seam proposal (Pocket step 7). Use the **same** event contract as Oktay's task E. |
+| J2 | Write `docs/INTEGRATION.md` | The hand-control bridge and accounts/sync seam proposal (Pocket step 7). Use the **same** event contract as task E. |
 | J3 | Pocket ← new web features | Replace Lukas/Elena with Barlas/Meriç/Oktay and regenerate the golden files on purpose (`npx tsx scripts/pocket-engine-golden.ts`); add receipt line items. After the UBS layer merges: UBS profiles, liabilities, multiple goals. Pocket README still mentions Lukas/Elena. |
 | J4 | Fresh-clone check in IntelliJ IDEA | Gradle sync with JDK 17 from a clean clone. Not done yet. Judges will open the project in the IDE. |
 | J5 | JetBrains Air bonus | A human team member uses Air for a real, small change (idea: add a golden parity case with a CHF 500 standing order). Keep screenshots as evidence. |

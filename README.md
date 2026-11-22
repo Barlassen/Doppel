@@ -11,22 +11,15 @@ Two rules shaped the code:
 1. **The LLM never does maths.** Every financial number on screen comes from deterministic TypeScript in `src/lib/finance`. Models only read documents, parse free-form what-ifs that the local parser misses, and phrase a three-sentence summary of numbers the engine already computed.
 2. **Use the cheapest reader that works.** A QR-bill is decoded locally. Printed text goes through local OCR and regex first. Only low-confidence or failed OCR sends a grayscale JPEG capped at 512px to a small vision model.
 
-## Doppel + TKT: one project, two apps
+## Play it by hand
 
-This repository holds both parts of the submission:
-
-- **Doppel**: the financial twin and the `/play` chessboard life game. It is this web app.
-- **TKT** in [`tkt/`](tkt): a hand-tracking touchpad by Oktay. It is a git submodule of [D0ktay/TKT](https://github.com/D0ktay/TKT), pinned to a tested version.
-
-TKT turns a camera into a pointing device. Its gestures (pointer, click, scroll, dictation) control Doppel in the browser, so the twin can be played by hand at a desk. Each app also runs on its own. Neither project changes the other's code, and neither loses a feature.
+Doppel can be played by hand at a desk: the hand-control component in [`tkt/`](tkt) turns a camera into a pointing device (pointer, click, scroll, dictation), and the chessboard game and the dashboard respond to it.
 
 ```bash
 git clone --recurse-submodules https://github.com/Barlassen/Doppel.git
-# or, in an existing clone:
-git submodule update --init
 ```
 
-Start both for the demo with `scripts/demo-with-tkt.ps1` (Windows) or `scripts/demo-with-tkt.sh` (macOS). See [docs/TKT.md](docs/TKT.md) for the gesture → Doppel map and a 30-second demo, and [tkt/README.md](tkt/README.md) for TKT's setup (Python 3.11, `uv`, camera permissions).
+Start everything for the demo with `scripts/demo-with-tkt.ps1` (Windows) or `scripts/demo-with-tkt.sh` (macOS). The gestures and a 30-second demo are in [docs/TKT.md](docs/TKT.md); setup for the hand-control part (Python 3.11, `uv`, camera permissions) is in [tkt/README.md](tkt/README.md).
 
 ## Run it
 
@@ -97,4 +90,4 @@ Doppel Play (`/play`) turns the same twin into a chess-review life game: Life pl
 
 More: [docs/PITCH.md](docs/PITCH.md) (demo script), [docs/DECISIONS.md](docs/DECISIONS.md) (design decisions and jury questions), [docs/ACCOUNTS.md](docs/ACCOUNTS.md) (accounts and their store).
 
-Contributor demo guides: [Judging and evidence](docs/JUDGING.md), [TKT integration plan](docs/TKT.md).
+Contributor demo guides: [Judging and evidence](docs/JUDGING.md), [Hand control](docs/TKT.md).

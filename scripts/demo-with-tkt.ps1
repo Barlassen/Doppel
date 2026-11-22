@@ -1,6 +1,6 @@
-# Starts Doppel (production build) and TKT's live touchpad side by side for the demo (Windows).
-# Usage: powershell -ExecutionPolicy Bypass -File scripts/demo-with-tkt.ps1 [-TktDir D:\Lauzhack26\TKT] [-Port 3000] [-Backend pynput]
-# Stops only the Doppel server it started (by PID). TKT runs in the foreground; quit it with its own keys or Ctrl+C.
+# Starts Doppel (production build) and its hand control (tkt/) for the demo (Windows).
+# Usage: powershell -ExecutionPolicy Bypass -File scripts/demo-with-tkt.ps1 [-Port 3000] [-Backend pynput]
+# Stops only the Doppel server it started (by PID). The hand control runs in the foreground; quit it with Esc or Ctrl+C.
 param(
   [string]$TktDir = $env:TKT_DIR,
   [int]$Port = 3000,
@@ -8,12 +8,8 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-# Default: the submodule in this repository (git submodule update --init), else a sibling checkout ../TKT.
-if (-not $TktDir) {
-  $TktDir = Join-Path $root "tkt"
-  if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { $TktDir = Join-Path (Split-Path -Parent $root) "TKT" }
-}
-if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { throw "TKT not found at '$TktDir'. Run 'git submodule update --init', pass -TktDir or set TKT_DIR." }
+if (-not $TktDir) { $TktDir = Join-Path $root "tkt" }
+if (-not (Test-Path (Join-Path $TktDir "pyproject.toml"))) { throw "Hand control not found in '$TktDir'. Clone with --recurse-submodules (or run 'git submodule update --init')." }
 
 Push-Location $root
 try {
@@ -30,8 +26,8 @@ try {
 
 Push-Location $TktDir
 try {
-  # Version A (desk camera) with TKT's HUD; the auto mode (A/C) is macOS only, see tkt/README.md.
-  Write-Host "TKT: version A, live touchpad ($Backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
+  # Version A (desk camera) with the HUD; the auto mode (A/C) is macOS only, see tkt/README.md.
+  Write-Host "Hand control: version A ($Backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
   uv run python -m tkt.app.main --source live --backend $Backend --hud
 } finally {
   Pop-Location

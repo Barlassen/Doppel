@@ -83,9 +83,8 @@ data/ubs/                       UBS LauzHack 2026 starter data (fictional): prof
                                 goals, scenario catalog, Alexia's paths
 public/samples/                 sample documents, import files (imports/), vision samples (vision/), bench photos
 scripts/                        checks, benchmarks, sample generators (see §5)
-tkt/                            TKT (git submodule → D0ktay/TKT, Oktay's hand-tracking touchpad, Python). Do NOT edit
-                                here: change TKT in its own repository (its AGENTS.md rules apply), then bump the
-                                submodule pointer here. See docs/TKT.md.
+tkt/                            Hand control (Python, MediaPipe): a camera as a pointing device for playing Doppel by
+                                hand. Its own rules are in tkt/AGENTS.md. See docs/TKT.md.
 pocket/                         Doppel Pocket: Kotlin Multiplatform app (Android + Desktop) with an engine
                                 parity test against the TS engine. Owned by a separate workstream.
 ```
@@ -152,6 +151,6 @@ Pitfalls the team already hit:
 - **Screenshots:** check UI changes with Playwright at 320×800 and 1280×900, in EN and TR at least, and look at the screenshots.
 - **Reports:** a finished task ends with branch, SHAs, what changed, gate results, and anything not verified.
 
-## 7. Related repositories
+## 7. Hand control (`tkt/`)
 
-- **TKT** (`D:\Lauzhack26\TKT`, Python/MediaPipe) turns a desk-facing camera into a hand-tracking touchpad. It has its own `AGENTS.md`: no new dependencies or config keys without approval, `src/tkt/core/` is off limits, and changes go via PR. Integration with Doppel is planned in two levels: keyboard shortcuts first, then a local event and document-capture bridge. See `docs/tasks/E-tkt-bridge.md`.
+`tkt/` turns a desk-facing or front camera into a pointing device (Python/MediaPipe). Its rules are in `tkt/AGENTS.md`: no new dependencies or config keys without approval, and `src/tkt/core/` is off limits. Next steps are gestures as `/play` shortcuts, an event bridge, and desk-document capture into the snap cascade. See `docs/TKT.md` and `docs/tasks/E-tkt-bridge.md`.

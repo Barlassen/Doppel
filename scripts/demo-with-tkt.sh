@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Starts Doppel (production build) and TKT's live touchpad side by side for the demo (macOS / Linux).
-# Usage: scripts/demo-with-tkt.sh [TKT_DIR] ; env: PORT (3000), TKT_BACKEND (native on macOS, else pynput)
-# Stops only the Doppel server it started (by PID). TKT runs in the foreground; quit it with its own keys or Ctrl+C.
+# Starts Doppel (production build) and its hand control (tkt/) for the demo (macOS / Linux).
+# Usage: scripts/demo-with-tkt.sh ; env: PORT (3000), TKT_BACKEND (native on macOS, else pynput), TKT_MODE (auto|a)
+# Stops only the Doppel server it started (by PID). The hand control runs in the foreground; quit it with Esc or Ctrl+C.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-# Default: the submodule in this repository (git submodule update --init), else a sibling checkout ../TKT.
-default_tkt="$root/tkt"
-[ -f "$default_tkt/pyproject.toml" ] || default_tkt="$(dirname "$root")/TKT"
-tkt="${1:-${TKT_DIR:-$default_tkt}}"
+tkt="${TKT_DIR:-$root/tkt}"
 port="${PORT:-3000}"
 backend="${TKT_BACKEND:-$([ "$(uname)" = "Darwin" ] && echo native || echo pynput)}"
-[ -f "$tkt/pyproject.toml" ] || { echo "TKT not found at '$tkt'. Run 'git submodule update --init', pass it as the first argument or set TKT_DIR." >&2; exit 1; }
+[ -f "$tkt/pyproject.toml" ] || { echo "Hand control not found in '$tkt'. Clone with --recurse-submodules (or run 'git submodule update --init')." >&2; exit 1; }
 
 cd "$root"
 [ -f .next/BUILD_ID ] || npm run build
@@ -23,10 +20,10 @@ echo "Doppel: http://localhost:$port/play (PID $doppel)"
 
 cd "$tkt"
 if [ "$(uname)" = "Darwin" ] && [ "${TKT_MODE:-auto}" = "auto" ]; then
-  # macOS: TKT's auto mode switches between the desk camera (A) and the pinch setup (C).
-  echo "TKT: auto mode (A/C). Esc quits."
+  # macOS: the auto mode switches between the desk camera (A) and the pinch setup (C).
+  echo "Hand control: auto mode (A/C). Esc quits."
   uv run python -m tkt.app.auto_mode
 else
-  echo "TKT: version A, live touchpad ($backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
+  echo "Hand control: version A ($backend). Calibrate with 'uv run python -m tkt.vision.debug_view' first if needed."
   uv run python -m tkt.app.main --source live --backend "$backend" --hud
 fi
